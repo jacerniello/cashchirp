@@ -231,15 +231,28 @@ _LOG_PATH = CORE_DIR / "data" / "bootstrap.log"
 _STOP_PATH = CORE_DIR / "data" / "bootstrap.stop"
 
 
-def _alive(pid: int | None) -> bool:
-    """Is that PID still running? `signal 0` checks without touching the process."""
+def _alive(pid: int | None, marker: str | None = None) -> bool:
+    """Is that PID still running, and is it still OURS?
+
+    `signal 0` alone is not enough. PIDs are recycled, so a stale job file pointing at a
+    number the OS has since handed to an unrelated process would report a build running
+    for ever — and the start guard would refuse to launch a new one, with no way out but
+    deleting files by hand. So the command line is checked too: it must still look like
+    the bootstrap run we started."""
     if not pid:
         return False
     try:
         os.kill(pid, 0)
     except (OSError, TypeError):
         return False
-    return True
+    try:
+        out = subprocess.run(["ps", "-o", "command=", "-p", str(pid)],
+                             capture_output=True, text=True, timeout=5).stdout
+    except (OSError, subprocess.SubprocessError):
+        return True          # can't check — assume ours rather than kill a live build
+    if "core.scripts.setup.bootstrap" not in out:
+        return False
+    return marker is None or marker in out
 
 
 def _build_status() -> dict[str, Any]:
@@ -477,7 +490,8 @@ def _job_state(key: str) -> dict[str, Any]:
         except (json.JSONDecodeError, OSError):
             st = {}
     pid = st.get("pid")
-    running = _alive(pid) and st.get("phase") not in ("done", "failed", "interrupted")
+    running = (_alive(pid, str(state_p))
+               and st.get("phase") not in ("done", "failed", "interrupted"))
     step = (st.get("steps") or [{}])[0]
     return {
         "running": running,
