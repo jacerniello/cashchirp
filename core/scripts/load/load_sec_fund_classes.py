@@ -10,7 +10,7 @@ ingest step invisible to anything reading `core/backend/ingest/`.
 `load` is re-exported so `from core.scripts.load.load_sec_fund_classes import load` — used by
 `update_all` and `bootstrap` — keeps working.
 """
-from core.backend.ingest.sec.sec_fund_classes import fetch, load
+from core.backend.ingest.sec.sec_fund_classes import load  # noqa: F401 (re-export)
 
 if __name__ == "__main__":
     n = load()

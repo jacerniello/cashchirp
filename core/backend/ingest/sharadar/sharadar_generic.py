@@ -23,7 +23,6 @@ observable. Two entry points:
 
 Tables are created here (CREATE TABLE IF NOT EXISTS), not via the ORM models.
 """
-import io
 import zipfile
 from datetime import date, datetime, timedelta
 from pathlib import Path

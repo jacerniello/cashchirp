@@ -8,7 +8,6 @@ from datetime import date, datetime
 
 from sqlalchemy import (
     BigInteger,
-    Boolean,
     Date,
     DateTime,
     Float,
