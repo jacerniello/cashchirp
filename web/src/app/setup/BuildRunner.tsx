@@ -202,8 +202,12 @@ export function BuildRunner({
                          style={{ width: `${b.progress_pct}%` }} />
                   </div>
                   <p className="text-sm text-ink-light mt-2">
-                    {b.progress_pct}% · {b.steps_done}/{b.steps_total} steps · {b.phase}
-                    {!buildHere && ' — currently working on another phase'}
+                    {b.steps_total === 0
+                      ? 'Starting — preflight checks first.'
+                      : <>
+                          {b.progress_pct}% · {b.steps_done}/{b.steps_total} steps · {b.phase}
+                          {!buildHere && ' — currently working on another phase'}
+                        </>}
                   </p>
                   <button
                     type="button"
@@ -445,7 +449,8 @@ export function BuildRunner({
                                                 text-[0.7rem] leading-relaxed font-mono p-3 whitespace-pre-wrap">
                                   {dsLog.isLoading && !dsLog.data ? 'Loading…'
                                     : !dsLog.data?.exists ? 'No log yet — run it to create one.'
-                                    : dsLog.data.lines.join('\n') || '(empty)'}
+                                    : dsLog.data.lines.join('\n')
+                                      || (j.running ? 'Starting…' : '(empty)')}
                                 </pre>
                               </td>
                             </tr>
@@ -485,6 +490,7 @@ export function BuildRunner({
                     {log.isLoading && !log.data ? 'Loading…'
                       : !log.data?.exists ? 'No build has run yet — the log appears once you start one.'
                       : log.data.lines.length ? log.data.lines.join('\n')
+                      : running ? 'Starting… the first output appears in a second or two.'
                       : '(log is empty)'}
                   </pre>
                   <p className="text-xs text-ink-faint mt-2">

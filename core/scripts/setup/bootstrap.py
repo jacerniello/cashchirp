@@ -191,16 +191,33 @@ def preflight() -> list[Check]:
     ))
 
     if server_ok:
-        try:
-            exists = _database_exists()
-        except Exception as exc:
-            exists, server_detail = False, str(exc)
-        checks.append(Check(
-            f"database {settings.postgres_db!r} exists", exists,
-            "ready" if exists else "missing",
-            fix="re-run with --create-db (or: createdb "
-                f"{settings.postgres_db})",
-        ))
+        # "could not check" is NOT "does not exist". Under load the probe can time out,
+        # and reporting that as `missing` both blocks a perfectly good run and offers
+        # `--create-db` as the fix — which is the wrong action on a database that is
+        # simply busy. A failed probe is retried, then surfaced as its own condition.
+        exists, probe_error = None, ""
+        for attempt in range(3):
+            try:
+                exists = _database_exists()
+                break
+            except Exception as exc:
+                probe_error = f"{type(exc).__name__}: {exc}".split("\n")[0]
+                if attempt < 2:
+                    time.sleep(1.5)
+        if exists is None:
+            checks.append(Check(
+                f"database {settings.postgres_db!r} reachable", False,
+                f"could not check — {probe_error[:70]}",
+                fix="the server answered but the database probe timed out — it is most "
+                    "likely busy, not missing. Retry; do NOT pass --create-db.",
+            ))
+        else:
+            checks.append(Check(
+                f"database {settings.postgres_db!r} exists", exists,
+                "ready" if exists else "missing",
+                fix="re-run with --create-db (or: createdb "
+                    f"{settings.postgres_db})",
+            ))
 
     return checks
 

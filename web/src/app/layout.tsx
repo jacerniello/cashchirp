@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
 import { Navbar } from "@/components/Navbar";
+import { SiteBanner } from "@/components/SiteBanner";
 import { Providers } from "@/lib/providers";
 import { InvestingChrome } from "@/components/InvestingChrome";
 
@@ -30,6 +31,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
     <html lang="en">
       <body className={`${inter.variable} antialiased`}>
         <Navbar />
+        <SiteBanner />
         <Providers>
           <InvestingChrome />
           {children}

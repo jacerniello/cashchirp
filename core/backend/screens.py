@@ -49,12 +49,14 @@ def list_screens() -> list[dict[str, Any]]:
     with `_` are ignored so a partial draft can sit in the folder without being offered."""
     out = []
     for p in sorted(SCREENS_DIR.glob("*.y*ml")):
-        if p.name.startswith("_"):
+        # `_`-prefixed are drafts; `._` are macOS AppleDouble sidecars that ride along in
+        # a tar and are not text at all — one of them 500'd this endpoint in deployment.
+        if p.name.startswith("_") or p.name.startswith("._"):
             continue
         try:
-            spec = yaml.safe_load(p.read_text()) or {}
-        except yaml.YAMLError:
-            continue
+            spec = yaml.safe_load(p.read_text(encoding="utf-8")) or {}
+        except (yaml.YAMLError, UnicodeDecodeError, OSError):
+            continue          # an unreadable file must not take the whole listing down
         out.append({
             "id": spec.get("id", p.stem),
             "title": spec.get("title", p.stem),
