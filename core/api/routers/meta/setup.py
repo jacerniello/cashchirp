@@ -417,7 +417,7 @@ def stop_build() -> dict[str, Any]:
 
 
 @router.get("/build/log")
-def build_log(tail: int = 200) -> dict[str, Any]:
+def build_log(tail: int = 200, run: str | None = None) -> dict[str, Any]:
     """The tail of the most recent build's log, plus the list of earlier runs.
 
     Reads only files this module named, in a fixed directory — nothing about the path is
@@ -426,15 +426,16 @@ def build_log(tail: int = 200) -> dict[str, Any]:
     n = max(1, min(int(tail), 2000))
     runs = _log_runs(None)
     if not runs:
-        return {"lines": [], "path": str(_LOGS_DIR), "exists": False, "runs": []}
+        return {"lines": [], "path": str(_LOGS_DIR), "exists": False, "runs": [],
+                "run": None}
+    chosen = _pick_run(runs, run)
     try:
-        lines = _read_log(runs[0], n)
+        lines = _read_log(chosen, n)
     except OSError as exc:
         raise HTTPException(500, f"Could not read {runs[0]}: {exc}") from exc
     return {
-        "lines": lines, "path": str(runs[0]), "exists": True,
-        "runs": [{"name": p.name, "archived": p.suffix == ".gz",
-                  "bytes": p.stat().st_size} for p in runs],
+        "lines": lines, "path": str(chosen), "exists": True, "run": chosen.name,
+        "runs": [_run_meta(p) for p in runs],
     }
 
 
@@ -573,22 +574,23 @@ def stop_dataset(req: DatasetJobRequest) -> dict[str, Any]:
 
 
 @router.get("/dataset/log")
-def dataset_log(key: str, tail: int = 200) -> dict[str, Any]:
+def dataset_log(key: str, tail: int = 200, run: str | None = None) -> dict[str, Any]:
     """Tail of ONE dataset's most recent run, plus its earlier runs."""
     if key not in sources.BY_KEY:
         raise HTTPException(404, f"Unknown dataset {key!r}.")
     n = max(1, min(int(tail), 2000))
     runs = _log_runs(key)
     if not runs:
-        return {"key": key, "lines": [], "exists": False, "path": str(_LOGS_DIR), "runs": []}
+        return {"key": key, "lines": [], "exists": False, "path": str(_LOGS_DIR),
+                "runs": [], "run": None}
+    chosen = _pick_run(runs, run)
     try:
-        lines = _read_log(runs[0], n)
+        lines = _read_log(chosen, n)
     except OSError as exc:
         raise HTTPException(500, f"Could not read {runs[0]}: {exc}") from exc
     return {
-        "key": key, "lines": lines, "exists": True, "path": str(runs[0]),
-        "runs": [{"name": p.name, "archived": p.suffix == ".gz",
-                  "bytes": p.stat().st_size} for p in runs],
+        "key": key, "lines": lines, "exists": True, "path": str(chosen),
+        "run": chosen.name, "runs": [_run_meta(p) for p in runs],
     }
 
 
@@ -660,3 +662,28 @@ def _read_log(path: Path, tail: int) -> list[str]:
     if window < size and lines:
         lines = lines[1:]                # drop the partial line the window began mid-way
     return lines[-tail:]
+
+
+def _pick_run(runs: list[Path], name: str | None) -> Path:
+    """The requested run, or the newest.
+
+    Matched by EXACT name against the listing rather than joined onto a directory: the
+    name reaches the filesystem, so a caller must never be able to steer it. An unknown
+    name is a 404, not a silent fallback to the newest — quietly showing a different run
+    than the one asked for is how you debug the wrong failure."""
+    if not name:
+        return runs[0]
+    for p in runs:
+        if p.name == name:
+            return p
+    raise HTTPException(404, f"No run {name!r}. Available: {[p.name for p in runs][:10]}")
+
+
+def _run_meta(p: Path) -> dict[str, Any]:
+    st = p.stat()
+    return {
+        "name": p.name,
+        "archived": p.suffix == ".gz",
+        "bytes": st.st_size,
+        "at": datetime.fromtimestamp(st.st_mtime).isoformat(timespec="seconds"),
+    }

@@ -4,7 +4,7 @@ import { Fragment, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import {
   useBuildLog, useDatasetJob, useDatasetLog, useSetup, useStartBuild, useStopBuild,
-  type DatasetStatus,
+  type DatasetStatus, type LogRun,
 } from '@/hooks/useSetup';
 import { Card } from '@/components/Card';
 
@@ -24,6 +24,36 @@ const KIND_PHASES: Record<'ingest' | 'derive', string[]> = {
 /** What a row is DOING beats what it holds: a running job shows as running, even though
  *  its table still reads "loaded" from the last build. Reporting only the data state
  *  would leave a row that is actively rebuilding looking idle. */
+/** Choose which past run to read. Logs are one file per run, so history is browsable —
+ *  "what happened last time this failed?" shouldn't mean scrolling past everything that
+ *  ran after it. Selecting an older run stops the polling: a finished run can't change. */
+function RunPicker({
+  runs, value, onChange,
+}: {
+  runs: LogRun[]; value: string | null; onChange: (v: string | null) => void;
+}) {
+  if (runs.length < 2) return null;
+  return (
+    <select
+      value={value ?? runs[0].name}
+      onChange={(e) => onChange(e.target.value === runs[0].name ? null : e.target.value)}
+      className="text-xs border border-rule rounded px-2 py-1 bg-white text-ink max-w-[22rem]"
+    >
+      {runs.map((r, i) => (
+        <option key={r.name} value={r.name}>
+          {new Date(r.at).toLocaleString(undefined, {
+            month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
+            second: '2-digit',
+          })}
+          {i === 0 ? ' · latest' : ''}
+          {r.archived ? ' · archived' : ''}
+          {` · ${r.bytes > 1024 ? `${(r.bytes / 1024).toFixed(0)} KB` : `${r.bytes} B`}`}
+        </option>
+      ))}
+    </select>
+  );
+}
+
 function StateLabel({ d }: { d: DatasetStatus }) {
   const j = d.job;
   if (j.running) {
@@ -69,6 +99,9 @@ export function BuildRunner({
   // explicit choice you made, which sticks until the next run starts.
   const [logOverride, setLogOverride] = useState<boolean | undefined>(undefined);
   const [openOverride, setOpenOverride] = useState<string | null | undefined>(undefined);
+  // null = follow the latest run; a name pins that historical run.
+  const [buildRun, setBuildRun] = useState<string | null>(null);
+  const [dsRun, setDsRun] = useState<string | null>(null);
   const job = useDatasetJob();
   // A pending expensive action, held until confirmed. Only ingest needs this: derive is
   // minutes, free and safe to re-run, so a confirmation there would be noise that trains
@@ -84,11 +117,15 @@ export function BuildRunner({
   const buildRunning = !!b?.running;
   const buildHere = buildRunning && KIND_PHASES[kind].includes(b!.phase ?? '');
   const showLog = logOverride ?? buildRunning;
-  const log = useBuildLog(showLog || buildRunning, buildRunning);
+  const log = useBuildLog(showLog || buildRunning, buildRunning, buildRun);
 
   const act = async (fn: () => Promise<unknown>) => {
     setErr(null);
-    try { await fn(); setLogOverride(undefined); setOpenOverride(undefined); }
+    try {
+      await fn();
+      setLogOverride(undefined); setOpenOverride(undefined);
+      setBuildRun(null); setDsRun(null);   // a new run is the one you want to watch
+    }
     catch (e) {
       const d = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
       setErr(d || (e as Error).message);
@@ -107,7 +144,7 @@ export function BuildRunner({
   const running = buildHere || !!runningRow;
   const openLog = openOverride === undefined ? (runningRow?.key ?? null) : openOverride;
   const openRow = rows.find((d) => d.key === openLog);
-  const dsLog = useDatasetLog(openLog, !!openRow?.job.running);
+  const dsLog = useDatasetLog(openLog, !!openRow?.job.running, dsRun);
 
   /** Confirm only the genuinely expensive action. `update` is an incremental sync and
    *  `missing` touches nothing already loaded; only `full` re-downloads, so only `full`
@@ -360,7 +397,7 @@ export function BuildRunner({
                               {(j.has_log || j.running) && (
                                 <button
                                   type="button"
-                                  onClick={() => setOpenOverride(open ? null : d.key)}
+                                  onClick={() => { setDsRun(null); setOpenOverride(open ? null : d.key); }}
                                   className="ml-3 text-xs text-ink-muted hover:text-green bg-transparent
                                              border-0 cursor-pointer"
                                 >
@@ -392,6 +429,18 @@ export function BuildRunner({
                           {open && (
                             <tr>
                               <td colSpan={7} className="pb-3">
+                                {!!dsLog.data?.runs?.length && (
+                                  <div className="flex items-center gap-2 mb-2">
+                                    <span className="text-xs text-ink-muted">Run:</span>
+                                    <RunPicker runs={dsLog.data.runs} value={dsRun}
+                                               onChange={setDsRun} />
+                                    {dsRun && (
+                                      <span className="text-xs text-ink-faint">
+                                        earlier run — not live
+                                      </span>
+                                    )}
+                                  </div>
+                                )}
                                 <pre className="max-h-64 overflow-auto rounded-lg bg-ink text-white/85
                                                 text-[0.7rem] leading-relaxed font-mono p-3 whitespace-pre-wrap">
                                   {dsLog.isLoading && !dsLog.data ? 'Loading…'
@@ -413,14 +462,19 @@ export function BuildRunner({
           {/* --- log --- */}
           <Card>
             <div className="p-5">
-              <button
-                type="button"
-                onClick={() => setLogOverride(!showLog)}
-                className="text-sm font-semibold text-ink uppercase tracking-wide bg-transparent
-                           border-0 cursor-pointer p-0"
-              >
-                {showLog ? '▾' : '▸'} Build log{running && !showLog ? ' (live)' : ''}
-              </button>
+              <div className="flex items-center justify-between gap-3 flex-wrap">
+                <button
+                  type="button"
+                  onClick={() => setLogOverride(!showLog)}
+                  className="text-sm font-semibold text-ink uppercase tracking-wide bg-transparent
+                             border-0 cursor-pointer p-0"
+                >
+                  {showLog ? '▾' : '▸'} Build log{running && !showLog ? ' (live)' : ''}
+                </button>
+                {showLog && log.data?.runs?.length ? (
+                  <RunPicker runs={log.data.runs} value={buildRun} onChange={setBuildRun} />
+                ) : null}
+              </div>
               {showLog && (
                 <>
                   <pre
@@ -434,8 +488,10 @@ export function BuildRunner({
                       : '(log is empty)'}
                   </pre>
                   <p className="text-xs text-ink-faint mt-2">
-                    <code className="font-mono">{b.log}</code>
-                    {running && ' · refreshing every 2s'}
+                    <code className="font-mono">{log.data?.path ?? b.log}</code>
+                    {buildRun
+                      ? ' · viewing an earlier run (not live)'
+                      : running && ' · refreshing every 2s'}
                   </p>
                 </>
               )}

@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useQuery } from '@tanstack/react-query';
 import api from '@/lib/api';
 import { Card } from '@/components/Card';
+import { TableStates } from '@/components/TableStates';
 import { SegmentedControl } from '@/components/SegmentedControl';
 import { MultiLineChart, type MultiLineSeries } from '@/components/charts/MultiLineChart';
 import { formatCurrency, formatPercentRaw, formatRatio, formatPercent } from '@/lib/formatters';
@@ -66,7 +67,7 @@ const METRIC_COLS: { key: keyof SectorRow; label: string; fmt: (v: number | null
 
 export function SectorsBrowser() {
   const [floor, setFloor] = useState<Floor>('1e9');
-  const { data: overview, isLoading } = useQuery({
+  const { data: overview, isLoading, error: overviewError } = useQuery({
     queryKey: ['sectors-overview', floor],
     queryFn: () => fetchOverview(floor),
     staleTime: 30 * 60 * 1000,
@@ -224,7 +225,16 @@ export function SectorsBrowser() {
               </tr>
             </thead>
             <tbody>
-              {rows.map((r) => (
+              {/* colSpan: Sector + # + Total cap + the metric columns */}
+              <TableStates
+                loading={isLoading}
+                error={overviewError}
+                empty={rows.length === 0}
+                colSpan={3 + METRIC_COLS.length}
+                rows={11}
+                errorText="Could not load the sector cross-section."
+              />
+              {!isLoading && !overviewError && rows.map((r) => (
                 <tr key={r.sector} className="border-b border-rule-light hover:bg-surface">
                   <td className="px-3 py-2 font-medium text-ink">
                     <Link
