@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo, useEffect, Suspense } from 'react';
+import { useState, useMemo, useEffect, useRef, Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import {
   useScreener,
@@ -60,6 +60,12 @@ function FilterPageContent() {
   // State for active preset
   const initialPreset = searchParams.get('preset') || null;
   const [activePreset, setActivePreset] = useState<string | null>(initialPreset);
+  // Which saved screen these filters came from (?from=), carried through so an
+  // edit-and-save keeps the parts the grid has no widget for.
+  const [loadedFrom, setLoadedFrom] = useState<string | null>(searchParams.get('from'));
+  // The query string WE last wrote, so the sync-back effect can tell our own writes from
+  // a genuine external navigation (clicking a saved screen, or the back button).
+  const lastWritten = useRef<string | null>(null);
 
   // Build screener params
   const screenerParams: ScreenerParams = useMemo(() => {
@@ -139,22 +145,26 @@ function FilterPageContent() {
     }
   }, [sectorsData, selectedSector, selectedIndustry]);
 
-  // Update URL when filters change. `replace` (used by pagination) swaps the URL
-  // without a history entry or scroll jump, so only the results table re-renders.
-  const updateUrl = (opts?: { replace?: boolean }) => {
+  // The URL is a pure function of the filter state, so it can never disagree with what
+  // the grid is showing. Built once here and written by the effect below.
+  const urlQuery = useMemo(() => {
     const params = new URLSearchParams();
 
     if (selectedRange) params.set('range', selectedRange);
     if (selectedSector) params.set('sector', selectedSector);
     if (selectedIndustry) params.set('industry', selectedIndustry);
     if (selectedExchange) params.set('exchange', selectedExchange);
-    // Persist exclusion toggles only when they deviate from the Dash defaults
-    // (commodities excluded; biotech/delisted not), to keep URLs clean.
+    // Persist exclusion toggles only when they deviate from the defaults (commodities
+    // excluded; biotech/delisted not), to keep URLs clean.
     if (!excludeCommodities) params.set('excl_commod', '0');
     if (excludeBiotech) params.set('excl_biotech', '1');
     if (includeDelisted) params.set('incl_delisted', '1');
     if (page > 1) params.set('page', page.toString());
     if (sort !== '-market_cap') params.set('sort', sort);
+    if (activePreset) params.set('preset', activePreset);
+    // Provenance for the save flow: which saved screen these filters came from, so its
+    // grid-invisible parts (growth rules, on_null) survive an edit-and-save.
+    if (loadedFrom) params.set('from', loadedFrom);
 
     for (const filter of ALL_SCREEN_METRICS) {
       const minParam = filterToParam(filters[filter.key]?.min || '', filter.isPercent || false);
@@ -162,37 +172,78 @@ function FilterPageContent() {
       if (minParam) params.set(`${filter.key}_min`, minParam);
       if (maxParam) params.set(`${filter.key}_max`, maxParam);
     }
+    return params.toString();
+  }, [selectedRange, selectedSector, selectedIndustry, selectedExchange, excludeCommodities,
+      excludeBiotech, includeDelisted, page, sort, activePreset, loadedFrom, filters]);
 
-    const url = `/screener?${params.toString()}`;
-    if (opts?.replace) router.replace(url, { scroll: false });
-    else router.push(url);
-  };
+  // Keep the address bar in step with the filters — `replace`, never `push`, so a session
+  // of tweaking doesn't bury the back button, and `scroll: false` so the page doesn't jump.
+  //
+  // This updates the URL WITHOUT remounting: the component reads the URL once for its
+  // initial state and owns it from then on, so only the results query re-runs. Debounced
+  // because typing in a min/max box would otherwise rewrite the URL on every keystroke.
+  useEffect(() => {
+    if (urlQuery === searchParams.toString()) return;
+    const t = setTimeout(() => {
+      lastWritten.current = urlQuery;
+      router.replace(urlQuery ? `/screener?${urlQuery}` : '/screener', { scroll: false });
+    }, 250);
+    return () => clearTimeout(t);
+  }, [urlQuery, searchParams, router]);
+
+  // The reverse direction: adopt the URL when it changed from OUTSIDE this component —
+  // a saved screen was clicked, or the back button was pressed. Our own writes are
+  // recognised via `lastWritten` and ignored, which is what stops the two effects from
+  // fighting each other in a loop.
+  useEffect(() => {
+    const qs = searchParams.toString();
+    if (qs === lastWritten.current || qs === urlQuery) return;
+    setSelectedRange((searchParams.get('range') as MarketCapRange) || null);
+    setSelectedSector(searchParams.get('sector') || '');
+    setSelectedIndustry(searchParams.get('industry') || '');
+    setSelectedExchange(searchParams.get('exchange') || '');
+    setExcludeCommodities(searchParams.get('excl_commod') !== '0');
+    setExcludeBiotech(searchParams.get('excl_biotech') === '1');
+    setIncludeDelisted(searchParams.get('incl_delisted') === '1');
+    setPage(parseInt(searchParams.get('page') || '1', 10));
+    setSort(searchParams.get('sort') || '-market_cap');
+    setActivePreset(searchParams.get('preset'));
+    setLoadedFrom(searchParams.get('from'));
+    const next: Record<string, { min: string; max: string }> = {};
+    for (const f of ALL_SCREEN_METRICS) {
+      next[f.key] = {
+        min: parseFilterValue(searchParams.get(`${f.key}_min`), f.isPercent || false),
+        max: parseFilterValue(searchParams.get(`${f.key}_max`), f.isPercent || false),
+      };
+    }
+    setFilters(next);
+    lastWritten.current = qs;
+    // `urlQuery` is intentionally omitted: including it would re-run this on every state
+    // change and clobber the edit that caused it.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
 
   // Handlers
   const handleRangeClick = (range: MarketCapRange) => {
     const newRange = selectedRange === range ? null : range;
     setSelectedRange(newRange);
     setPage(1);
-    setTimeout(updateUrl, 0);
   };
 
   const handleSectorChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     setSelectedSector(e.target.value);
     setSelectedIndustry('');
     setPage(1);
-    setTimeout(updateUrl, 0);
   };
 
   const handleIndustryChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     setSelectedIndustry(e.target.value);
     setPage(1);
-    setTimeout(updateUrl, 0);
   };
 
   const handleExchangeChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     setSelectedExchange(e.target.value);
     setPage(1);
-    setTimeout(updateUrl, 0);
   };
 
   const handleToggle = (
@@ -203,18 +254,15 @@ function FilterPageContent() {
     else if (key === 'biotech') setExcludeBiotech(value);
     else setIncludeDelisted(value);
     setPage(1);
-    setTimeout(updateUrl, 0);
   };
 
   const handleSortChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     setSort(e.target.value);
     setPage(1);
-    setTimeout(updateUrl, 0);
   };
 
   const handlePageChange = (newPage: number) => {
     setPage(newPage);
-    setTimeout(() => updateUrl({ replace: true }), 0);
   };
 
   const handleMetricChange = (key: string, minMax: { min: string; max: string }) => {
@@ -226,8 +274,10 @@ function FilterPageContent() {
     setActivePreset(null);
   };
 
+  // Metric boxes are debounced through the same effect, so "Apply" only needs to reset
+  // paging — the URL and the results follow the state on their own.
   const applyFilters = () => {
-    updateUrl();
+    setPage(1);
   };
 
   const clearFilters = () => {
@@ -247,8 +297,8 @@ function FilterPageContent() {
       emptyFilters[filter.key] = { min: '', max: '' };
     }
     setFilters(emptyFilters);
-
-    router.push('/screener');
+    setActivePreset(null);
+    setLoadedFrom(null);
   };
 
   const applyPreset = (preset: FilterPreset) => {
@@ -260,24 +310,6 @@ function FilterPageContent() {
     setFilters(newFilters);
     setActivePreset(preset.key);
     setPage(1);
-
-    const params = new URLSearchParams();
-    if (selectedRange) params.set('range', selectedRange);
-    if (selectedSector) params.set('sector', selectedSector);
-    if (selectedIndustry) params.set('industry', selectedIndustry);
-    params.set('preset', preset.key);
-
-    for (const filter of ALL_SCREEN_METRICS) {
-      const filterValue = newFilters[filter.key];
-      const isPercent = filter.isPercent || false;
-
-      const minParam = filterToParam(filterValue?.min || '', isPercent);
-      const maxParam = filterToParam(filterValue?.max || '', isPercent);
-      if (minParam) params.set(`${filter.key}_min`, minParam);
-      if (maxParam) params.set(`${filter.key}_max`, maxParam);
-    }
-
-    router.push(`/screener?${params.toString()}`);
   };
 
   const hasActiveFilters = !!(selectedRange || selectedSector || selectedIndustry ||
@@ -393,22 +425,10 @@ function FilterPageContent() {
   );
 }
 
-/** Re-key the grid on the query string so loading a saved screen actually takes effect.
- *
- *  FilterPageContent seeds every widget from `useSearchParams()` inside `useState`
- *  initialisers, which run ONCE per mount. Pushing a new URL for the same route re-renders
- *  but does not re-run them, so without this key a clicked screen would change the address
- *  bar and leave the filters untouched — the worst kind of bug, because it looks like it
- *  worked. Remounting re-reads the URL, which is this page's source of truth. */
-function KeyedFilterPage() {
-  const searchParams = useSearchParams();
-  return <FilterPageContent key={searchParams.toString()} />;
-}
-
 export default function FilterPage() {
   return (
     <Suspense fallback={<div className="flex justify-center py-12"><Spinner className="h-8 w-8 text-green" /></div>}>
-      <KeyedFilterPage />
+      <FilterPageContent />
     </Suspense>
   );
 }
