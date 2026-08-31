@@ -208,6 +208,7 @@ def _human(n: int) -> str:
 # and reports on a process that owns itself — which is also why closing the browser (or
 # restarting this API) leaves a running build untouched.
 _LOG_PATH = CORE_DIR / "data" / "bootstrap.log"
+_STOP_PATH = CORE_DIR / "data" / "bootstrap.stop"
 
 
 def _alive(pid: int | None) -> bool:
@@ -250,6 +251,7 @@ def _build_status() -> dict[str, Any]:
         "steps_done": done,
         "steps_total": len(steps),
         "log": str(_LOG_PATH),
+        "stopping": _STOP_PATH.exists(),
     }
 
 
@@ -316,6 +318,8 @@ def start_build(req: BuildRequest) -> dict[str, Any]:
     if req.force:
         argv.append("--force")
 
+    # A sentinel left by a previous stop would halt this run before it began.
+    _STOP_PATH.unlink(missing_ok=True)
     _LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
     log = open(_LOG_PATH, "ab", buffering=0)  # noqa: SIM115 - owned by the child
     try:
@@ -334,17 +338,31 @@ def start_build(req: BuildRequest) -> dict[str, Any]:
 
 @router.post("/build/stop")
 def stop_build() -> dict[str, Any]:
-    """Stop a running build, leaving it resumable.
+    """Ask a running build to stop, leaving it resumable.
 
-    SIGINT, not SIGKILL: bootstrap catches KeyboardInterrupt, marks the in-flight step,
-    writes its state file and exits cleanly. Killing it outright would strand the state
-    file mid-step, and the next run would have nothing to resume from."""
+    Two mechanisms, because neither is sufficient alone:
+
+      1. A **sentinel file** the build checks between steps. This is the one that actually
+         stops it, and it stops it at a clean, resumable boundary.
+      2. **SIGINT**, to break a step already blocked in a long Postgres call so it reaches
+         that boundary in seconds rather than minutes.
+
+    Signals alone were not enough: the interpreter defers SIGINT during a blocking driver
+    call, and when psycopg surfaces it, it arrives as a driver error rather than
+    KeyboardInterrupt — so the step was recorded as failed and the run continued to the
+    next one. Hence the sentinel.
+
+    Stopping is therefore not instantaneous: the in-flight step is abandoned (and will
+    re-run), but nothing after it starts."""
     status = _build_status()
     if not status["running"]:
         raise HTTPException(status_code=409, detail="No build is running.")
+    _STOP_PATH.parent.mkdir(parents=True, exist_ok=True)
+    _STOP_PATH.write_text("stop requested via /api/v1/setup/build/stop\n")
     try:
         os.kill(status["pid"], signal.SIGINT)
-    except OSError as exc:
-        raise HTTPException(500, f"Could not signal pid {status['pid']}: {exc}") from exc
+    except OSError:
+        pass          # the sentinel still stops it at the next step boundary
     return {"stopping": True, "pid": status["pid"],
-            "note": "Interrupted cleanly — start again to resume where it left off."}
+            "note": "Stopping at the next step boundary — the in-flight step is abandoned "
+                    "and will re-run. Start again to resume."}
