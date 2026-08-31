@@ -146,15 +146,36 @@ export interface SetupStatus {
   work: { ingest: WorkSplit; derive: WorkSplit };
 }
 
-/** Tail of the build log. Polls quickly while a build runs, stops when it doesn't — the
- *  point is to follow a long ingest without a terminal. */
-export function useBuildLog(enabled: boolean, running: boolean, tail = 300) {
+/** One past run of a job. Logs are one file per run, dated, with older ones gzipped. */
+export interface LogRun {
+  name: string;
+  archived: boolean;
+  bytes: number;
+  at: string;
+}
+
+export interface LogResponse {
+  lines: string[];
+  path: string;
+  exists: boolean;
+  /** Which run these lines came from; null when nothing has run yet. */
+  run: string | null;
+  runs: LogRun[];
+}
+
+/** Tail of a build log. Polls quickly while a build runs, stops when it doesn't — the
+ *  point is to follow a long ingest without a terminal. Pass `run` to read an older one;
+ *  polling is disabled then, since a finished run cannot change. */
+export function useBuildLog(
+  enabled: boolean, running: boolean, run?: string | null, tail = 300,
+) {
   return useQuery({
-    queryKey: ['build-log', tail],
-    queryFn: async (): Promise<{ lines: string[]; path: string; exists: boolean }> =>
-      (await api.get(`/setup/build/log?tail=${tail}`)).data,
+    queryKey: ['build-log', tail, run ?? 'latest'],
+    queryFn: async (): Promise<LogResponse> =>
+      (await api.get(`/setup/build/log?tail=${tail}`
+        + (run ? `&run=${encodeURIComponent(run)}` : ''))).data,
     enabled,
-    refetchInterval: running ? 2000 : false,
+    refetchInterval: running && !run ? 2000 : false,
     retry: false,
   });
 }
@@ -176,13 +197,16 @@ export function useDatasetJob() {
   };
 }
 
-export function useDatasetLog(key: string | null, running: boolean, tail = 200) {
+export function useDatasetLog(
+  key: string | null, running: boolean, run?: string | null, tail = 200,
+) {
   return useQuery({
-    queryKey: ['dataset-log', key, tail],
-    queryFn: async (): Promise<{ lines: string[]; exists: boolean; path: string }> =>
-      (await api.get(`/setup/dataset/log?key=${encodeURIComponent(key!)}&tail=${tail}`)).data,
+    queryKey: ['dataset-log', key, tail, run ?? 'latest'],
+    queryFn: async (): Promise<LogResponse & { key: string }> =>
+      (await api.get(`/setup/dataset/log?key=${encodeURIComponent(key!)}&tail=${tail}`
+        + (run ? `&run=${encodeURIComponent(run)}` : ''))).data,
     enabled: !!key,
-    refetchInterval: running ? 2000 : false,
+    refetchInterval: running && !run ? 2000 : false,
     retry: false,
   });
 }

@@ -6,6 +6,7 @@ import api from '@/lib/api';
 import { Card } from '@/components/Card';
 import { InfoCard, InfoGrid } from '@/components/InfoCard';
 import { Badge } from '@/components/Badge';
+import { TableStates } from '@/components/TableStates';
 import { EmptyState } from '@/components/EmptyState';
 import { Spinner } from '@/components/Loading';
 import { Table, TableHeader, TableRow, TableCell } from '@/components/Table';
@@ -110,7 +111,7 @@ export default function EtfPage({ params }: { params: Promise<{ permaticker: str
     staleTime: 1000 * 60 * 10,
   });
 
-  const { data: holdersData } = useQuery({
+  const { data: holdersData, isLoading: holdersLoading, error: holdersError } = useQuery({
     queryKey: ['etf-holders', pt],
     queryFn: async () =>
       (await api.get<{ holders: Holder[] }>(`/institutional/top-holders?perma_ticker=${pt}`)).data,
@@ -208,13 +209,22 @@ export default function EtfPage({ params }: { params: Promise<{ permaticker: str
         <Card>
           <h3 className="text-lg font-bold text-ink mb-1">Top Institutional Holders (13F)</h3>
           <p className="text-xs text-ink-muted mb-4">Largest reported 13F positions in this fund, by value.</p>
-          {holders.length === 0 ? (
+          {/* Do NOT claim "no holders" before the request has landed: that is a
+              confident answer to a question nobody has asked yet. */}
+          {!holdersLoading && !holdersError && holders.length === 0 ? (
             <EmptyState iconName="chart-line" title="No 13F holders" description="No institutional holdings reported for this fund." />
           ) : (
             <Table>
               <TableHeader columns={['Institution', 'Type', 'Value', 'Shares']} />
               <tbody>
-                {holders.slice(0, 15).map((h, i) => (
+                <TableStates
+                  loading={holdersLoading}
+                  error={holdersError}
+                  colSpan={4}
+                  rows={8}
+                  errorText="Could not load institutional holders."
+                />
+                {!holdersLoading && !holdersError && holders.slice(0, 15).map((h, i) => (
                   <TableRow key={`${h.investorname}-${i}`}>
                     <TableCell>{h.investorname}</TableCell>
                     <TableCell>{h.securitytype || '-'}</TableCell>
