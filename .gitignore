@@ -1,0 +1,30 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+
+# Secrets & local config (API keys live in core/.env)
+.env
+**/.env
+
+# Large, regenerable data (Sharadar/FRED downloads + load logs)
+core/data/
+
+# IDE / OS / tooling
+.idea/
+.DS_Store
+.claude/settings.local.json
+
+# Logs
+*.log
+web/node_modules/
+web/.next/
+web/tsconfig.tsbuildinfo
+web/.env*
+
+# Local repo audit (never committed)
+.audit/
+
+# Agent guidance — local only, not part of the published project
+CLAUDE.md

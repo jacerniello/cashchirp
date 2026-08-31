@@ -1,0 +1,9 @@
+# Dev / code-health tooling (not needed at runtime). Install with:
+#   pip install -r core/requirements-dev.txt
+# Used by `python .audit/codehealth.py` (the duplication / inefficiency radar).
+# That script and its report live in the gitignored .audit/ directory.
+ruff>=0.6        # PERF/SIM/C901/B/PLR lint + autofix (the optimize/clean workhorse)
+radon>=6.0       # optional: cyclomatic complexity / maintainability ranking
+
+# jscpd (cross-language copy-paste detector) is a Node tool, run via `npx jscpd`
+# (web/ already has Node). No Python package needed.

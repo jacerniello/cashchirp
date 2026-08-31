@@ -1,0 +1,74 @@
+@import "tailwindcss";
+
+/* The "research terminal" palette. NOTE the deliberate alias: --color-green* points at BLUE
+   (#2563eb), because the UI uses text-green/bg-green-soft to mean the accent. Do not "fix"
+   it to green. */
+@theme {
+  --font-sans: "Inter", -apple-system, BlinkMacSystemFont, sans-serif;
+
+  --color-white: #ffffff;
+  --color-surface: #f5f4f2;
+  --color-surface-warm: #f7f6f4;
+  --color-panel: #ffffff;
+  --color-ink: #111111;
+  --color-ink-mid: #2a2a2a;
+  --color-ink-light: #3d3d3d;
+  --color-ink-faint: #5c5c5c;
+  --color-ink-muted: #94a3b8;
+  --color-rule: #d8d6d3;
+  --color-rule-light: #e5e3e0;
+
+  /* Accent (blue) — and the green/blue aliases that resolve to it. */
+  --color-accent: #2563eb;
+  --color-accent-dark: #1d4ed8;
+  --color-accent-soft: #dbeafe;
+  --color-green: #2563eb;
+  --color-green-dark: #1d4ed8;
+  --color-green-soft: #dbeafe;
+  --color-green-text: #1d4ed8;
+  --color-green-light: #dbeafe;
+  --color-green-medium: #60a5fa;
+  --color-blue: #2563eb;
+  --color-blue-soft: #dbeafe;
+  --color-blue-text: #1d4ed8;
+  --color-blue-light: #dbeafe;
+  --color-gold: #d4af37;
+  --color-gold-soft: #fef9e7;
+
+  /* Performance up/down (distinct from the blue accent). */
+  --color-pos: #16a34a;
+  --color-neg: #dc2626;
+  --color-red: #dc2626;
+  --color-neg-soft: #fef2f2;
+  --color-red-soft: #fef2f2;
+}
+
+html,
+body {
+  background: var(--color-surface);
+  color: var(--color-ink);
+  margin: 0;
+}
+
+body {
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+.tnum {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Investing animations (used across its pages/components). */
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes info-pulse {
+  0%, 100% { background-color: rgb(191 219 254); }
+  50% { background-color: rgb(59 130 246); color: white; }
+}

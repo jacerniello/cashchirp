@@ -1,0 +1,806 @@
+"""Build this database from nothing, with a live progress display.
+
+`update_all` refreshes a database that already exists. This is the step before that:
+it takes someone from "I cloned the repo" to "I have my own populated copy", checks
+the things that actually go wrong first, and shows where a multi-hour backfill has
+got to instead of leaving them staring at a silent terminal.
+
+    python -m core.scripts.setup.bootstrap --check      # preflight only, touches nothing
+    python -m core.scripts.setup.bootstrap --plan       # print the step list and exit
+    python -m core.scripts.setup.bootstrap --create-db  # create the database if missing, then run
+    python -m core.scripts.setup.bootstrap              # preflight -> schema -> load -> derived
+    python -m core.scripts.setup.bootstrap --only SEP SF1
+    python -m core.scripts.setup.bootstrap --status     # what's in the DB right now
+    python -m core.scripts.setup.bootstrap --watch      # follow a run started in another terminal
+
+The load plan is NOT duplicated here: `SHARADAR_PLAN` and the rebuild guard are
+imported from `update_all`, so the two stay in step by construction. What this adds
+is the from-zero path (create database, create schema), the preflight, and progress.
+
+A first run downloads tens of GB from Sharadar and takes hours. Every step is
+idempotent and the run is resumable: re-running skips steps whose table already
+holds rows, so a failure or a Ctrl-C costs only the step it happened in. `--force`
+re-runs them anyway.
+
+Progress is written to `core/data/bootstrap-state.json` after every step, which is
+what `--watch` reads. That file is the reason you can close the laptop lid on a
+6-hour backfill and still find out what happened.
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import re
+import shutil
+import sys
+import time
+from dataclasses import dataclass, field
+from datetime import datetime
+from typing import Callable
+
+from core.backend import sources
+from core.config import CORE_DIR, settings
+
+STATE_PATH = CORE_DIR / "data" / "bootstrap-state.json"
+
+# Sizes and destination tables come from the data-source registry (core.backend.sources),
+# the same place the load plan and the published provenance come from.
+#
+# WEIGHT_MB is measured on a fully built instance, not guessed — it is what makes the
+# progress bar track real work rather than step count, where SEP (9.7 GB) would otherwise
+# weigh the same as TICKERS (24 MB). Only the ratios matter.
+WEIGHT_MB: dict[str, int] = sources.weights()
+
+# Destination table per step, used two ways: to report row counts as steps finish, and to
+# decide on a resume whether a step already ran. Steps absent here always re-run.
+STEP_TABLE: dict[str, str] = sources.step_tables()
+
+
+@dataclass
+class Step:
+    key: str
+    label: str
+    phase: str
+    run: Callable[[Callable[[str], None]], object]
+    table: str | None = None
+    weight: int = 1
+    status: str = "pending"  # pending | running | ok | FAIL | skipped
+    seconds: float = 0.0
+    rows: int | None = None
+    note: str = ""
+    detail: str = ""     # live sub-step message from the loader
+    frac: float = 0.0    # 0..1 completion REPORTED by the loader (not estimated)
+    frac_known: bool = False  # False => the loader gave no denominator; frac is meaningless
+    _zip_mb: float = 0.0      # bulk-export size, once the loader announces it
+
+
+# --------------------------------------------------------------------------- preflight
+
+@dataclass
+class Check:
+    name: str
+    ok: bool
+    detail: str
+    fatal: bool = True
+    fix: str = ""
+
+
+def _server_dsn() -> str:
+    """DSN for the `postgres` maintenance database — used to check the server is up and
+    to create the target database, neither of which can go through the app engine (it
+    connects to a database that may not exist yet)."""
+    pw = f":{settings.postgres_password}" if settings.postgres_password else ""
+    return (f"postgresql://{settings.postgres_user}{pw}"
+            f"@{settings.postgres_host}:{settings.postgres_port}/postgres")
+
+
+def _database_exists() -> bool:
+    import psycopg
+    with psycopg.connect(_server_dsn(), connect_timeout=5) as conn:
+        cur = conn.execute("SELECT 1 FROM pg_database WHERE datname = %s",
+                           (settings.postgres_db,))
+        return cur.fetchone() is not None
+
+
+def create_database() -> str:
+    """CREATE DATABASE, or report it already existed. Needs autocommit — Postgres
+    refuses CREATE DATABASE inside a transaction block."""
+    import psycopg
+    if _database_exists():
+        return f"database {settings.postgres_db!r} already exists"
+    with psycopg.connect(_server_dsn(), autocommit=True, connect_timeout=5) as conn:
+        conn.execute(f'CREATE DATABASE "{settings.postgres_db}"')
+    return f"created database {settings.postgres_db!r}"
+
+
+def preflight() -> list[Check]:
+    """The five things that actually stop a fresh setup, checked in the order they bite.
+    Every failure carries the command that fixes it — a preflight that only says 'no'
+    just moves the guesswork somewhere else."""
+    checks: list[Check] = []
+
+    env_file = CORE_DIR / ".env"
+    checks.append(Check(
+        "core/.env present", env_file.exists(),
+        str(env_file) if env_file.exists() else "missing",
+        fix="cp core/.env.example core/.env  # then add your API keys",
+    ))
+
+    # Credentials come from the data-source registry, so a new source that needs a key is
+    # checked here the moment it is declared — nobody has to remember to add it.
+    WHERE = {
+        "NASDAQ_DATA_LINK_API_KEY": "https://data.nasdaq.com/account/profile",
+        "FRED_API_KEY": "https://fredaccount.stlouisfed.org/apikeys",
+        "SEC_USER_AGENT": "use your own name and e-mail, e.g. 'Jane Doe jane@example.com'",
+    }
+    for env, providers in sources.required_env():
+        value = str(getattr(settings, env.lower(), "") or os.environ.get(env, "")).strip()
+        where = WHERE.get(env, "")
+        checks.append(Check(
+            f"{env} set", bool(value),
+            (f"…{value[-4:]}" if len(value) > 4 else "set") if value else "empty",
+            # Only Sharadar is load-bearing for a full build; the others gate one phase
+            # each, so a missing one is a warning you can build around, not a wall.
+            fatal=(env == "NASDAQ_DATA_LINK_API_KEY"),
+            fix=f"add {env} to core/.env ({', '.join(providers)}) — {where}",
+        ))
+
+    # Server reachable. Distinguished from "database missing" on purpose: they have
+    # completely different fixes, and conflating them is why people restart Postgres
+    # when all they needed was createdb.
+    server_ok, server_detail = False, ""
+    try:
+        import psycopg
+        with psycopg.connect(_server_dsn(), connect_timeout=5) as conn:
+            server_detail = conn.execute("SHOW server_version").fetchone()[0]
+        server_ok = True
+    except Exception as exc:
+        server_detail = f"{type(exc).__name__}: {exc}".split("\n")[0]
+    checks.append(Check(
+        f"Postgres reachable at {settings.postgres_host}:{settings.postgres_port}",
+        server_ok, f"server {server_detail}" if server_ok else server_detail,
+        fix="start Postgres, or: cd core && docker compose up -d",
+    ))
+
+    if server_ok:
+        try:
+            exists = _database_exists()
+        except Exception as exc:
+            exists, server_detail = False, str(exc)
+        checks.append(Check(
+            f"database {settings.postgres_db!r} exists", exists,
+            "ready" if exists else "missing",
+            fix="re-run with --create-db (or: createdb "
+                f"{settings.postgres_db})",
+        ))
+
+    return checks
+
+
+# ------------------------------------------------------------------------- db queries
+
+def table_rows(table: str) -> int | None:
+    """Row estimate from the planner's statistics, not COUNT(*). On a 9 GB table
+    COUNT(*) is a full scan taking minutes — unusable for a progress display that
+    refreshes per step. reltuples is exact enough to answer 'did this load'."""
+    from sqlalchemy import text
+
+    from core.backend.db.engine import engine
+    schema, _, name = table.rpartition(".")
+    try:
+        with engine.connect() as conn:
+            n = conn.execute(text("""
+                SELECT c.reltuples::bigint
+                FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+                WHERE c.relname = :name AND n.nspname = :schema
+            """), {"name": name, "schema": schema or "public"}).scalar()
+        # -1 is "never analyzed"; a freshly loaded table reads that way until autovacuum
+        # catches up, so fall back to a real count only in that (small-table) case.
+        if n is not None and n < 0:
+            with engine.connect() as conn:
+                n = conn.execute(text(f"SELECT count(*) FROM {table}")).scalar()
+        return n
+    except Exception:
+        return None
+
+
+def db_status() -> list[tuple[str, int, str]]:
+    """Every user table with its row estimate and on-disk size — the answer to
+    'what do I actually have?', which is the question after any interrupted run."""
+    from sqlalchemy import text
+
+    from core.backend.db.engine import engine
+    with engine.connect() as conn:
+        rows = conn.execute(text("""
+            SELECT n.nspname || '.' || c.relname AS name,
+                   GREATEST(c.reltuples::bigint, 0) AS rows,
+                   pg_size_pretty(pg_total_relation_size(c.oid)) AS size
+            FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+            WHERE c.relkind IN ('r','m','p')
+              AND n.nspname NOT IN ('pg_catalog','information_schema')
+            ORDER BY pg_total_relation_size(c.oid) DESC
+        """)).all()
+    return [(r.name, r.rows, r.size) for r in rows]
+
+
+# ----------------------------------------------------------------------------- display
+
+class Display:
+    """Two renderers behind one interface. On a TTY the step list is redrawn in place;
+    piped to a file or a CI log it degrades to one line per transition, because a
+    redrawing display in a log file is thousands of lines of escape codes."""
+
+    def __init__(self, steps: list[Step], plain: bool | None = None):
+        self.steps = steps
+        self.started = time.time()
+        self.plain = (not sys.stdout.isatty()) if plain is None else plain
+        self._drawn = 0
+        self._last = 0.0
+
+    def _bar(self, frac: float, width: int = 28) -> str:
+        filled = int(frac * width)
+        return "█" * filled + "░" * (width - filled)
+
+    def _progress(self) -> tuple[float, int, int]:
+        """Overall completion from what the loaders actually REPORT, not from a size
+        estimate. Finished steps count 1.0; a running step counts the fraction it has
+        reported (rows or bytes against a stated total) and 0 if it hasn't reported one.
+
+        Deliberately not weighted by predicted size: a step that turns out to be a no-op
+        (already loaded, skipped on resume) would otherwise swing the bar by 20% for no
+        work, and a table whose real size differs from the estimate makes the bar lie in
+        the other direction. Equal steps plus real in-step reporting is a number that
+        never claims progress that didn't happen."""
+        n = len(self.steps) or 1
+        done = sum(1.0 for s in self.steps if s.status in ("ok", "skipped", "FAIL"))
+        running = sum(s.frac for s in self.steps if s.status == "running" and s.frac_known)
+        return (done + running) / n, int(done), len(self.steps)
+
+    def log(self, msg: str) -> None:
+        print(f"[{datetime.now():%H:%M:%S}] {msg}", flush=True)
+
+    def refresh(self, force: bool = False) -> None:
+        if self.plain:
+            return
+        if not force and time.time() - self._last < 0.2:  # cap redraws; loaders are chatty
+            return
+        self._last = time.time()
+        width = shutil.get_terminal_size((100, 40)).columns
+        out = []
+        frac, ndone, ntotal = self._progress()
+        el = _hms(time.time() - self.started)
+        out.append(f"\x1b[1mBuilding {settings.postgres_db}\x1b[0m  "
+                   f"{settings.postgres_host}:{settings.postgres_port}   elapsed {el}")
+        out.append("")
+        for s in self.steps:
+            mark, colour = {
+                "pending": ("·", "\x1b[90m"), "running": ("▶", "\x1b[36m"),
+                "ok": ("✔", "\x1b[32m"), "skipped": ("–", "\x1b[90m"),
+                "FAIL": ("✗", "\x1b[31m"),
+            }[s.status]
+            right = ""
+            if s.status == "running":
+                pct = f"{s.frac * 100:.0f}%  " if s.frac_known else ""
+                right = pct + (s.detail or "working…")
+            elif s.status == "ok":
+                right = f"{_hms(s.seconds)}" + (f"   {s.rows:,} rows" if s.rows else "")
+            elif s.status == "skipped":
+                right = s.note or "already loaded"
+            elif s.status == "FAIL":
+                right = s.note
+            line = f" {colour}{mark}\x1b[0m {s.label:<38} {right}"
+            out.append(line[:width + len(colour) + 5])
+        out.append("")
+        out.append(f" {self._bar(frac)}  {frac * 100:5.1f}%   {ndone}/{ntotal} steps"
+                   f"   (reported, not estimated)")
+
+        if self._drawn:
+            sys.stdout.write(f"\x1b[{self._drawn}A")
+        for line in out:
+            sys.stdout.write("\x1b[2K" + line + "\n")
+        self._drawn = len(out)
+        sys.stdout.flush()
+
+    def transition(self, step: Step) -> None:
+        if self.plain:
+            if step.status == "running":
+                self.log(f"-> {step.label}")
+            else:
+                extra = f" ({step.rows:,} rows)" if step.rows else ""
+                note = f" — {step.note}" if step.note else ""
+                self.log(f"   {step.label}: {step.status} in "
+                         f"{_hms(step.seconds)}{extra}{note}")
+        else:
+            self.refresh(force=True)
+
+    def finish(self) -> None:
+        self.refresh(force=True)
+
+
+def _hms(secs: float) -> str:
+    secs = int(secs)
+    h, m, s = secs // 3600, (secs % 3600) // 60, secs % 60
+    return f"{h:d}:{m:02d}:{s:02d}" if h else f"{m:d}:{s:02d}"
+
+
+# ------------------------------------------------------------------------- state file
+
+def write_state(steps: list[Step], started: float, phase: str) -> None:
+    """Best-effort: a failed status write must never abort a six-hour load."""
+    try:
+        STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
+        payload = {
+            "database": settings.postgres_db,
+            "host": f"{settings.postgres_host}:{settings.postgres_port}",
+            "phase": phase,
+            "pid": os.getpid(),
+            "started_at": datetime.fromtimestamp(started).isoformat(timespec="seconds"),
+            "updated_at": datetime.now().isoformat(timespec="seconds"),
+            "elapsed_seconds": round(time.time() - started, 1),
+            "steps": [
+                {"key": s.key, "label": s.label, "phase": s.phase, "status": s.status,
+                 "seconds": round(s.seconds, 1), "rows": s.rows,
+                 "note": s.note, "detail": s.detail,
+                 "frac": round(s.frac, 4), "frac_known": s.frac_known}
+                for s in steps
+            ],
+        }
+        tmp = STATE_PATH.with_suffix(".tmp")
+        tmp.write_text(json.dumps(payload, indent=2))
+        tmp.replace(STATE_PATH)  # atomic: --watch never reads a half-written file
+    except Exception:
+        pass
+
+
+def watch(interval: float = 1.0) -> int:
+    """Follow a run happening in another terminal by tailing the state file."""
+    if not STATE_PATH.exists():
+        print(f"No run state at {STATE_PATH}.\n"
+              f"Start one with: python -m core.scripts.setup.bootstrap")
+        return 1
+    drawn = 0
+    try:
+        while True:
+            try:
+                st = json.loads(STATE_PATH.read_text())
+            except Exception:
+                time.sleep(interval)
+                continue
+            lines = [f"\x1b[1m{st['database']}\x1b[0m @ {st['host']}   "
+                     f"phase {st['phase']}   elapsed {_hms(st['elapsed_seconds'])}"
+                     f"   (updated {st['updated_at'].split('T')[1]})", ""]
+            for s in st["steps"]:
+                mark, colour = {
+                    "pending": ("·", "\x1b[90m"), "running": ("▶", "\x1b[36m"),
+                    "ok": ("✔", "\x1b[32m"), "skipped": ("–", "\x1b[90m"),
+                    "FAIL": ("✗", "\x1b[31m"),
+                }.get(s["status"], ("?", ""))
+                if s["status"] == "running":
+                    pct = f"{s.get('frac', 0) * 100:.0f}%  " if s.get("frac_known") else ""
+                    right = pct + (s["detail"] or "working…")
+                else:
+                    right = (f"{_hms(s['seconds'])}"
+                             + (f"   {s['rows']:,} rows" if s.get("rows") else ""))
+                lines.append(f" {colour}{mark}\x1b[0m {s['label']:<38} {right}")
+            done = sum(1 for s in st["steps"] if s["status"] in ("ok", "skipped", "FAIL"))
+            running = sum(s.get("frac", 0) for s in st["steps"]
+                          if s["status"] == "running" and s.get("frac_known"))
+            frac = (done + running) / max(len(st["steps"]), 1)
+            lines += ["", f" {frac * 100:5.1f}%   {done}/{len(st['steps'])} steps"
+                          f"   (reported, not estimated)"]
+            if drawn:
+                sys.stdout.write(f"\x1b[{drawn}A")
+            for ln in lines:
+                sys.stdout.write("\x1b[2K" + ln + "\n")
+            drawn = len(lines)
+            sys.stdout.flush()
+            if st["phase"] in ("done", "failed", "interrupted"):
+                return 0
+            time.sleep(interval)
+    except KeyboardInterrupt:
+        return 0
+
+
+# ------------------------------------------------------------------------------ plan
+
+def _runner(ds: sources.Dataset) -> Callable[[Callable[[str], None]], object]:
+    """The callable that actually ingests one registry dataset.
+
+    Dispatch is by phase, and everything variable (Sharadar sync mode and kwargs, the
+    FRED vintage URL, the derived rebuild function) is read off the Dataset — so adding a
+    source is a registry entry, not another branch here."""
+
+    if ds.phase == "schema":
+        def run_schema(progress):
+            from core.backend.db import models  # noqa: F401  (registers tables on Base)
+            from core.backend.db.base import Base
+            from core.backend.db.engine import engine
+            progress("creating tables…")
+            Base.metadata.create_all(engine)
+            return f"{len(Base.metadata.tables)} tables"
+        return run_schema
+
+    if ds.phase == "sharadar":
+        table = ds.key.split(":", 1)[1]
+
+        def run_sharadar(progress, table=table, mode=ds.mode, kwargs=dict(ds.kwargs)):
+            from core.backend.ingest.sharadar.sharadar_generic import load_table, sync_coarse_table, sync_table
+            fn = {"sync": sync_table, "quarters": sync_coarse_table,
+                  "full": load_table}[mode]
+            # skip_derived: derived objects are rebuilt once at the end, not after each
+            # table — same reasoning as update_all, and it matters far more here, where
+            # every table is a full backfill.
+            return fn(table, skip_derived=True, progress=lambda *a: progress(" ".join(
+                str(x) for x in a)), **kwargs)
+        return run_sharadar
+
+    if ds.key in ("fred:FRED-MD", "fred:FRED-QD"):
+        dataset = ds.key.split(":", 1)[1]
+
+        def run_fred_vintages(progress, dataset=dataset):
+            from core.backend.ingest.fred.fred_md import FRED_MD_VINTAGES_URL, FRED_QD_VINTAGES_URL, ingest_fred_vintages
+            url = FRED_MD_VINTAGES_URL if dataset == "FRED-MD" else FRED_QD_VINTAGES_URL
+            progress(f"downloading {dataset} vintages…")
+            return ingest_fred_vintages(url=url, dataset=dataset, full=False)
+        return run_fred_vintages
+
+    if ds.key == "fred:spot":
+        def run_fred_spot(progress):
+            from core.backend.ingest.fred.fred_api import COMMODITY_SPOT_SERIES, ingest_fred_series
+            for i, sid in enumerate(COMMODITY_SPOT_SERIES, 1):
+                progress(f"{sid} ({i}/{len(COMMODITY_SPOT_SERIES)})")
+                ingest_fred_series(sid)
+            return f"{len(COMMODITY_SPOT_SERIES)} series"
+        return run_fred_spot
+
+    if ds.phase == "finra":
+        def run_finra(progress):
+            from core.backend.ingest.finra import finra_short_interest as fsi
+            progress("syncing settlement dates…")
+            return fsi.sync_short_interest()
+        return run_finra
+
+    if ds.phase == "sec":
+        def run_sec(progress):
+            from core.scripts.load.load_sec_fund_classes import load
+            progress("company_tickers_mf.json…")
+            return f"{load()} rows"
+        return run_sec
+
+    if ds.phase == "derived":
+        # endpoint is "repositories.<module>.<function>" — the registry says which
+        # rebuild to call, so this stays declarative.
+        _, module, fname = ds.endpoint.split(".", 2)
+
+        def run_derived(progress, module=module, fname=fname, name=ds.label):
+            import importlib
+
+            from core.backend.db.engine import session_scope
+            mod = importlib.import_module(f"core.backend.queries.{module}")
+            progress(f"rebuilding {name}…")
+            with session_scope() as session:
+                return getattr(mod, fname)(session)
+        return run_derived
+
+    raise ValueError(f"registry dataset {ds.key!r} has no runner (phase {ds.phase!r})")
+
+
+def build_steps(only: list[str] | None,
+                phases: list[str] | None = None) -> list[Step]:
+    """The step list, built from the data-source registry (`core.backend.sources`).
+
+    The registry is the single source of truth: `update_all` derives its SHARADAR_PLAN
+    from the same list and `docs/setup/sources.md` is generated from it, so what runs,
+    what refreshes, and what the docs claim cannot drift apart.
+
+    Two ways to build a subset, because there are two different reasons to want one:
+
+    - `only`   — named Sharadar tables. For re-running one table that failed, so the other
+                 phases are skipped entirely.
+    - `phases` — whole phases (`fred`, `derived`, …). For a deliberately smaller database:
+                 the macro layer without the paid Sharadar bundle, or a derived-only
+                 rebuild after changing a repository."""
+    only_up = {t.upper() for t in only} if only else None
+    want_phases = {p.lower() for p in phases} if phases else None
+    steps: list[Step] = []
+    for ds in sources.DATASETS:
+        if want_phases is not None and ds.phase not in want_phases:
+            continue
+        if only_up is not None:
+            if ds.phase != "sharadar" or ds.key.split(":", 1)[1] not in only_up:
+                continue
+        mode = f"  ({ds.mode})" if ds.mode else ""
+        steps.append(Step(
+            key=ds.key,
+            label=f"{ds.phase} {ds.label}{mode}" if ds.phase != "schema" else ds.label,
+            phase=ds.phase,
+            run=_runner(ds),
+            table=ds.table,
+            weight=WEIGHT_MB.get(ds.key, 1),
+        ))
+    return steps
+
+
+# ------------------------------------------------------------------------------- run
+
+# The loaders report free text, and only some of it carries a denominator. These pull a
+# REAL completion fraction out of the messages that do; everything else leaves frac_known
+# False, and the display shows no per-step percentage rather than inventing one.
+#   "zip ready (1234 MB)"        -> the denominator for the COPY that follows
+#   "COPY 512 MB ..."            -> bytes copied against that denominator
+#   "permaticker: 8,400,000/41,000,000 rows" -> an explicit ratio
+_RE_ZIP = re.compile(r"zip ready \(([\d.]+)\s*MB\)", re.I)
+_RE_COPY = re.compile(r"COPY\s+([\d.]+)\s*MB", re.I)
+_RE_RATIO = re.compile(r"([\d,]+)\s*/\s*([\d,]+)")
+
+
+def _report_frac(step: Step, msg: str) -> None:
+    """Update `step.frac` from a loader message, if that message actually says how far
+    along it is. Never guesses: a message with no denominator leaves the step unmeasured."""
+    if m := _RE_ZIP.search(msg):
+        step._zip_mb = float(m.group(1))
+        return
+    if (m := _RE_COPY.search(msg)) and step._zip_mb > 0:
+        # The zip is compressed and the COPY counts uncompressed bytes, so this can run
+        # past 100% — clamp, and treat it as "nearly done" rather than a wrong number.
+        step.frac = min(float(m.group(1)) / step._zip_mb, 1.0)
+        step.frac_known = True
+        return
+    if m := _RE_RATIO.search(msg):
+        done = float(m.group(1).replace(",", ""))
+        total = float(m.group(2).replace(",", ""))
+        # `done <= total` rejects the obvious false positive: a slash-date like 2020/01
+        # parses as a ratio of 2020 to 1 and would otherwise pin the bar at 100%.
+        if total > 0 and done <= total:
+            step.frac = done / total
+            step.frac_known = True
+
+
+def _run_one(step: Step, steps: list[Step], display: Display, started: float,
+             resume: bool) -> None:
+    """Execute one step, keeping display + state file current throughout."""
+    if resume and step.table:
+        existing = table_rows(step.table)
+        if existing and existing > 0:
+            step.status, step.rows = "skipped", existing
+            step.note = f"already has {existing:,} rows — use --force to rebuild"
+            display.transition(step)
+            write_state(steps, started, step.phase)
+            return
+
+    step.status = "running"
+    step.frac, step.frac_known, step._zip_mb = 0.0, False, 0.0
+    display.transition(step)
+    write_state(steps, started, step.phase)
+    t0 = time.time()
+
+    def progress(msg: str) -> None:
+        step.detail = str(msg)[:70]
+        _report_frac(step, str(msg))
+        display.refresh()
+        # The state file is what --watch and a post-mortem read, so it has to advance
+        # during a long step, not only at its end. Throttled to once a second.
+        now = time.time()
+        if now - getattr(progress, "_last", 0.0) > 1.0:
+            progress._last = now  # type: ignore[attr-defined]
+            write_state(steps, started, step.phase)
+
+    try:
+        out = step.run(progress)
+        step.status = "ok"
+        if isinstance(out, dict) and "rows" in out:
+            step.rows = out.get("total") or out.get("rows")
+        elif step.table:
+            step.rows = table_rows(step.table)
+        if step.rows is None and out is not None:
+            step.note = str(out)[:60]
+    except KeyboardInterrupt:
+        raise
+    except Exception as exc:
+        step.status = "FAIL"
+        step.note = f"{type(exc).__name__}: {exc}".split("\n")[0][:70]
+    finally:
+        step.seconds = time.time() - t0
+        step.detail = ""
+        step.frac = 1.0 if step.status in ("ok", "skipped") else step.frac
+        display.transition(step)
+        write_state(steps, started, step.phase)
+
+
+def execute(steps: list[Step], display: Display, resume: bool) -> int:
+    from core.scripts.load.update_all import _suppress_app_rebuilds
+
+    started = display.started
+    write_state(steps, started, "starting")
+    ingest = [s for s in steps if s.phase in ("sharadar", "fred", "finra", "sec")]
+    derived = [s for s in steps if s.phase == "derived"]
+    schema = [s for s in steps if s.phase == "schema"]
+
+    try:
+        for step in schema:
+            _run_one(step, steps, display, started, resume=False)  # always idempotent
+        if ingest:
+            with _suppress_app_rebuilds():
+                for step in ingest:
+                    _run_one(step, steps, display, started, resume)
+        for step in derived:
+            _run_one(step, steps, display, started, resume)
+    except KeyboardInterrupt:
+        for s in steps:
+            if s.status == "running":
+                s.status, s.note = "FAIL", "interrupted"
+        display.finish()
+        write_state(steps, started, "interrupted")
+        print("\nInterrupted. Re-run the same command to resume "
+              "— finished steps are skipped.")
+        return 130
+
+    display.finish()
+    failed = [s for s in steps if s.status == "FAIL"]
+    write_state(steps, started, "failed" if failed else "done")
+
+    print()
+    print(f"{'step':44} {'status':8} {'time':>8}  rows")
+    print("-" * 78)
+    for s in steps:
+        rows = f"{s.rows:,}" if s.rows else ""
+        print(f"{s.label:44} {s.status:8} {_hms(s.seconds):>8}  {rows}")
+    total = _hms(time.time() - started)
+    print(f"\n{len(steps) - len(failed)}/{len(steps)} steps ok in {total}.")
+    if failed:
+        print(f"{len(failed)} FAILED: {', '.join(s.key for s in failed)}")
+        print("Re-run to retry only what's missing; add --force to redo everything.")
+        return 1
+    print(f"Database {settings.postgres_db!r} is ready. "
+          f"Serve it with:  uvicorn core.api.main:app --port 8001")
+    return 0
+
+
+# ------------------------------------------------------------------------------ main
+
+def print_sources() -> int:
+    """Where every byte comes from — the registry, grouped by provider.
+
+    Printed rather than buried in a doc because the question "where did this number come
+    from?" is asked while looking at the data, and an answer you have to go and find is an
+    answer most people don't get."""
+    print("Data sources — where every byte in this database comes from\n")
+    for sid, src in sources.SOURCES.items():
+        ds = [d for d in sources.DATASETS if d.source == sid]
+        if not ds:
+            continue
+        mb = sum(d.size_mb for d in ds)
+        print(f"{src.provider}")
+        print(f"  licence   {src.licence}")
+        print(f"  updates   {src.cadence}")
+        if src.auth_env:
+            have = "set" if os.environ.get(src.auth_env) or getattr(
+                settings, src.auth_env.lower(), "") else "NOT SET"
+            print(f"  auth      {src.auth_env}  [{have}]")
+        if src.url:
+            print(f"  url       {src.url}")
+        print(f"  size      {sources.size_h(mb)} across {len(ds)} dataset"
+              f"{'s' if len(ds) != 1 else ''}")
+        if src.caveat:
+            print(f"  note      {src.caveat}")
+        print()
+        for d in ds:
+            tables = ", ".join(d.tables) or "—"
+            print(f"    {d.endpoint:<62} {d.size_h:>8}")
+            print(f"      -> {tables:<40} {('mode: ' + d.mode) if d.mode else ''}")
+        print()
+    print(f"Total, fully built: ~{sources.size_h(sources.total_mb())}")
+    print("Generated table of the same registry: docs/setup/sources.md")
+    return 0
+
+
+def main() -> int:
+    p = argparse.ArgumentParser(
+        description="Build this database from scratch, with live progress.")
+    p.add_argument("--check", action="store_true", help="Run preflight only and exit.")
+    p.add_argument("--plan", action="store_true", help="Print the step list and exit.")
+    p.add_argument("--sources", action="store_true",
+                   help="Show where every dataset comes from (provider, licence, size).")
+    p.add_argument("--status", action="store_true",
+                   help="Show what the database currently holds and exit.")
+    p.add_argument("--watch", action="store_true",
+                   help="Follow a run started in another terminal.")
+    p.add_argument("--create-db", action="store_true",
+                   help="Create the database if it does not exist.")
+    p.add_argument("--only", nargs="*", default=None,
+                   help="Only these Sharadar tables (skips FRED/FINRA/SEC/derived).")
+    p.add_argument("--only-phase", nargs="*", default=None, dest="only_phase",
+                   metavar="PHASE",
+                   help="Only these phases: " + " ".join(p for p, _ in sources.PHASES)
+                        + ". Builds a deliberately smaller database.")
+    p.add_argument("--force", action="store_true",
+                   help="Re-run steps whose tables already hold rows.")
+    p.add_argument("--plain", action="store_true",
+                   help="One line per event instead of a redrawing display.")
+    args = p.parse_args()
+
+    if args.sources:
+        return print_sources()
+
+    if args.watch:
+        return watch()
+
+    if args.status:
+        rows = db_status()
+        if not rows:
+            print(f"{settings.postgres_db}: no tables yet. "
+                  f"Run: python -m core.scripts.setup.bootstrap")
+            return 0
+        print(f"{settings.postgres_db} @ {settings.postgres_host}:{settings.postgres_port}\n")
+        print(f"{'table':52} {'rows':>14} {'size':>10}")
+        print("-" * 78)
+        for name, n, size in rows:
+            print(f"{name:52} {n:>14,} {size:>10}")
+        print(f"\n{len(rows)} tables. Load history: python -m core.scripts.ops.load_status")
+        return 0
+
+    checks = preflight()
+    print("Preflight")
+    for c in checks:
+        mark = "PASS" if c.ok else ("FAIL" if c.fatal else "WARN")
+        print(f"  {mark}  {c.name:<52} {c.detail}")
+    bad = [c for c in checks if not c.ok and c.fatal]
+    warn = [c for c in checks if not c.ok and not c.fatal]
+
+    # A missing database is the one failure this tool can fix itself.
+    if args.create_db and any("exists" in c.name for c in bad):
+        try:
+            print(f"\n  {create_database()}")
+            bad = [c for c in bad if "exists" not in c.name]
+        except Exception as exc:
+            print(f"\n  could not create database: {exc}")
+
+    if bad:
+        print("\nBlocked:")
+        for c in bad:
+            print(f"  {c.name}\n      {c.fix}")
+        return 1
+
+    # A missing optional credential gates one phase, not the build. Say which, and carry
+    # on — refusing to start over a key you may not need is its own kind of wrong.
+    if warn:
+        print("\nWarnings (the build will run; these phases will fail):")
+        for c in warn:
+            print(f"  {c.name}\n      {c.fix}")
+        print()
+    else:
+        print("  all checks passed\n")
+
+    if args.check:
+        return 0
+
+    steps = build_steps(args.only, args.only_phase)
+
+    if args.plan:
+        print(f"{'step':42} {'mode':9} {'from':14} {'size on disk':>13}")
+        print("-" * 88)
+        phase = None
+        for st in steps:
+            ds = sources.BY_KEY.get(st.key)
+            if ds and ds.phase != phase:
+                phase = ds.phase
+                desc = dict(sources.PHASES).get(phase, "")
+                print(f"\n  {phase.upper()}  {desc}")
+            src = sources.SOURCES[ds.source].short if ds else ""
+            print(f"  {ds.label[:40]:40} {(ds.mode or ''):9} {src:14} {ds.size_h:>13}")
+        print(f"\n{len(steps)} steps, ~{sources.size_h(sum(st.weight for st in steps))} "
+              f"on disk when built.")
+        if any(st.phase == "sharadar" for st in steps):
+            print("This downloads tens of GB from Sharadar and takes hours. It is resumable.")
+        else:
+            print("No Sharadar steps in this plan — nothing paid is downloaded.")
+        print("Provenance per source: python -m core.scripts.setup.bootstrap --sources")
+        return 0
+
+    display = Display(steps, plain=args.plain or None)
+    return execute(steps, display, resume=not args.force)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

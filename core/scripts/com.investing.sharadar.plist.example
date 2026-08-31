@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  macOS launchd job: refresh the whole dataset once a day (all Sharadar tables in
+  their correct sync mode + FRED + derived rebuilds) via update_all.
+
+  TEMPLATE — replace every {{PROJECT_ROOT}} below with the absolute path to your
+  checkout before installing. launchd does not expand ~, $HOME, or relative paths,
+  and a wrong path fails silently (the job simply never runs).
+
+  Install:
+    sed "s|{{PROJECT_ROOT}}|$PWD|g" core/scripts/com.investing.sharadar.plist.example \
+      > ~/Library/LaunchAgents/com.investing.sharadar.plist
+    launchctl load ~/Library/LaunchAgents/com.investing.sharadar.plist
+
+  Run once now to test:
+    launchctl start com.investing.sharadar
+
+  Uninstall:
+    launchctl unload ~/Library/LaunchAgents/com.investing.sharadar.plist
+
+  Adjust the Hour/Minute below to your local time. Sharadar's EOD data is
+  typically refreshed by mid-evening US time; 22:00 local is a safe default.
+  Logs go to core/data/sharadar/bulk.log. update_all exits non-zero if any step
+  fails, so wrap it if you want alerting.
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.investing.sharadar</string>
+
+    <!-- Daily full refresh: every table in its correct sync mode, then FRED, then
+         the derived objects (screener_snapshot, holder_timeseries, derived.insider). -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>{{PROJECT_ROOT}}/.venv/bin/python</string>
+        <string>-m</string>
+        <string>core.scripts.load.update_all</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>{{PROJECT_ROOT}}</string>
+
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key>
+        <integer>22</integer>
+        <key>Minute</key>
+        <integer>0</integer>
+    </dict>
+
+    <key>StandardOutPath</key>
+    <string>{{PROJECT_ROOT}}/core/data/sharadar/bulk.log</string>
+    <key>StandardErrorPath</key>
+    <string>{{PROJECT_ROOT}}/core/data/sharadar/bulk.log</string>
+
+    <key>RunAtLoad</key>
+    <false/>
+</dict>
+</plist>
