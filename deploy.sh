@@ -77,7 +77,10 @@ fi
 
 if [ "$DO_NPM" = 1 ]; then
   step "node dependencies"
-  run npm --prefix web ci --omit=dev --no-audit --no-fund
+  # NOT --omit=dev: typescript, tailwindcss and @tailwindcss/postcss are devDependencies,
+  # and the build needs all three. Dropping them breaks `next build` and leaves
+  # next.config.ts unreadable at startup.
+  run npm --prefix web ci --no-audit --no-fund
 fi
 
 if [ "$DO_BUILD" = 1 ]; then
