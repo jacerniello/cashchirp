@@ -1,0 +1,17 @@
+# Core app dependencies (Python 3.13)
+# API (core/api — FastAPI bridge the web frontend reads)
+fastapi>=0.110
+uvicorn[standard]>=0.30
+
+# Data
+pandas>=2.2.3
+nasdaq-data-link>=1.0.4    # Sharadar bulk/table downloads (import: nasdaqdatalink)
+
+# Database
+SQLAlchemy>=2.0.30
+psycopg[binary]>=3.2
+
+# Config
+pydantic-settings>=2.3
+python-dotenv>=1.0
+PyYAML>=6.0               # screen specs (config/screens/*.yaml)

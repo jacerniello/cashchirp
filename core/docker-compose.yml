@@ -1,0 +1,26 @@
+# Local Postgres for the core app. Reproducible and isolated from your system Postgres.
+#   docker compose up -d        # start
+#   docker compose down         # stop (keeps data)
+#   docker compose down -v      # stop and wipe data
+services:
+  db:
+    image: postgres:16
+    container_name: investing_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-investing}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-investing}
+      POSTGRES_DB: ${POSTGRES_DB:-investing}
+    ports:
+      # host port is configurable (avoid clashing with a local Postgres on 5432)
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-investing}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  pgdata:

@@ -1,0 +1,72 @@
+# Example screen — small/mid quality compounders on sale.
+#
+# This is a WORKED EXAMPLE, not a recommendation. Copy it, change the numbers, and point
+# ACTIVE_SCREEN (core/.env) at your own file. Every gate below is documented in
+# docs/CONFIGURATION.md; the columns you may gate on are the snapshot columns listed by
+#   python -m core.scripts.screen.run_screen --columns
+id: quality-value
+title: Small/mid quality compounders on sale
+description: >
+  Profitable, cash-generative small/mid caps with a durable balance sheet, a multi-year
+  compounding record and no net dilution, trading at a low multiple. The thesis being
+  tested is that a re-rating toward a fair multiple, on top of continued compounding,
+  produces an above-market return.
+
+# Human-readable restatement of the gates, surfaced verbatim by GET /api/v1/screener/ideas/
+# so a UI's "how this was built" list can never drift from the filter that actually ran.
+criteria:
+  - Small/mid cap ($300M-$10B) - room to re-rate, under-followed
+  - "Quality: ROIC >= 12%, net margin > 5%, gross margin > 25% (where reported), positive FCF"
+  - "Durable: Altman Z >= 3, debt/equity <= 1, >= 5 years public"
+  - "Compounding: 5y sales & EPS growth > 3% - or a turnaround from losses; no net dilution"
+  - "On sale: P/E <= 20, EV/EBITDA <= 14, P/FCF <= 20"
+  - Excludes commodities & biotech
+
+universe:
+  # Commodities = price-takers with no pricing power. Biotech/pharma = binary trial/FDA
+  # outcomes and lumpy one-off earnings, so trailing growth/margins are artifacts rather
+  # than evidence of compounding. Real-revenue healthcare (devices, services, insurers)
+  # is deliberately kept.
+  exclude_sectors: [Energy, Basic Materials]
+  exclude_industries:
+    - Biotechnology
+    - Drug Manufacturers - Specialty & Generic
+    - Drug Manufacturers - General
+    - Drug Manufacturers - Major
+  # Drop names delisted as of today. Switched off automatically by the point-in-time
+  # backtest, where today's delisted flag is the wrong vintage.
+  exclude_delisted: true
+
+# metric: {min, max, gt, lt, on_null: drop|keep|<number>}
+#   min / max        - INCLUSIVE bounds (>=, <=).
+#   gt / lt          - EXCLUSIVE bounds (>, <).
+#   on_null: drop    - (default) a blank fails the gate. Use when a blank is a genuine
+#                      data absence you are happy to drop.
+#            keep    - a blank passes. Use when a blank is a calculation artifact or a
+#                      non-disclosure, not a failure - dropping it is a false negative.
+#            <number>- a blank is replaced by that value before comparing.
+#
+# NOTE on YAML numbers: write large numbers plainly (300000000) or with a signed exponent
+# (3.0e+8). Bare `3.0e8` parses as a STRING in YAML 1.1 and the loader will reject it.
+gates:
+  marketcap:      {min: 3.0e+8, max: 1.0e+10}
+  roic:           {min: 0.12}
+  net_margin:     {min: 0.05}
+  altman_z:       {min: 3.0}
+  years_public:   {min: 5}
+  ev_ebitda:      {min: 0, max: 14}
+  p_fcf:          {min: 0, max: 20}
+  pe:             {min: 0, max: 20}
+  fcf:            {gt: 0}                  # positive free cash flow
+  debt_equity:    {max: 1.0, on_null: 0}   # no reported debt == no leverage
+  shares_cagr_5y: {max: 0.02, on_null: 0}  # no net dilution (buybacks a plus)
+  # Many industrials do not break out COGS. A blank gross margin means "not disclosed",
+  # not "fails" - keep it rather than silently dropping a healthy company.
+  gross_margin:   {min: 0.25, on_null: keep}
+
+# Recovery-aware multi-year growth gates. A name passes if its CAGR clears `min_cagr` OR it
+# recovered from a non-positive base (loss 5y ago -> profit now), which makes the CAGR
+# mathematically undefined but is unambiguously strong growth.
+growth:
+  - {level: eps_y, level_5y_ago: eps_y5, cagr: eps_g_5y, min_cagr: 0.03}
+  - {level: rev_y, level_5y_ago: rev_y5, cagr: sales_g_5y, min_cagr: 0.03}
