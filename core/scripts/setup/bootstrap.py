@@ -56,6 +56,12 @@ STATE_PATH = CORE_DIR / "data" / "bootstrap-state.json"
 # ordinary Python, at a point where stopping is clean and resumable.
 STOP_PATH = CORE_DIR / "data" / "bootstrap.stop"
 
+# Set by --full. The registry's Sharadar mode is `sync` — an incremental upsert from the
+# stored watermark — which is what you want almost always. `--full` replaces it with a
+# complete re-download of the bulk export, for when the local copy is suspect rather than
+# merely stale.
+FULL_REBUILD = False
+
 
 def stop_requested() -> bool:
     return STOP_PATH.exists()
@@ -445,6 +451,14 @@ def _runner(ds: sources.Dataset) -> Callable[[Callable[[str], None]], object]:
         table = ds.key.split(":", 1)[1]
 
         def run_sharadar(progress, table=table, mode=ds.mode, kwargs=dict(ds.kwargs)):
+            # FULL_REBUILD overrides the registry's incremental mode with a complete
+            # re-download from the bulk export. The sync kwargs (sync_col, chunk_key)
+            # describe how to find NEW rows, so they are meaningless here and passing
+            # them would be a TypeError.
+            if FULL_REBUILD:
+                from core.backend.ingest.sharadar.sharadar_generic import load_table
+                return load_table(table, skip_derived=True, progress=lambda *a: progress(
+                    " ".join(str(x) for x in a)))
             from core.backend.ingest.sharadar.sharadar_generic import load_table, sync_coarse_table, sync_table
             fn = {"sync": sync_table, "quarters": sync_coarse_table,
                   "full": load_table}[mode]
@@ -768,7 +782,13 @@ def main() -> int:
                    help="Only these phases: " + " ".join(p for p, _ in sources.PHASES)
                         + ". Builds a deliberately smaller database.")
     p.add_argument("--force", action="store_true",
-                   help="Re-run steps whose tables already hold rows.")
+                   help="Re-run steps whose tables already hold rows. For Sharadar this "
+                        "is an INCREMENTAL sync (new rows since the watermark), not a "
+                        "re-download — see --full for that.")
+    p.add_argument("--full", action="store_true",
+                   help="Re-download each Sharadar table's bulk export from scratch and "
+                        "upsert the lot. Implies --force. Hours; use when the local copy "
+                        "is suspect, not merely stale.")
     p.add_argument("--plain", action="store_true",
                    help="One line per event instead of a redrawing display.")
     args = p.parse_args()
@@ -865,8 +885,11 @@ def main() -> int:
         print("Provenance per source: python -m core.scripts.setup.bootstrap --sources")
         return 0
 
+    if args.full:
+        globals()["FULL_REBUILD"] = True
+
     display = Display(steps, plain=args.plain or None)
-    return execute(steps, display, resume=not args.force)
+    return execute(steps, display, resume=not (args.force or args.full))
 
 
 if __name__ == "__main__":

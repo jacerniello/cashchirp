@@ -25,6 +25,7 @@ web/.env*
 
 # Local repo audit (never committed)
 .audit/
+.next/
 
 # Agent guidance — local only, not part of the published project
 CLAUDE.md
