@@ -44,6 +44,12 @@ export function BuildRunner({
   const [showLog, setShowLog] = useState(false);
   const [openLog, setOpenLog] = useState<string | null>(null);
   const job = useDatasetJob();
+  // A pending expensive action, held until confirmed. Only ingest needs this: derive is
+  // minutes, free and safe to re-run, so a confirmation there would be noise that trains
+  // you to click through the one that matters.
+  const [confirming, setConfirming] = useState<
+    { title: string; lines: string[]; go: () => Promise<unknown> } | null
+  >(null);
 
   const b = data?.build_status;
   const running = !!b?.running;
@@ -69,6 +75,27 @@ export function BuildRunner({
   };
 
   const rows = (data?.datasets ?? []).filter((d) => KIND_PHASES[kind].includes(d.phase));
+
+  /** Ask before anything expensive. `force` re-downloads everything; a plain run only
+   *  fetches what's missing — so the confirmation states which, and how much. */
+  const guard = (force: boolean) => {
+    const go = () => start.mutateAsync({ kind, force });
+    if (kind !== 'ingest') { act(go); return; }
+    const willRun = force ? rows : rows.filter((r) => r.state !== 'loaded');
+    if (!force && willRun.length === 0) { act(go); return; }  // nothing to fetch
+    setConfirming({
+      title: force ? 'Re-download everything?' : 'Start the ingest?',
+      lines: [
+        `${willRun.length} dataset${willRun.length === 1 ? '' : 's'} will be downloaded`
+          + (force ? ' — including ones already loaded.' : ' (already-loaded ones are skipped).'),
+        `About ${force ? data!.work.ingest.expected_size : 'that portion of '
+          + data!.work.ingest.expected_size} from the providers.`,
+        'This spends your paid Nasdaq Data Link subscription and takes hours.',
+        'It runs detached and is resumable — you can stop it at any time.',
+      ],
+      go,
+    });
+  };
   const loaded = rows.filter((r) => r.state === 'loaded').length;
   const measurable = rows.filter((r) => r.state !== 'unknown').length;
 
@@ -126,7 +153,7 @@ export function BuildRunner({
                 <div className="mt-4 flex items-center gap-2 flex-wrap">
                   <button
                     type="button"
-                    onClick={() => act(() => start.mutateAsync({ kind }))}
+                    onClick={() => guard(false)}
                     disabled={start.isPending}
                     className="rounded-lg bg-green text-white px-4 py-2 text-sm font-medium
                                border-0 cursor-pointer hover:bg-green-dark disabled:opacity-40"
@@ -135,7 +162,7 @@ export function BuildRunner({
                   </button>
                   <button
                     type="button"
-                    onClick={() => act(() => start.mutateAsync({ kind, force: true }))}
+                    onClick={() => guard(true)}
                     disabled={start.isPending}
                     className="rounded-lg border border-rule bg-white text-ink px-4 py-2
                                text-sm font-medium cursor-pointer hover:border-green
@@ -148,6 +175,37 @@ export function BuildRunner({
                       ? 'A previous build stopped early — Run picks up where it left off.'
                       : 'Run skips anything already loaded; Force redoes it.'}
                   </span>
+                </div>
+              )}
+
+              {confirming && (
+                <div className="mt-4 rounded-lg border border-gold bg-gold-soft p-4">
+                  <div className="text-sm font-semibold text-ink">{confirming.title}</div>
+                  <ul className="mt-2 space-y-1">
+                    {confirming.lines.map((l) => (
+                      <li key={l} className="text-sm text-ink-light flex gap-2">
+                        <span className="text-ink-muted">•</span><span>{l}</span>
+                      </li>
+                    ))}
+                  </ul>
+                  <div className="mt-3 flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => { const g = confirming.go; setConfirming(null); act(g); }}
+                      className="rounded-lg bg-green text-white px-4 py-2 text-sm font-medium
+                                 border-0 cursor-pointer hover:bg-green-dark"
+                    >
+                      Yes, start it
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setConfirming(null)}
+                      className="rounded-lg border border-rule bg-white text-ink px-4 py-2
+                                 text-sm font-medium cursor-pointer hover:border-ink-muted"
+                    >
+                      Cancel
+                    </button>
+                  </div>
                 </div>
               )}
 
@@ -226,8 +284,20 @@ export function BuildRunner({
                               ) : (
                                 <button
                                   type="button"
-                                  onClick={() => { setOpenLog(d.key);
-                                                   act(() => job.run.mutateAsync({ key: d.key, force: true })); }}
+                                  onClick={() => {
+                                    const go = () => job.run.mutateAsync({ key: d.key, force: true });
+                                    setOpenLog(d.key);
+                                    if (kind !== 'ingest') { act(go); return; }
+                                    setConfirming({
+                                      title: `Re-download ${d.label}?`,
+                                      lines: [
+                                        `About ${d.expected_size} from ${d.source.provider}.`,
+                                        'This spends your paid subscription.',
+                                        'Runs as its own process — stop it any time.',
+                                      ],
+                                      go,
+                                    });
+                                  }}
                                   disabled={running}
                                   title={running ? 'A full build is running' : 'Run just this one'}
                                   className="text-xs text-green hover:underline bg-transparent border-0
