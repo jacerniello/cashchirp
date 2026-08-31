@@ -76,7 +76,11 @@ export function Sp500Browser() {
     queryFn: fetchConcentration,
     staleTime: 30 * 60 * 1000,
   });
-  const { data: constituents } = useQuery({
+  const {
+    data: constituents,
+    isLoading: loadingTop,
+    error: topError,
+  } = useQuery({
     queryKey: ['sp500-constituents'],
     queryFn: fetchConstituents,
     staleTime: 30 * 60 * 1000,
@@ -198,7 +202,39 @@ export function Sp500Browser() {
               </tr>
             </thead>
             <tbody>
-              {(constituents ?? []).map((c) => (
+              {loadingTop &&
+                Array.from({ length: 10 }).map((_, i) => (
+                  <tr key={`sk-${i}`} className="border-b border-rule-light">
+                    {[8, 12, 40, 24, 14].map((w, j) => (
+                      <td key={j} className="px-3 py-2">
+                        <div
+                          className="h-3 rounded bg-surface-warm animate-pulse"
+                          style={{ width: `${w * 4}px`, marginLeft: j === 4 ? 'auto' : undefined }}
+                        />
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+
+              {/* An error must not render as an empty table: that reads as "no
+                  constituents" when the truth is "we could not ask". */}
+              {!loadingTop && topError && (
+                <tr>
+                  <td colSpan={5} className="px-3 py-6 text-center text-sm text-ink-faint">
+                    Could not load constituents.
+                  </td>
+                </tr>
+              )}
+
+              {!loadingTop && !topError && (constituents ?? []).length === 0 && (
+                <tr>
+                  <td colSpan={5} className="px-3 py-6 text-center text-sm text-ink-faint">
+                    No data
+                  </td>
+                </tr>
+              )}
+
+              {!loadingTop && !topError && (constituents ?? []).map((c) => (
                 <tr key={c.permaticker} className="border-b border-rule-light hover:bg-surface">
                   <td className="px-3 py-2 text-ink-muted tabular-nums">{c.rank}</td>
                   <td className="px-3 py-2 font-semibold">

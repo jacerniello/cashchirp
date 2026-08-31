@@ -16,12 +16,16 @@ really re-download 35 GB?" — so the page shows you the command and you run it 
 """
 from __future__ import annotations
 
+import gzip
 import json
 import os
 import re
 import signal
+import shutil
 import subprocess
 import sys
+import time
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -227,7 +231,6 @@ def _human(n: int) -> str:
 # retry, and there would be no way to interrupt it. So the API only ever starts, signals
 # and reports on a process that owns itself — which is also why closing the browser (or
 # restarting this API) leaves a running build untouched.
-_LOG_PATH = CORE_DIR / "data" / "bootstrap.log"
 _STOP_PATH = CORE_DIR / "data" / "bootstrap.stop"
 
 
@@ -283,7 +286,7 @@ def _build_status() -> dict[str, Any]:
         "progress_pct": round((done + frac) / len(steps) * 100, 1) if steps else 0.0,
         "steps_done": done,
         "steps_total": len(steps),
-        "log": str(_LOG_PATH),
+        "log": str(_LOGS_DIR),
         "stopping": _STOP_PATH.exists(),
     }
 
@@ -364,8 +367,9 @@ def start_build(req: BuildRequest) -> dict[str, Any]:
 
     # A sentinel left by a previous stop would halt this run before it began.
     _STOP_PATH.unlink(missing_ok=True)
-    _LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
-    log = open(_LOG_PATH, "ab", buffering=0)  # noqa: SIM115 - owned by the child
+    _rotate_logs(None)
+    log_path = _new_log(None)
+    log = open(log_path, "ab", buffering=0)  # noqa: SIM115 - owned by the child
     try:
         proc = subprocess.Popen(
             argv, cwd=str(PROJECT_ROOT), stdout=log, stderr=subprocess.STDOUT,
@@ -377,7 +381,7 @@ def start_build(req: BuildRequest) -> dict[str, Any]:
     finally:
         log.close()
     return {"started": True, "kind": req.kind, "mode": mode, "pid": proc.pid,
-            "phases": phases or "all", "argv": argv[1:], "log": str(_LOG_PATH)}
+            "phases": phases or "all", "argv": argv[1:], "log": str(log_path)}
 
 
 @router.post("/build/stop")
@@ -414,28 +418,24 @@ def stop_build() -> dict[str, Any]:
 
 @router.get("/build/log")
 def build_log(tail: int = 200) -> dict[str, Any]:
-    """The tail of the build log, so a run can be followed without a terminal.
+    """The tail of the most recent build's log, plus the list of earlier runs.
 
-    Reads a FIXED path — nothing about the file is caller-controlled, so there is no path
-    to traverse. `tail` is clamped: the log of a full build is tens of thousands of lines
+    Reads only files this module named, in a fixed directory — nothing about the path is
+    caller-controlled. `tail` is clamped: a full build's log is tens of thousands of lines
     and shipping all of it to a browser every two seconds would be its own outage."""
     n = max(1, min(int(tail), 2000))
-    if not _LOG_PATH.exists():
-        return {"lines": [], "path": str(_LOG_PATH), "exists": False, "bytes": 0}
+    runs = _log_runs(None)
+    if not runs:
+        return {"lines": [], "path": str(_LOGS_DIR), "exists": False, "runs": []}
     try:
-        # Read the end only: a long build's log grows to megabytes and this endpoint is
-        # polled while it runs.
-        size = _LOG_PATH.stat().st_size
-        with _LOG_PATH.open("rb") as fh:
-            window = min(size, 256 * 1024)
-            fh.seek(size - window)
-            text = fh.read().decode("utf-8", errors="replace")
-        lines = text.splitlines()
-        if window < size and lines:
-            lines = lines[1:]          # drop the half-line the window started mid-way through
-        return {"lines": lines[-n:], "path": str(_LOG_PATH), "exists": True, "bytes": size}
+        lines = _read_log(runs[0], n)
     except OSError as exc:
-        raise HTTPException(500, f"Could not read {_LOG_PATH}: {exc}") from exc
+        raise HTTPException(500, f"Could not read {runs[0]}: {exc}") from exc
+    return {
+        "lines": lines, "path": str(runs[0]), "exists": True,
+        "runs": [{"name": p.name, "archived": p.suffix == ".gz",
+                  "bytes": p.stat().st_size} for p in runs],
+    }
 
 
 # ------------------------------------------------------- per-dataset jobs
@@ -482,7 +482,7 @@ def _last_runs() -> dict[str, dict[str, Any]]:
 
 def _job_state(key: str) -> dict[str, Any]:
     """Live state of one dataset's own job."""
-    state_p, log_p, _ = _job_paths(key)
+    state_p, _, _ = _job_paths(key)
     st: dict[str, Any] = {}
     if state_p.exists():
         try:
@@ -503,7 +503,7 @@ def _job_state(key: str) -> dict[str, Any]:
         "rows": step.get("rows"),
         "seconds": step.get("seconds"),
         "updated_at": st.get("updated_at"),
-        "has_log": log_p.exists(),
+        "has_log": bool(_log_runs(key)),
     }
 
 
@@ -527,9 +527,11 @@ def run_dataset(req: DatasetJobRequest) -> dict[str, Any]:
     if job["running"]:
         raise HTTPException(409, f"{req.key} is already running (pid {job['pid']}).")
 
-    state_p, log_p, stop_p = _job_paths(req.key)
+    state_p, _, stop_p = _job_paths(req.key)
     _JOBS_DIR.mkdir(parents=True, exist_ok=True)
     stop_p.unlink(missing_ok=True)          # a stale stop would halt it immediately
+    _rotate_logs(req.key)
+    log_p = _new_log(req.key)
 
     mode = "update" if req.force and req.mode == "missing" else req.mode
     if mode not in ("update", "missing", "full"):
@@ -572,18 +574,89 @@ def stop_dataset(req: DatasetJobRequest) -> dict[str, Any]:
 
 @router.get("/dataset/log")
 def dataset_log(key: str, tail: int = 200) -> dict[str, Any]:
-    """Tail of ONE dataset's own log."""
+    """Tail of ONE dataset's most recent run, plus its earlier runs."""
     if key not in sources.BY_KEY:
         raise HTTPException(404, f"Unknown dataset {key!r}.")
-    _, log_p, _ = _job_paths(key)
     n = max(1, min(int(tail), 2000))
-    if not log_p.exists():
-        return {"key": key, "lines": [], "exists": False, "path": str(log_p)}
-    size = log_p.stat().st_size
-    with log_p.open("rb") as fh:
-        window = min(size, 256 * 1024)
+    runs = _log_runs(key)
+    if not runs:
+        return {"key": key, "lines": [], "exists": False, "path": str(_LOGS_DIR), "runs": []}
+    try:
+        lines = _read_log(runs[0], n)
+    except OSError as exc:
+        raise HTTPException(500, f"Could not read {runs[0]}: {exc}") from exc
+    return {
+        "key": key, "lines": lines, "exists": True, "path": str(runs[0]),
+        "runs": [{"name": p.name, "archived": p.suffix == ".gz",
+                  "bytes": p.stat().st_size} for p in runs],
+    }
+
+
+# ------------------------------------------------------------------ log files
+
+# One file per RUN, not one per job. Appending every run to a single log makes the useful
+# question — "what happened the last time this failed?" — require reading past everything
+# that came after it. Dated files keep each run whole and let old ones be archived.
+_LOGS_DIR = CORE_DIR / "data" / "logs"
+
+# Newest few stay plain text so they can be tailed; older ones are gzipped (they compress
+# ~10x and are read rarely); past the age limit they go. Bounded without ever silently
+# discarding the run you are currently looking at.
+_KEEP_PLAIN = 5
+_MAX_AGE_DAYS = 30
+
+
+def _log_stem(key: str | None) -> str:
+    """`None` -> the full build; a dataset key -> that dataset's own runs."""
+    return "build" if key is None else _job_slug(key)
+
+
+def _new_log(key: str | None) -> Path:
+    """Path for a run starting now. Second precision is enough: the start guard prevents
+    two runs of the same thing at once."""
+    _LOGS_DIR.mkdir(parents=True, exist_ok=True)
+    stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    return _LOGS_DIR / f"{_log_stem(key)}-{stamp}.log"
+
+
+def _log_runs(key: str | None) -> list[Path]:
+    """Every run's log for this key, newest first (plain and archived)."""
+    if not _LOGS_DIR.exists():
+        return []
+    stem = _log_stem(key)
+    runs = [p for p in _LOGS_DIR.iterdir()
+            if p.name.startswith(f"{stem}-") and p.suffix in (".log", ".gz")]
+    return sorted(runs, key=lambda p: p.name, reverse=True)
+
+
+def _rotate_logs(key: str | None) -> None:
+    """Archive and expire this key's older runs. Best-effort: housekeeping must never be
+    the reason a build fails to start."""
+    try:
+        runs = _log_runs(key)
+        cutoff = time.time() - _MAX_AGE_DAYS * 86400
+        for i, p in enumerate(runs):
+            if p.stat().st_mtime < cutoff:
+                p.unlink(missing_ok=True)
+                continue
+            if i >= _KEEP_PLAIN and p.suffix == ".log":
+                with p.open("rb") as src, gzip.open(f"{p}.gz", "wb") as dst:
+                    shutil.copyfileobj(src, dst)
+                p.unlink(missing_ok=True)
+    except OSError:
+        pass
+
+
+def _read_log(path: Path, tail: int) -> list[str]:
+    """Last `tail` lines, transparently handling an archived (.gz) run."""
+    if path.suffix == ".gz":
+        with gzip.open(path, "rt", errors="replace") as fh:
+            return fh.read().splitlines()[-tail:]
+    size = path.stat().st_size
+    with path.open("rb") as fh:
+        window = min(size, 256 * 1024)   # a full build's log is megabytes; read the end
         fh.seek(size - window)
         lines = fh.read().decode("utf-8", errors="replace").splitlines()
     if window < size and lines:
-        lines = lines[1:]
-    return {"key": key, "lines": lines[-n:], "exists": True, "path": str(log_p)}
+        lines = lines[1:]                # drop the partial line the window began mid-way
+    return lines[-tail:]

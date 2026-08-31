@@ -34,6 +34,7 @@ import os
 import re
 import shutil
 import sys
+import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -263,6 +264,11 @@ class Display:
         self.plain = (not sys.stdout.isatty()) if plain is None else plain
         self._drawn = 0
         self._last = 0.0
+        self._last_detail = ""
+        self._last_detail_at = 0.0
+        self._hb: threading.Thread | None = None
+        self._hb_stop = threading.Event()
+        self._step_started = time.time()
 
     def _bar(self, frac: float, width: int = 28) -> str:
         filled = int(frac * width)
@@ -286,8 +292,28 @@ class Display:
     def log(self, msg: str) -> None:
         print(f"[{datetime.now():%H:%M:%S}] {msg}", flush=True)
 
+    def _plain_progress(self) -> None:
+        """Echo the running step's own progress in plain mode.
+
+        Without this the log jumps straight from `-> step` to its result, so a step that
+        takes an hour looks indistinguishable from one that hung — which is exactly the
+        thing you open a log to rule out. Printed when the message CHANGES, plus a
+        heartbeat every 60s so a long silent stage still proves it is alive."""
+        cur = next((st for st in self.steps if st.status == "running"), None)
+        if not cur or not cur.detail:
+            return
+        now = time.time()
+        changed = cur.detail != self._last_detail
+        stale = now - self._last_detail_at > 60
+        if not (changed or stale):
+            return
+        self._last_detail, self._last_detail_at = cur.detail, now
+        # Loader messages already carry their own timestamp and table prefix.
+        self.log(f"     {cur.detail}" if changed else f"     still: {cur.detail}")
+
     def refresh(self, force: bool = False) -> None:
         if self.plain:
+            self._plain_progress()
             return
         if not force and time.time() - self._last < 0.2:  # cap redraws; loaders are chatty
             return
@@ -331,16 +357,48 @@ class Display:
     def transition(self, step: Step) -> None:
         if self.plain:
             if step.status == "running":
-                self.log(f"-> {step.label}")
+                self._last_detail, self._last_detail_at = "", 0.0
+                self._step_started = time.time()
+                self.log(f"START    {step.label}")
             else:
-                extra = f" ({step.rows:,} rows)" if step.rows else ""
+                word = {"ok": "FINISHED", "skipped": "SKIPPED ", "FAIL": "FAILED  "}.get(
+                    step.status, step.status.upper())
+                extra = f" · {step.rows:,} rows" if step.rows else ""
                 note = f" — {step.note}" if step.note else ""
-                self.log(f"   {step.label}: {step.status} in "
-                         f"{_hms(step.seconds)}{extra}{note}")
+                self.log(f"{word} {step.label} · {_hms(step.seconds)}{extra}{note}")
         else:
             self.refresh(force=True)
 
+    def start_heartbeat(self, every: float = 60.0) -> None:
+        """Tick while a step is running, in plain mode only.
+
+        Echoing the loader's messages is not enough on its own: a step can go quiet for an
+        hour (a single long Postgres rebuild emits one line, then nothing), and silence in
+        a log is indistinguishable from a hang. A timer proves liveness regardless of
+        whether the loader has anything to say. Daemon thread, so it can never hold the
+        process open."""
+        if not self.plain or self._hb is not None:
+            return
+        self._hb_stop.clear()
+
+        def tick() -> None:
+            while not self._hb_stop.wait(every):
+                cur = next((st for st in self.steps if st.status == "running"), None)
+                if not cur:
+                    continue
+                detail = f" · {cur.detail}" if cur.detail else ""
+                self.log(f"RUNNING  {cur.label} · {_hms(time.time() - self._step_started)}"
+                         f"{detail}")
+
+        self._hb = threading.Thread(target=tick, daemon=True, name="bootstrap-heartbeat")
+        self._hb.start()
+
+    def stop_heartbeat(self) -> None:
+        self._hb_stop.set()
+        self._hb = None
+
     def finish(self) -> None:
+        self.stop_heartbeat()
         self.refresh(force=True)
 
 
@@ -661,6 +719,7 @@ def execute(steps: list[Step], display: Display, resume: bool) -> int:
 
     # A stale sentinel from a previous run would stop this one before it began.
     clear_stop()
+    display.start_heartbeat()
 
     class _Stop(Exception):
         """Raised between steps when a stop has been requested."""
