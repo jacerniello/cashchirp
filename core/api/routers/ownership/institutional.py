@@ -11,7 +11,6 @@
         -> { total, page, page_size, holdings: [...] }  (investor's holdings paginated)
     GET /institutional/investor-holdings?name=<name>&calendardate=<d>&page=0&page_size=25
         -> { name, calendardate, quarters, total, page, page_size, holdings: [...] }
-    GET /institutional/co-held?perma_ticker=<pt>
         -> { securities: [] }
     GET /institutional/investor/<name>
         -> { name, book: [...], holdings: [...], sectors: [...] }  (investor page)
@@ -147,13 +146,6 @@ def institutional_investor_holdings(
         "page_size": page_size,
         "holdings": df_records(holdings),
     }
-
-
-@router.get("/co-held")
-def institutional_co_held(perma_ticker: str | None = Query(None)) -> dict[str, Any]:
-    """Securities commonly co-held with this one. No repo function exists for this
-    yet, so this returns an empty list rather than inventing one."""
-    return {"securities": []}
 
 
 @router.get("/investor/{name:path}")

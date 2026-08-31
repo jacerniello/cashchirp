@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException
 
 from core.api.serialize import json_safe
 from core.backend.db.engine import session_scope
@@ -51,10 +51,3 @@ def etf_family(permaticker: str) -> dict[str, Any]:
     return family or {"cik": None, "series": []}
 
 
-@router.get("/etf/{permaticker}/is-fund")
-def is_fund(permaticker: str) -> dict[str, Any]:
-    """Lightweight check used by the equity page to redirect funds to /etf."""
-    pt = permaticker.strip().rstrip("/").strip()
-    with session_scope() as s:
-        profile = securities.get_profile(s, pt) or {}
-    return {"permaticker": pt, "is_fund": (profile.get("category") == "ETF")}

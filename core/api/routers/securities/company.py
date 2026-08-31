@@ -16,7 +16,6 @@ from __future__ import annotations
 
 from typing import Any
 
-import pandas as pd
 from fastapi import APIRouter, Query
 
 from core.api.serialize import df_records, json_safe
