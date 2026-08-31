@@ -260,8 +260,7 @@ BY_KEY: dict[str, Dataset] = {d.key: d for d in DATASETS}
 # The two KINDS of work, which differ in every way that matters operationally:
 #
 #   ingest  - pulls bytes from an external provider. Slow, network-bound, rate-limited,
-#             and for Sharadar it spends a paid subscription. Interrupting one costs a
-#             download you may have to repeat.
+#             Interrupting one costs a download you may have to repeat.
 #   derive  - computes locally from what is already in the database. No network, no cost,
 #             minutes not hours, and safe to re-run at any time.
 #

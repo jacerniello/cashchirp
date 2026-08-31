@@ -17,9 +17,9 @@ export default function IngestPage() {
         kind="ingest"
         title="Pull data from the providers"
         blurb="Sharadar, FRED, FINRA and SEC, plus the schema they land in. This is the
-               slow half: it is network-bound, rate-limited, and Sharadar spends your paid
-               subscription. It is resumable, so stopping costs only the step in flight."
-        cost="Hours on a first run · uses your Nasdaq Data Link subscription"
+               slow half: it is network-bound and rate-limited. It is resumable, so
+               stopping costs only the step in flight."
+        cost="Hours on a first run · network-bound and rate-limited"
       />
     </div>
   );

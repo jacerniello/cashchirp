@@ -9,9 +9,9 @@ import {
 import { Card } from '@/components/Card';
 
 // The run-and-monitor surface for ONE kind of work. Ingest and derive get their own page
-// because they are different decisions — one spends hours and a paid subscription pulling
-// bytes from providers, the other recomputes locally in minutes for free. Putting them on
-// one screen invites running the expensive one by reflex.
+// because they are different decisions — one spends hours pulling bytes from providers,
+// the other recomputes locally in minutes. Putting them on one screen invites running the
+// expensive one by reflex.
 //
 // The build itself is a detached process, so this page is a remote control: closing the
 // tab, or restarting the API, leaves a running build alone.
@@ -76,21 +76,23 @@ export function BuildRunner({
 
   const rows = (data?.datasets ?? []).filter((d) => KIND_PHASES[kind].includes(d.phase));
 
-  /** Ask before anything expensive. `force` re-downloads everything; a plain run only
-   *  fetches what's missing — so the confirmation states which, and how much. */
-  const guard = (force: boolean) => {
-    const go = () => start.mutateAsync({ kind, force });
-    if (kind !== 'ingest') { act(go); return; }
-    const willRun = force ? rows : rows.filter((r) => r.state !== 'loaded');
-    if (!force && willRun.length === 0) { act(go); return; }  // nothing to fetch
+  const missingCount = rows.filter((r) => r.state === 'missing').length;
+
+  /** Confirm only the genuinely expensive action. `update` is an incremental sync and
+   *  `missing` touches nothing already loaded; only `full` re-downloads, so only `full`
+   *  earns a prompt. Confirming the cheap ones too would just train you to click through
+   *  the one that matters. */
+  const guard = (mode: 'update' | 'missing' | 'full') => {
+    const go = () => start.mutateAsync({ kind, mode });
+    if (kind !== 'ingest' || mode !== 'full') { act(go); return; }
     setConfirming({
-      title: force ? 'Re-download everything?' : 'Start the ingest?',
+      title: 'Re-download every table from scratch?',
       lines: [
-        `${willRun.length} dataset${willRun.length === 1 ? '' : 's'} will be downloaded`
-          + (force ? ' — including ones already loaded.' : ' (already-loaded ones are skipped).'),
-        `About ${force ? data!.work.ingest.expected_size : 'that portion of '
-          + data!.work.ingest.expected_size} from the providers.`,
-        'This spends your paid Nasdaq Data Link subscription and takes hours.',
+        `All ${rows.length} datasets, about ${data!.work.ingest.expected_size}, pulled again `
+          + 'in full — not just the rows that changed.',
+        'Hours of downloading.',
+        'You almost certainly want "Fetch new data" instead, unless you suspect the local '
+          + 'copy is wrong rather than merely out of date.',
         'It runs detached and is resumable — you can stop it at any time.',
       ],
       go,
@@ -150,31 +152,59 @@ export function BuildRunner({
                   </p>
                 </div>
               ) : (
-                <div className="mt-4 flex items-center gap-2 flex-wrap">
-                  <button
-                    type="button"
-                    onClick={() => guard(false)}
-                    disabled={start.isPending}
-                    className="rounded-lg bg-green text-white px-4 py-2 text-sm font-medium
-                               border-0 cursor-pointer hover:bg-green-dark disabled:opacity-40"
-                  >
-                    {b.can_resume ? 'Resume' : 'Run'}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => guard(true)}
-                    disabled={start.isPending}
-                    className="rounded-lg border border-rule bg-white text-ink px-4 py-2
-                               text-sm font-medium cursor-pointer hover:border-green
-                               hover:text-green disabled:opacity-40"
-                  >
-                    Force rebuild
-                  </button>
-                  <span className="text-xs text-ink-faint">
-                    {b.can_resume
-                      ? 'A previous build stopped early — Run picks up where it left off.'
-                      : 'Run skips anything already loaded; Force redoes it.'}
-                  </span>
+                <div className="mt-4 space-y-2">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <button
+                      type="button"
+                      onClick={() => guard('update')}
+                      disabled={start.isPending}
+                      className="rounded-lg bg-green text-white px-4 py-2 text-sm font-medium
+                                 border-0 cursor-pointer hover:bg-green-dark disabled:opacity-40"
+                    >
+                      {kind === 'ingest' ? 'Fetch new data' : 'Rebuild'}
+                    </button>
+                    {missingCount > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => guard('missing')}
+                        disabled={start.isPending}
+                        className="rounded-lg border border-rule bg-white text-ink px-4 py-2
+                                   text-sm font-medium cursor-pointer hover:border-green
+                                   hover:text-green disabled:opacity-40"
+                      >
+                        Load the {missingCount} missing
+                      </button>
+                    )}
+                    {kind === 'ingest' && (
+                      <button
+                        type="button"
+                        onClick={() => guard('full')}
+                        disabled={start.isPending}
+                        className="rounded-lg border border-neg/40 bg-white text-neg px-4 py-2
+                                   text-sm font-medium cursor-pointer hover:border-neg
+                                   disabled:opacity-40"
+                      >
+                        Re-download everything
+                      </button>
+                    )}
+                  </div>
+                  <p className="text-xs text-ink-faint max-w-2xl">
+                    {kind === 'ingest' ? (
+                      <>
+                        <strong className="text-ink-light">Fetch new data</strong> pulls only
+                        rows added or changed since the last run — minutes, and what you want
+                        almost always.{' '}
+                        <strong className="text-ink-light">Re-download everything</strong>{' '}
+                        discards that shortcut and pulls each table&apos;s full export again:
+                        hours, for when you suspect the local copy is wrong rather than
+                        merely stale.
+                      </>
+                    ) : (
+                      <>Derived tables have no incremental path — each rebuild recomputes
+                      from scratch, which is why it is safe to run whenever. Each builds into
+                      a new table and swaps it in, so the live one is never half-written.</>
+                    )}
+                  </p>
                 </div>
               )}
 
@@ -285,25 +315,15 @@ export function BuildRunner({
                                 <button
                                   type="button"
                                   onClick={() => {
-                                    const go = () => job.run.mutateAsync({ key: d.key, force: true });
                                     setOpenLog(d.key);
-                                    if (kind !== 'ingest') { act(go); return; }
-                                    setConfirming({
-                                      title: `Re-download ${d.label}?`,
-                                      lines: [
-                                        `About ${d.expected_size} from ${d.source.provider}.`,
-                                        'This spends your paid subscription.',
-                                        'Runs as its own process — stop it any time.',
-                                      ],
-                                      go,
-                                    });
+                                    act(() => job.run.mutateAsync({ key: d.key, mode: 'update' }));
                                   }}
                                   disabled={running}
                                   title={running ? 'A full build is running' : 'Run just this one'}
                                   className="text-xs text-green hover:underline bg-transparent border-0
                                              cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
                                 >
-                                  run
+                                  update
                                 </button>
                               )}
                               {(j.has_log || j.running) && (
@@ -314,6 +334,26 @@ export function BuildRunner({
                                              border-0 cursor-pointer"
                                 >
                                   {open ? 'hide log' : 'log'}
+                                </button>
+                              )}
+                              {!j.running && kind === 'ingest' && (
+                                <button
+                                  type="button"
+                                  title="Re-download this table's full export"
+                                  onClick={() => setConfirming({
+                                    title: `Re-download ${d.label} from scratch?`,
+                                    lines: [
+                                      `About ${d.expected_size} from ${d.source.provider}, `
+                                        + 'pulled again in full rather than just new rows.',
+                                      'Runs as its own process — stop it any time.',
+                                    ],
+                                    go: () => { setOpenLog(d.key);
+                                      return job.run.mutateAsync({ key: d.key, mode: 'full' }); },
+                                  })}
+                                  className="ml-3 text-xs text-ink-muted hover:text-neg bg-transparent
+                                             border-0 cursor-pointer"
+                                >
+                                  re-download
                                 </button>
                               )}
                             </td>

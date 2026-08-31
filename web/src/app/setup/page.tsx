@@ -215,7 +215,7 @@ export default function SetupPage() {
                 {
                   href: '/setup/ingest', label: 'Ingest',
                   desc: 'Download from Sharadar, FRED, FINRA and SEC.',
-                  cost: 'Hours · uses your paid subscription',
+                  cost: 'Hours on a first run',
                   w: data.work.ingest,
                 },
                 {

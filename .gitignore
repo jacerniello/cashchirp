@@ -23,9 +23,9 @@ web/.next/
 web/tsconfig.tsbuildinfo
 web/.env*
 
+.next/
 # Local repo audit (never committed)
 .audit/
-.next/
 
 # Agent guidance — local only, not part of the published project
 CLAUDE.md

@@ -279,8 +279,7 @@ class BuildRequest(BaseModel):
     """What to build.
 
     `kind` is the main control and maps to registry phase groups:
-      * `ingest`  — download from the providers (hours, network-bound, spends the paid
-                    Sharadar subscription)
+      * `ingest`  — download from the providers (hours, network-bound, rate-limited)
       * `derive`  — recompute the derived tables from data already local (minutes, free,
                     safe to re-run)
       * `all`     — schema, then ingest, then derive, in dependency order
@@ -342,7 +341,12 @@ def start_build(req: BuildRequest) -> dict[str, Any]:
         argv += ["--only-phase", *phases]
     if req.only:
         argv += ["--only", *(t.upper() for t in req.only)]
-    if req.force:
+    # `missing` is the only mode that leaves populated tables alone; the other two both
+    # re-run every step, differing in whether Sharadar syncs new rows or re-downloads.
+    mode = "update" if req.force and req.mode == "missing" else req.mode
+    if mode == "full":
+        argv.append("--full")
+    elif mode == "update":
         argv.append("--force")
 
     # A sentinel left by a previous stop would halt this run before it began.
