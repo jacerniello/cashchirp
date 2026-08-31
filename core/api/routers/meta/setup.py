@@ -291,7 +291,12 @@ class BuildRequest(BaseModel):
     kind: str = "all"
     phases: list[str] = []
     only: list[str] = []
-    force: bool = False
+    # What to do with data that is already there:
+    #   update  - pull only what changed since the last run (the routine action)
+    #   missing - touch nothing that already has rows; fetch what was never loaded
+    #   full    - re-download each table's bulk export from scratch (hours)
+    mode: str = "update"
+    force: bool = False   # deprecated alias for mode="update"
 
 
 @router.post("/build")
@@ -308,6 +313,8 @@ def start_build(req: BuildRequest) -> dict[str, Any]:
             detail=f"A build is already running (pid {status['pid']}). Stop it first.",
         )
 
+    if req.mode not in ("update", "missing", "full"):
+        raise HTTPException(400, f"mode must be update|missing|full, got {req.mode!r}")
     if req.kind not in ("all", "ingest", "derive"):
         raise HTTPException(400, f"kind must be all|ingest|derive, got {req.kind!r}")
 
@@ -352,7 +359,7 @@ def start_build(req: BuildRequest) -> dict[str, Any]:
         )
     finally:
         log.close()
-    return {"started": True, "kind": req.kind, "pid": proc.pid,
+    return {"started": True, "kind": req.kind, "mode": mode, "pid": proc.pid,
             "phases": phases or "all", "argv": argv[1:], "log": str(_LOG_PATH)}
 
 
@@ -484,7 +491,8 @@ def _job_state(key: str) -> dict[str, Any]:
 
 class DatasetJobRequest(BaseModel):
     key: str
-    force: bool = False
+    mode: str = "update"      # update | missing | full  (see BuildRequest)
+    force: bool = False       # deprecated alias for mode="update"
 
 
 @router.post("/dataset/run")
@@ -505,9 +513,14 @@ def run_dataset(req: DatasetJobRequest) -> dict[str, Any]:
     _JOBS_DIR.mkdir(parents=True, exist_ok=True)
     stop_p.unlink(missing_ok=True)          # a stale stop would halt it immediately
 
+    mode = "update" if req.force and req.mode == "missing" else req.mode
+    if mode not in ("update", "missing", "full"):
+        raise HTTPException(400, f"mode must be update|missing|full, got {mode!r}")
     argv = [sys.executable, "-m", "core.scripts.setup.bootstrap", "--plain",
             "--dataset", ds.key, "--state-file", str(state_p)]
-    if req.force:
+    if mode == "full":
+        argv.append("--full")
+    elif mode == "update":
         argv.append("--force")
 
     log = open(log_p, "ab", buffering=0)  # noqa: SIM115 - handed to the child
@@ -518,7 +531,8 @@ def run_dataset(req: DatasetJobRequest) -> dict[str, Any]:
         )
     finally:
         log.close()
-    return {"started": True, "key": ds.key, "pid": proc.pid, "log": str(log_p)}
+    return {"started": True, "key": ds.key, "mode": mode, "pid": proc.pid,
+            "log": str(log_p)}
 
 
 @router.post("/dataset/stop")
