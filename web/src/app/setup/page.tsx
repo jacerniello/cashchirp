@@ -217,12 +217,18 @@ export default function SetupPage() {
                   desc: 'Download from Sharadar, FRED, FINRA and SEC.',
                   cost: 'Hours on a first run',
                   w: data.work.ingest,
+                  busy: data.datasets.some(
+                    (d) => d.job.running && d.phase !== 'derived') ||
+                    (data.build_status.running && data.build_status.phase !== 'derived'),
                 },
                 {
                   href: '/setup/derived', label: 'Derived',
                   desc: 'Recompute the tables the app reads, from data you already have.',
                   cost: 'Minutes · free, safe to re-run',
                   w: data.work.derive,
+                  busy: data.datasets.some(
+                    (d) => d.job.running && d.phase === 'derived') ||
+                    (data.build_status.running && data.build_status.phase === 'derived'),
                 },
               ] as const).map((x) => (
                 <Link
@@ -233,7 +239,20 @@ export default function SetupPage() {
                 >
                   <div className="flex items-baseline justify-between gap-2">
                     <span className="text-base font-semibold text-ink group-hover:text-green
-                                     transition-colors">{x.label}</span>
+                                     transition-colors">
+                      {x.label}
+                      {x.busy && (
+                        <span className="ml-2 inline-flex items-center gap-1.5 align-middle
+                                         text-xs font-normal text-green">
+                          <span className="relative flex h-2 w-2">
+                            <span className="absolute inline-flex h-full w-full animate-ping
+                                             rounded-full bg-green opacity-60" />
+                            <span className="relative inline-flex h-2 w-2 rounded-full bg-green" />
+                          </span>
+                          running
+                        </span>
+                      )}
+                    </span>
                     <span className="text-sm tnum text-ink-light">
                       {x.w.loaded}/{x.w.datasets}
                     </span>
@@ -247,12 +266,19 @@ export default function SetupPage() {
               ))}
             </div>
 
-            {data.build_status.running && (
+            {(data.build_status.running || data.datasets.some((d) => d.job.running)) && (
               <Card>
                 <div className="p-4 flex items-center justify-between gap-3 flex-wrap">
-                  <span className="text-sm text-ink">
-                    A build is running — {data.build_status.progress_pct}% ·{' '}
-                    {data.build_status.steps_done}/{data.build_status.steps_total} steps
+                  <span className="text-sm text-ink inline-flex items-center gap-2">
+                    <span className="relative flex h-2 w-2 shrink-0">
+                      <span className="absolute inline-flex h-full w-full animate-ping
+                                       rounded-full bg-green opacity-60" />
+                      <span className="relative inline-flex h-2 w-2 rounded-full bg-green" />
+                    </span>
+                    {data.build_status.running
+                      ? `Build running — ${data.build_status.progress_pct}% · `
+                        + `${data.build_status.steps_done}/${data.build_status.steps_total} steps`
+                      : `${data.datasets.filter((d) => d.job.running).length} dataset job(s) running`}
                   </span>
                   <Link
                     href={data.build_status.phase === 'derived' ? '/setup/derived' : '/setup/ingest'}

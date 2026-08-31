@@ -21,9 +21,32 @@ const KIND_PHASES: Record<'ingest' | 'derive', string[]> = {
   derive: ['derived'],
 };
 
-function StateLabel({ state }: { state: DatasetStatus['state'] }) {
-  const m = state === 'loaded' ? ['text-pos', 'loaded']
-    : state === 'missing' ? ['text-neg', 'missing']
+/** What a row is DOING beats what it holds: a running job shows as running, even though
+ *  its table still reads "loaded" from the last build. Reporting only the data state
+ *  would leave a row that is actively rebuilding looking idle. */
+function StateLabel({ d }: { d: DatasetStatus }) {
+  const j = d.job;
+  if (j.running) {
+    return (
+      <span className="inline-flex items-center gap-1.5 text-xs text-green whitespace-nowrap">
+        <span className="relative flex h-2 w-2 shrink-0">
+          <span className="absolute inline-flex h-full w-full animate-ping rounded-full
+                           bg-green opacity-60" />
+          <span className="relative inline-flex h-2 w-2 rounded-full bg-green" />
+        </span>
+        running{j.frac != null ? ` ${(j.frac * 100).toFixed(0)}%` : ''}
+      </span>
+    );
+  }
+  // A job that ended badly is worth surfacing on the row, not only in the log.
+  if (j.phase === 'interrupted') {
+    return <span className="text-xs text-gold" title="Stopped before finishing — run it again to resume">stopped</span>;
+  }
+  if (j.status === 'FAIL' || j.phase === 'failed') {
+    return <span className="text-xs text-neg" title="Last run failed — see its log">failed</span>;
+  }
+  const m = d.state === 'loaded' ? ['text-pos', 'loaded']
+    : d.state === 'missing' ? ['text-neg', 'missing']
     : ['text-ink-muted', 'n/a'];
   return <span className={`text-xs ${m[0]}`}>{m[1]}</span>;
 }
@@ -281,7 +304,7 @@ export function BuildRunner({
                       const open = openLog === d.key;
                       return (
                         <Fragment key={d.key}>
-                          <tr>
+                          <tr className={j.running ? 'bg-green-soft/40' : undefined}>
                             <td className="py-2 pr-3 text-ink">
                               {d.label}
                               {j.running && j.detail && (
@@ -292,7 +315,7 @@ export function BuildRunner({
                               )}
                             </td>
                             <td className="py-2 pr-3 text-ink-faint">{d.source.short}</td>
-                            <td className="py-2 pr-3"><StateLabel state={d.state} /></td>
+                            <td className="py-2 pr-3"><StateLabel d={d} /></td>
                             <td className="py-2 pr-3 text-right tnum text-ink-light">
                               {d.rows ? d.rows.toLocaleString() : '—'}
                             </td>
