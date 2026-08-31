@@ -366,3 +366,29 @@ def stop_build() -> dict[str, Any]:
     return {"stopping": True, "pid": status["pid"],
             "note": "Stopping at the next step boundary — the in-flight step is abandoned "
                     "and will re-run. Start again to resume."}
+
+
+@router.get("/build/log")
+def build_log(tail: int = 200) -> dict[str, Any]:
+    """The tail of the build log, so a run can be followed without a terminal.
+
+    Reads a FIXED path — nothing about the file is caller-controlled, so there is no path
+    to traverse. `tail` is clamped: the log of a full build is tens of thousands of lines
+    and shipping all of it to a browser every two seconds would be its own outage."""
+    n = max(1, min(int(tail), 2000))
+    if not _LOG_PATH.exists():
+        return {"lines": [], "path": str(_LOG_PATH), "exists": False, "bytes": 0}
+    try:
+        # Read the end only: a long build's log grows to megabytes and this endpoint is
+        # polled while it runs.
+        size = _LOG_PATH.stat().st_size
+        with _LOG_PATH.open("rb") as fh:
+            window = min(size, 256 * 1024)
+            fh.seek(size - window)
+            text = fh.read().decode("utf-8", errors="replace")
+        lines = text.splitlines()
+        if window < size and lines:
+            lines = lines[1:]          # drop the half-line the window started mid-way through
+        return {"lines": lines[-n:], "path": str(_LOG_PATH), "exists": True, "bytes": size}
+    except OSError as exc:
+        raise HTTPException(500, f"Could not read {_LOG_PATH}: {exc}") from exc
