@@ -14,11 +14,16 @@ export interface SavedScreen {
   id: string;
   title: string;
   description: string;
+  /** Live count of what this screen finds right now; null if its spec won't load. */
+  count?: number | null;
+  criteria?: string[];
+  error?: string;
 }
 
 export interface ScreensResponse {
   active: string;
   screens: SavedScreen[];
+  asof?: string | null;
 }
 
 export interface SaveScreenResult {
