@@ -222,16 +222,16 @@ def main() -> int:
         print(f"  sp500: {len(sp):,} ({len(snaps)} snapshots x {len(members)} members)")
 
         # ---------- sfp: a handful of invented funds --------------------------
-        # Two invented issuers, several funds each — siblings share a CIK so the
-        # fund-family panel on /etf has a family to list.
-        funds = [("DMOX", "Demo Broad Market Fund", "8000001"),
-                 ("DMTC", "Demo Technology Fund", "8000001"),
-                 ("DMSC", "Demo Small Cap Fund", "8000001"),
-                 ("DMIN", "Demo International Fund", "8000001"),
-                 ("DMHY", "Demo High Yield Bond Fund", "8000002"),
-                 ("DMAG", "Demo Aggregate Bond Fund", "8000002"),
-                 ("DMCM", "Demo Commodity Fund", "8000002"),
-                 ("DMGD", "Demo Gold Fund", "8000002")]
+        # Every two-letter ticker AA..ZZ exists as a fund as well as a company, so any
+        # two-character lookup resolves on the ETF side too. They are spread over eight
+        # invented issuers (a shared CIK each) so the fund-family panel has real siblings.
+        ALPHA = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+        FAMILIES = ["Demo Broad", "Demo Technology", "Demo Small Cap", "Demo International",
+                    "Demo High Yield", "Demo Aggregate", "Demo Commodity", "Demo Gold"]
+        funds = []
+        for n, (a, b) in enumerate((a, b) for a in ALPHA for b in ALPHA):
+            fam = n % len(FAMILIES)
+            funds.append((a + b, f"{FAMILIES[fam]} {a}{b} Fund", str(8000001 + fam)))
         cur.executemany(
             'INSERT INTO tickers (permaticker, ticker, "table", name, exchange, isdelisted,'
             ' category, currency, secfilings)'
@@ -239,8 +239,8 @@ def main() -> int:
             " ON CONFLICT DO NOTHING",
             [(str(950000 + n), t, nm, f"{EDGAR}{cik}")
              for n, (t, nm, cik) in enumerate(funds)])
-        # The family panel reads the SEC series/class map, so give the two invented
-        # issuers one series per fund with an A/I share-class pair.
+        # The family panel reads the SEC series/class map: one series per fund, with an
+        # A/I share-class pair.
         classes = []
         for n, (t, _nm, cik) in enumerate(funds):
             for c, suffix in enumerate(("", "I")):
@@ -251,18 +251,22 @@ def main() -> int:
             " VALUES (%s,%s,%s,%s) ON CONFLICT DO NOTHING", classes)
         days = [today - timedelta(days=d) for d in range(3 * 365, 0, -1)]
         days = [d for d in days if d.weekday() < 5]
-        frows = []
-        for n, (t, _, _cik) in enumerate(funds):
+        sfp_sql = ("INSERT INTO sfp (ticker,date,open,high,low,close,volume,closeadj,"
+                   "closeunadj,permaticker) VALUES (" + ",".join(["%s"] * 10) + ")"
+                   " ON CONFLICT DO NOTHING")
+        frows, n_sfp = [], 0
+        for n, (t, _nm, _cik) in enumerate(funds):
             p = rng.uniform(25, 180)
             for d in days:
                 p = max(1.0, p * (1 + rng.gauss(0.0003, 0.011)))
                 frows.append((t, d, round(p, 2), round(p * 1.01, 2), round(p * 0.99, 2),
                               round(p, 2), int(rng.uniform(1e5, 3e6)), round(p, 2),
                               round(p, 2), 950000 + n))
-        cur.executemany(
-            "INSERT INTO sfp (ticker,date,open,high,low,close,volume,closeadj,closeunadj,"
-            "permaticker) VALUES (" + ",".join(["%s"] * 10) + ") ON CONFLICT DO NOTHING", frows)
-        print(f"  sfp (funds): {len(frows):,}")
+            if len(frows) >= 50_000:
+                cur.executemany(sfp_sql, frows); n_sfp += len(frows); frows.clear()
+        if frows:
+            cur.executemany(sfp_sql, frows); n_sfp += len(frows); frows.clear()
+        print(f"  sfp: {n_sfp:,} rows across {len(funds)} funds")
 
         # ---------- event_codes: the legend the events tab joins against -------
         cur.executemany(
@@ -310,13 +314,13 @@ def main() -> int:
         # ---------- bookkeeping: what a real ingest would have left behind -----
         # Not user-facing, but the setup page and the incremental loaders read these,
         # and an empty sync_state makes a demo look like a database that never ran.
-        stamps = [
-            ("tickers", 308), ("sep", 390_900), ("sf1", 28_800), ("sf2", len(rows)),
-            ("sf3", len(sf3)), ("sf3a", len(sf3a)), ("sf3b", len(sf3b)),
-            ("daily", 18_000), ("sfp", len(frows)), ("metrics", len(met)),
-            ("actions", len(acts)), ("events", len(evs)), ("sp500", len(sp)),
-            ("fred_observations", len(obs)), ("finra_short_interest", len(si)),
-        ]
+        # Counted, not assumed: the row totals below feed the setup page.
+        stamps = []
+        for t in ("tickers", "sep", "sf1", "sf2", "sf3", "sf3a", "sf3b", "daily", "sfp",
+                  "metrics", "actions", "events", "sp500", "fred_observations",
+                  "finra_short_interest"):
+            cur.execute(f"SELECT count(*) FROM {t}")
+            stamps.append((t, cur.fetchone()[0]))
         cur.executemany(
             "INSERT INTO sync_state (table_name,last_updated_date,last_run,rows_loaded)"
             " VALUES (%s,%s,%s,%s) ON CONFLICT (table_name) DO UPDATE SET"

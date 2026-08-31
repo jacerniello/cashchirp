@@ -46,15 +46,27 @@ SUFFIX = ["Systems", "Holdings", "Industries", "Labs", "Works", "Group", "Partne
           "Dynamics", "Technologies", "Materials", "Networks", "Brands"]
 
 
+ALPHA = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+TWO_LETTER = [a + b for a in ALPHA for b in ALPHA]   # AA..ZZ, all 676
+
+
 def make_issuers(n: int, rng: random.Random) -> list[dict]:
-    seen: set[str] = set()
+    """`n` issuers, the first 676 of which carry every two-letter ticker AA..ZZ.
+
+    Exhausting the two-letter space means any two-character search or deep link in the
+    demo resolves to a company instead of a dead end; the remainder get random 3-4
+    letter symbols so the universe still looks like a real one."""
+    seen: set[str] = set(TWO_LETTER[:n])
     out = []
     for i in range(n):
-        while True:
-            t = "".join(rng.choices("ABCDEFGHIJKLMNOPQRSTUVWXYZ", k=rng.choice([3, 4])))
-            if t not in seen:
-                seen.add(t)
-                break
+        if i < len(TWO_LETTER):
+            t = TWO_LETTER[i]
+        else:
+            while True:
+                t = "".join(rng.choices(ALPHA, k=rng.choice([3, 4])))
+                if t not in seen:
+                    seen.add(t)
+                    break
         # A deliberate minority are drawn to SATISFY the example quality-value screen.
         # Twelve independent random gates essentially never align, so without this the
         # demo's idea board is empty — which reads as broken rather than as fake data.
@@ -86,7 +98,7 @@ def make_issuers(n: int, rng: random.Random) -> list[dict]:
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--dsn", required=True, help="postgresql://… of the EMPTY demo database")
-    ap.add_argument("--tickers", type=int, default=300)
+    ap.add_argument("--tickers", type=int, default=976)   # 676 two-letter + 300
     ap.add_argument("--years-prices", type=int, default=5)
     ap.add_argument("--years-fundamentals", type=int, default=8)
     args = ap.parse_args()
@@ -109,7 +121,12 @@ def main() -> int:
         # -- sep: a geometric random walk per issuer -----------------------
         days = [today - timedelta(days=d) for d in range(args.years_prices * 365, 0, -1)]
         days = [d for d in days if d.weekday() < 5]
-        rows = []
+        # Flushed in chunks rather than accumulated: ~1.3M bar tuples held at once is
+        # over a gigabyte of Python objects, and the droplet this runs on has ~1 GB.
+        sep_sql = ("INSERT INTO sep (ticker,date,open,high,low,close,volume,closeadj,"
+                   "closeunadj,permaticker) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)"
+                   " ON CONFLICT DO NOTHING")
+        rows, n_sep = [], 0
         for i in issuers:
             px = 10 ** rng.uniform(0.7, 2.4)
             dd, dv = i["drift"] / 252, i["vol"] / (252 ** 0.5)
@@ -121,10 +138,11 @@ def main() -> int:
                              int(rng.uniform(1e5, 8e6)), round(c, 2), round(c, 2),
                              i["permaticker"]))
             i["px"] = px
-        cur.executemany(
-            "INSERT INTO sep (ticker,date,open,high,low,close,volume,closeadj,closeunadj,permaticker)"
-            " VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)" + " ON CONFLICT DO NOTHING", rows)
-        print(f"  sep: {len(rows):,} rows")
+            if len(rows) >= 50_000:
+                cur.executemany(sep_sql, rows); n_sep += len(rows); rows.clear()
+        if rows:
+            cur.executemany(sep_sql, rows); n_sep += len(rows); rows.clear()
+        print(f"  sep: {n_sep:,} rows")
 
         # -- daily: valuation, one row per issuer per month ----------------
         months = sorted({d.replace(day=1) for d in days})
