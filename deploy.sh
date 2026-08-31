@@ -20,11 +20,12 @@ API_URL="${API_HEALTH_URL:-http://127.0.0.1:8001/health}"
 WEB_URL="${WEB_HEALTH_URL:-http://127.0.0.1:3010/}"
 PY="${PY:-.venv/bin/python}"
 
-FORCE=0; DRY=0
+FORCE=0; DRY=0; NOPULL=0
 for a in "$@"; do
   case "$a" in
     --force) FORCE=1 ;;
     --dry-run) DRY=1 ;;
+    --no-pull) NOPULL=1 ;;   # internal: set by the re-exec below, after the pull
     -h|--help) sed -n '2,10p' "$0"; exit 0 ;;
     *) echo "unknown option: $a (try --help)" >&2; exit 2 ;;
   esac
@@ -45,9 +46,24 @@ if [ -n "$(git status --porcelain)" ]; then
 fi
 
 step "pulling"
-OLD=$(git rev-parse HEAD)
-[ "$DRY" = 1 ] || git pull --ff-only --quiet
+OLD=${DEPLOY_OLD:-$(git rev-parse HEAD)}
+if [ "$NOPULL" = 0 ] && [ "$DRY" = 0 ]; then
+  git pull --ff-only --quiet
+fi
 NEW=$(git rev-parse HEAD)
+
+# The pull may have rewritten THIS FILE underneath the running shell. Bash reads a script
+# incrementally from a byte offset, so continuing would execute a mix of the old and new
+# versions — which is exactly how an earlier deploy ran a stale `npm ci --omit=dev` and
+# stripped TypeScript out of the build. Hand over to the new version instead.
+if [ "$OLD" != "$NEW" ] && git diff --name-only "$OLD" "$NEW" | grep -qx 'deploy.sh'; then
+  say "deploy.sh itself changed — re-executing the new version"
+  args="--no-pull"
+  [ "$FORCE" = 1 ] && args="$args --force"
+  [ "$DRY" = 1 ] && args="$args --dry-run"
+  # shellcheck disable=SC2086
+  DEPLOY_OLD="$OLD" exec "$0" $args
+fi
 if [ "$OLD" = "$NEW" ]; then
   say "already at $(git rev-parse --short HEAD) — nothing new"
   [ "$FORCE" = 1 ] || { say "(pass --force to rebuild and restart anyway)"; exit 0; }
