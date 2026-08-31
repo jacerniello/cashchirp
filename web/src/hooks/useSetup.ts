@@ -121,6 +121,19 @@ export interface SetupStatus {
   work: { ingest: WorkSplit; derive: WorkSplit };
 }
 
+/** Tail of the build log. Polls quickly while a build runs, stops when it doesn't — the
+ *  point is to follow a long ingest without a terminal. */
+export function useBuildLog(enabled: boolean, running: boolean, tail = 300) {
+  return useQuery({
+    queryKey: ['build-log', tail],
+    queryFn: async (): Promise<{ lines: string[]; path: string; exists: boolean }> =>
+      (await api.get(`/setup/build/log?tail=${tail}`)).data,
+    enabled,
+    refetchInterval: running ? 2000 : false,
+    retry: false,
+  });
+}
+
 export function useStartBuild() {
   const qc = useQueryClient();
   return useMutation({

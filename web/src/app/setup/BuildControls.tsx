@@ -1,7 +1,8 @@
 'use client';
 
 import { useState } from 'react';
-import { useStartBuild, useStopBuild, type SetupStatus } from '@/hooks/useSetup';
+import { useQueryClient } from '@tanstack/react-query';
+import { useBuildLog, useStartBuild, useStopBuild, type SetupStatus } from '@/hooks/useSetup';
 
 // Start / stop / resume a build from the browser.
 //
@@ -42,15 +43,23 @@ function Btn({
 export function BuildControls({ data }: { data: SetupStatus }) {
   const start = useStartBuild();
   const stop = useStopBuild();
+  const qc = useQueryClient();
   const [err, setErr] = useState<string | null>(null);
+  const [showLog, setShowLog] = useState(false);
   const b = data.build_status;
+  // Follow the log while a build runs, or whenever it's been opened.
+  const log = useBuildLog(showLog || b.running, b.running);
 
   const run = async (kind: 'all' | 'ingest' | 'derive', force = false) => {
     setErr(null);
-    try { await start.mutateAsync({ kind, force }); }
+    try { await start.mutateAsync({ kind, force }); setShowLog(true); }
     catch (e) {
       const d = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
       setErr(d || (e as Error).message);
+      // "already running" means our status is stale (a build was started elsewhere, or
+      // between polls). Refetch so the view flips to the running state — which is what
+      // actually offers the Stop button the message tells you to use.
+      qc.invalidateQueries({ queryKey: ['setup-status'] });
     }
   };
   const onStop = async () => {
@@ -114,9 +123,37 @@ export function BuildControls({ data }: { data: SetupStatus }) {
       {err && (
         <div className="mt-3 text-xs text-neg bg-neg-soft rounded-lg px-3 py-2">{err}</div>
       )}
-      <p className="text-xs text-ink-faint mt-3">
-        Log: <code className="font-mono">{b.log}</code>
-      </p>
+      <div className="mt-4">
+        <button
+          type="button"
+          onClick={() => setShowLog((v) => !v)}
+          className="text-xs text-green hover:text-green-dark bg-transparent border-0 cursor-pointer p-0"
+        >
+          {showLog ? '▾ Hide build log' : '▸ Show build log'}
+          {b.running && !showLog && ' (live)'}
+        </button>
+        {showLog && (
+          <>
+            <pre
+              ref={(el) => {
+                // Follow the tail while it streams, the way `tail -f` does.
+                if (el && b.running) el.scrollTop = el.scrollHeight;
+              }}
+              className="mt-2 max-h-80 overflow-auto rounded-lg bg-ink text-white/85
+                         text-[0.72rem] leading-relaxed font-mono p-3 whitespace-pre-wrap"
+            >
+              {log.isLoading && !log.data ? 'Loading…'
+                : !log.data?.exists ? 'No build has run yet — the log appears once you start one.'
+                : log.data.lines.length ? log.data.lines.join('\n')
+                : '(log is empty)'}
+            </pre>
+            <p className="text-xs text-ink-faint mt-1">
+              <code className="font-mono">{b.log}</code>
+              {b.running && ' · refreshing every 2s'}
+            </p>
+          </>
+        )}
+      </div>
     </div>
   );
 }
