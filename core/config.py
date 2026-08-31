@@ -33,7 +33,7 @@ class Settings(BaseSettings):
     api_host: str = "127.0.0.1"
     api_port: int = 8001
 
-    # The screen spec (config/screens/<id>.yaml) the idea board and backtests run by
+    # The screen spec (config/screens/<id>.yaml) the idea board and the CLI run by
     # default. This is the project's main personalisation knob — see docs/CONFIGURATION.md.
     active_screen: str = "quality-value"
 

@@ -178,7 +178,7 @@ python -m core.scripts.ops.load_status          # latest load per dataset, from 
 `verify_sharadar` is the one that matters. `--status` tells you rows *exist*;
 `verify_sharadar` tells you they match what the provider actually sent. Numbers in finance
 look plausible while being wrong, and a silently truncated table is indistinguishable from
-a correct one until a backtest quietly gives you the wrong answer.
+a correct one until it quietly gives you the wrong answer.
 
 Then serve it:
 

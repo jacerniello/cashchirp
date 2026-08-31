@@ -9,12 +9,7 @@
 
 The screen is a YAML file in `config/screens/` (see `core.backend.screens` and
 docs/CONFIGURATION.md). Editing one and re-running this is the whole personalisation loop:
-change a gate, see who survives, then hand the same spec to the backtest harness
-(`screen_portfolio_backtest`, `screen_cohort_study`) to find out whether it ever worked.
-
-`--asof` rebuilds the snapshot as it was KNOWN on that date (`sf1` gated by filing date) and
-includes names since delisted, so the historical basket is free of look-ahead and
-survivorship bias. Without it you get today's snapshot.
+change a gate, re-run, see who survives.
 """
 from __future__ import annotations
 
@@ -25,7 +20,6 @@ import pandas as pd
 
 from core.backend import screens
 from core.backend.db.engine import session_scope
-from core.backend.queries.discovery import backtest as bt
 from core.backend.queries.discovery import screener
 
 # Shown per surviving name. Kept short on purpose — this is a check, not a report.
@@ -60,7 +54,6 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--list", action="store_true", help="list available screens and exit")
     ap.add_argument("--columns", action="store_true",
                     help="list the snapshot columns a screen may gate on, and exit")
-    ap.add_argument("--asof", help="point-in-time date YYYY-MM-DD (no look-ahead)")
     ap.add_argument("--csv", help="write the surviving basket to this path")
     ap.add_argument("--limit", type=int, default=50, help="rows to print (default 50)")
     args = ap.parse_args(argv)
@@ -82,14 +75,8 @@ def main(argv: list[str] | None = None) -> int:
 
         spec = screens.load_screen(args.screen) if args.screen else screens.active_screen()
         print(f"Screen: {spec['id']} — {spec.get('title', '')}")
-        if args.asof:
-            print(f"As-of:  {args.asof} (point-in-time, survivorship-free)")
-            snap = bt.screen_snapshot_asof(session, args.asof)
-            # `isdelisted` is today's flag — the wrong vintage for a historical as-of.
-            passed = screener.screen_candidates(snap, drop_delisted=False, spec=spec)
-        else:
-            snap = screener.snapshot(session)
-            passed = screener.screen_candidates(snap, spec=spec)
+        snap = screener.snapshot(session)
+        passed = screener.screen_candidates(snap, spec=spec)
 
     print(f"Universe: {len(snap):,} securities  ->  {len(passed):,} pass\n")
     if passed.empty:

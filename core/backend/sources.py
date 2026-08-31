@@ -177,7 +177,7 @@ DATASETS: list[Dataset] = [
     Dataset(key="sharadar:SEP", source="sharadar", label="equity prices (EOD)",
             phase="sharadar", endpoint="SHARADAR/SEP", size_mb=9729,
             tables=("sep",), mode="sync",
-            note="The big one. Required for any backtest."),
+            note="The big one. Required for price history and charts."),
     Dataset(key="sharadar:SFP", source="sharadar", label="fund prices (ETF/CEF)",
             phase="sharadar", endpoint="SHARADAR/SFP", size_mb=2708,
             tables=("sfp",), mode="sync", kwargs={"chunk_key": "ticker"},

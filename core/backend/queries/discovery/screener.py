@@ -317,8 +317,8 @@ def screen_candidates(
 
     The spec is **data, not code** — a YAML file in `config/screens/` (see
     `core.backend.screens`), so the filter is the user's to define and the live screen and
-    the point-in-time backtest provably run the same definition. Defaults to the active
-    screen (`ACTIVE_SCREEN` in core/.env).
+    the CLI provably run the same definition. Defaults to the active screen
+    (`ACTIVE_SCREEN` in core/.env).
 
     `drop_delisted=False` skips the `isdelisted != 'Y'` gate — used by the point-in-time
     backtest (`backtest.run_screen_asof`), where `isdelisted` is *today's* flag (wrong for a

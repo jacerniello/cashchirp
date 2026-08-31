@@ -16,7 +16,7 @@ Copy from `core/.env.example`. Gitignored — secrets never leave your machine.
 | `POSTGRES_HOST` | `localhost` | Point at another host to use a remote database. |
 | `POSTGRES_PORT` | `5432` | Change if 5432 is taken; compose reads this too. |
 | `API_HOST` / `API_PORT` | `127.0.0.1` / `8001` | Where the FastAPI bridge binds. |
-| **`ACTIVE_SCREEN`** | `quality-value` | **The main personalisation knob** — which `config/screens/<id>.yaml` the idea board and backtests run by default. |
+| **`ACTIVE_SCREEN`** | `quality-value` | **The main personalisation knob** — which `config/screens/<id>.yaml` the idea board and the CLI run by default. |
 | `NASDAQ_DATA_LINK_API_KEY` | — | Required for any Sharadar load. |
 | `FRED_API_KEY` | — | Required for the macro layer. Free. |
 | `SEC_USER_AGENT` | — | **Required for anything reading filings.** Your real name and e-mail. No default: SEC rate-limits by this identity, so a shared one gets everyone blocked. |
@@ -32,9 +32,8 @@ It is deliberately **data, not code**. Two reasons, and the second matters more 
 looks:
 
 1. You can define your own filter without touching Python.
-2. The live idea board and the point-in-time backtest load the **same file**. A backtest
-   that tests a slightly different filter than the one you ship is worse than no backtest —
-   it gives you unearned confidence in something you never actually ran.
+2. The live idea board and the CLI load the **same file**, so what you look at in the
+   browser is exactly what `run_screen` returns — no second definition to drift.
 
 ```bash
 python -m core.scripts.screen.run_screen --list       # what's defined
@@ -52,18 +51,16 @@ has a worked reference and a fresh clone has something to run. Replace it with y
 
 The `/screener` page can write one for you: set your filters, open **Saved screens**, name
 it, save. It lands in `config/screens/<id>.yaml` in exactly this format — so a filter you
-built by dragging sliders is immediately runnable and backtestable, not trapped in a URL:
+built by dragging sliders is immediately runnable, not trapped in a URL:
 
 ```bash
 python -m core.scripts.screen.run_screen my-filter
-python -m core.scripts.screen.screen_portfolio_backtest my-filter
 ```
 
 **Watch the "Not captured" list.** Some screener controls have no gate equivalent — the
 market-cap *band* buttons are labels (`mid`), not numbers, so they are reported rather
 than saved. The screen still saves; the point is that you find out, because a filter that
-silently dropped a constraint would have you backtest a different screen from the one you
-were looking at. Re-express those as explicit `marketcap_min` / `marketcap_max` values.
+silently dropped a constraint would not be the screen you were looking at. Re-express those as explicit `marketcap_min` / `marketcap_max` values.
 
 ### Shape
 
@@ -72,7 +69,7 @@ id: my-screen                # filename stem; must match
 title: Short human name
 description: >
   What you are looking for and why. This is the hypothesis the screen encodes —
-  write it as one, so a backtest can falsify something specific.
+  write it as one, so it says something specific enough to be wrong.
 
 criteria:                    # human-readable restatement, served verbatim by the API
   - "Quality: ROIC >= 15%"   # so a UI's 'how this was built' list cannot drift from
@@ -81,7 +78,7 @@ criteria:                    # human-readable restatement, served verbatim by th
 universe:
   exclude_sectors: [Energy, Basic Materials]
   exclude_industries: [Biotechnology]
-  exclude_delisted: true     # auto-disabled by the point-in-time backtest (see below)
+  exclude_delisted: true     # drop names delisted today
   include_sectors: [Technology]        # positive selection: ONLY these
   include_industries: [Software - Application]
   include_exchanges: [NASDAQ]

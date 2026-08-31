@@ -16,8 +16,8 @@ measured on a fully built instance — a full build measures 47 GB against the r
 | Tier | Build | DB size | Host | What works |
 |---|---|---:|---|---|
 | **Macro only** | `--only-phase schema fred` | ~2.2 GB | any 2 GB VPS | `/macro`. No equities. |
-| **Screener** | `--only TICKERS SF1 DAILY` | ~9.7 GB | small VPS, 4 GB RAM | Screener, idea board, company fundamentals. **No backtests** (they need prices). |
-| **Research** | `+ SEP` | ~19.2 GB | 8 GB RAM, SSD | Everything above **plus** the point-in-time backtest harness. **The recommended tier.** |
+| **Screener** | `--only TICKERS SF1 DAILY` | ~9.7 GB | small VPS, 4 GB RAM | Screener, idea board, company fundamentals. **No price history or charts.** |
+| **Research** | `+ SEP` | ~19.2 GB | 8 GB RAM, SSD | Everything above **plus** prices: charts and any historical analysis. **The recommended tier.** |
 | **Full** | everything | ~46.9 GB | 16 GB RAM, home server or large VPS | Insider, institutional/13F, and ETF pages. Sharadar is 35 GB of it; the derived rebuilds add 8.9 GB. |
 
 You can start at Screener and add `SEP` later — the loaders are incremental and

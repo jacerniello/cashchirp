@@ -76,7 +76,7 @@ US equity fundamentals, prices, corporate actions, insider transactions and 13F 
 | 13F holdings detail | `SHARADAR/SF3` | `sf3` | quarters | 9.0 GB |
 
 - **tickers (security master)** — Load first — builds permaticker_lookup for every other table.
-- **equity prices (EOD)** — The big one. Required for any backtest.
+- **equity prices (EOD)** — The big one. Required for price history and charts.
 - **fund prices (ETF/CEF)** — Restamps >1M rows/day, so that day is pulled in ticker-chunks.
 - **daily valuation (mktcap, P/E, EV)** — Drives the screener snapshot.
 - **insider transactions** — No lastupdated column — deltas come off filingdate.
