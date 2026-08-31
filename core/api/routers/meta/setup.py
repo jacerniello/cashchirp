@@ -234,28 +234,49 @@ def _human(n: int) -> str:
 _STOP_PATH = CORE_DIR / "data" / "bootstrap.stop"
 
 
+# One `ps` scan per second, shared by every liveness check. The previous version shelled
+# out per PID, and /setup/status checks ~24 datasets — so a single poll spawned two dozen
+# subprocesses, every two seconds, and the endpoint started timing out under load. The
+# cache makes the whole page cost one `ps`.
+_PS_TTL = 1.0
+_ps_cache: dict[str, Any] = {"at": 0.0, "procs": {}}
+
+
+def _bootstrap_procs() -> dict[int, str]:
+    """`{pid: command}` for this project's bootstrap runs, cached briefly."""
+    now = time.time()
+    if now - _ps_cache["at"] < _PS_TTL:
+        return _ps_cache["procs"]
+    procs: dict[int, str] = {}
+    try:
+        out = subprocess.run(["ps", "-Ao", "pid=,command="],
+                             capture_output=True, text=True, timeout=5).stdout
+        for line in out.splitlines():
+            line = line.strip()
+            pid_s, _, cmd = line.partition(" ")
+            if "core.scripts.setup.bootstrap" in cmd and pid_s.isdigit():
+                procs[int(pid_s)] = cmd
+    except (OSError, subprocess.SubprocessError):
+        # Can't enumerate — fall back to "assume alive" rather than declaring a live
+        # build dead, which would let a second one start on top of it.
+        return _ps_cache["procs"]
+    _ps_cache.update(at=now, procs=procs)
+    return procs
+
+
 def _alive(pid: int | None, marker: str | None = None) -> bool:
     """Is that PID still running, and is it still OURS?
 
-    `signal 0` alone is not enough. PIDs are recycled, so a stale job file pointing at a
-    number the OS has since handed to an unrelated process would report a build running
-    for ever — and the start guard would refuse to launch a new one, with no way out but
-    deleting files by hand. So the command line is checked too: it must still look like
-    the bootstrap run we started."""
+    PIDs are recycled, so a stale job file pointing at a number the OS has since handed to
+    an unrelated process would report a build running for ever — and the start guard would
+    refuse to launch a new one, with no way out but deleting files by hand. So the command
+    line is checked too: it must be a bootstrap run, and match `marker` when given."""
     if not pid:
         return False
-    try:
-        os.kill(pid, 0)
-    except (OSError, TypeError):
+    cmd = _bootstrap_procs().get(int(pid))
+    if cmd is None:
         return False
-    try:
-        out = subprocess.run(["ps", "-o", "command=", "-p", str(pid)],
-                             capture_output=True, text=True, timeout=5).stdout
-    except (OSError, subprocess.SubprocessError):
-        return True          # can't check — assume ours rather than kill a live build
-    if "core.scripts.setup.bootstrap" not in out:
-        return False
-    return marker is None or marker in out
+    return marker is None or marker in cmd
 
 
 def _build_status() -> dict[str, Any]:
@@ -345,7 +366,12 @@ def start_build(req: BuildRequest) -> dict[str, Any]:
 
     # argv list, never a shell string, and every element is either a literal or a value
     # that just passed a whitelist above.
-    argv = [sys.executable, "-m", "core.scripts.setup.bootstrap", "--create-db", "--plain"]
+    # `-u`: unbuffered stdout. Python block-buffers when stdout is a FILE rather than a
+    # terminal, so without this the first few KB of output — preflight, the early steps —
+    # sit in the child's buffer and the live log looks empty while work is plainly
+    # happening. The whole point of streaming it is defeated by a 4 KB buffer.
+    argv = [sys.executable, "-u", "-m", "core.scripts.setup.bootstrap", "--create-db",
+            "--plain"]
     # An explicit phase list wins; otherwise `kind` selects the group. Schema rides along
     # with an ingest run because it is idempotent and an ingest into missing tables fails.
     phases = req.phases
@@ -380,6 +406,7 @@ def start_build(req: BuildRequest) -> dict[str, Any]:
         )
     finally:
         log.close()
+    _mark_starting(STATE_PATH, proc.pid, log_path)
     return {"started": True, "kind": req.kind, "mode": mode, "pid": proc.pid,
             "phases": phases or "all", "argv": argv[1:], "log": str(log_path)}
 
@@ -481,6 +508,31 @@ def _last_runs() -> dict[str, dict[str, Any]]:
         return {}
 
 
+def _mark_starting(state_path: Path, pid: int, log: Path) -> None:
+    """Record a run the instant it is spawned.
+
+    `bootstrap` writes its own state only after preflight — a second or two in. Until then
+    the status endpoint would report nothing running, so the UI you just clicked would
+    bounce straight back to the idle buttons and an empty log. Writing a placeholder here
+    closes that window: the process really has started, so saying so is not optimism, it
+    is the truth arriving on time. bootstrap overwrites this moments later."""
+    try:
+        state_path.parent.mkdir(parents=True, exist_ok=True)
+        state_path.write_text(json.dumps({
+            "database": settings.postgres_db,
+            "host": f"{settings.postgres_host}:{settings.postgres_port}",
+            "phase": "starting",
+            "pid": pid,
+            "started_at": datetime.now().isoformat(timespec="seconds"),
+            "updated_at": datetime.now().isoformat(timespec="seconds"),
+            "elapsed_seconds": 0.0,
+            "log": str(log),
+            "steps": [],
+        }, indent=2))
+    except OSError:
+        pass          # a missing placeholder only costs a second of stale UI
+
+
 def _job_state(key: str) -> dict[str, Any]:
     """Live state of one dataset's own job."""
     state_p, _, _ = _job_paths(key)
@@ -537,7 +589,7 @@ def run_dataset(req: DatasetJobRequest) -> dict[str, Any]:
     mode = "update" if req.force and req.mode == "missing" else req.mode
     if mode not in ("update", "missing", "full"):
         raise HTTPException(400, f"mode must be update|missing|full, got {mode!r}")
-    argv = [sys.executable, "-m", "core.scripts.setup.bootstrap", "--plain",
+    argv = [sys.executable, "-u", "-m", "core.scripts.setup.bootstrap", "--plain",
             "--dataset", ds.key, "--state-file", str(state_p)]
     if mode == "full":
         argv.append("--full")
@@ -552,6 +604,7 @@ def run_dataset(req: DatasetJobRequest) -> dict[str, Any]:
         )
     finally:
         log.close()
+    _mark_starting(state_p, proc.pid, log_p)
     return {"started": True, "key": ds.key, "mode": mode, "pid": proc.pid,
             "log": str(log_p)}
 
