@@ -18,6 +18,29 @@ export interface DatasetTable {
   size: string;
 }
 
+/** One dataset's OWN job — its own process, state file and log, so a single table can be
+ *  pulled, watched and stopped without touching anything else. */
+export interface DatasetJob {
+  running: boolean;
+  pid: number | null;
+  phase: string | null;
+  status: string | null;
+  detail: string;
+  frac: number | null;
+  rows: number | null;
+  seconds: number | null;
+  updated_at: string | null;
+  has_log: boolean;
+}
+
+export interface LastRun {
+  status: string;
+  rows: number | null;
+  at: string | null;
+  /** `load_log` (authoritative, covers CLI + nightly runs) or `job` (this UI only). */
+  source: 'load_log' | 'job';
+}
+
 export interface DatasetStatus {
   key: string;
   label: string;
@@ -38,6 +61,8 @@ export interface DatasetStatus {
   rows: number;
   size: string;
   state: 'loaded' | 'missing' | 'unknown';
+  job: DatasetJob;
+  last_run: LastRun | null;
 }
 
 export interface PhaseStatus {
@@ -134,6 +159,34 @@ export function useBuildLog(enabled: boolean, running: boolean, tail = 300) {
   });
 }
 
+/** Run / stop ONE dataset as its own process. */
+export function useDatasetJob() {
+  const qc = useQueryClient();
+  const invalidate = () => qc.invalidateQueries({ queryKey: ['setup-status'] });
+  return {
+    run: useMutation({
+      mutationFn: async (v: { key: string; force?: boolean }) =>
+        (await api.post('/setup/dataset/run', v)).data,
+      onSuccess: invalidate,
+    }),
+    stop: useMutation({
+      mutationFn: async (key: string) => (await api.post('/setup/dataset/stop', { key })).data,
+      onSuccess: invalidate,
+    }),
+  };
+}
+
+export function useDatasetLog(key: string | null, running: boolean, tail = 200) {
+  return useQuery({
+    queryKey: ['dataset-log', key, tail],
+    queryFn: async (): Promise<{ lines: string[]; exists: boolean; path: string }> =>
+      (await api.get(`/setup/dataset/log?key=${encodeURIComponent(key!)}&tail=${tail}`)).data,
+    enabled: !!key,
+    refetchInterval: running ? 2000 : false,
+    retry: false,
+  });
+}
+
 export function useStartBuild() {
   const qc = useQueryClient();
   return useMutation({
@@ -162,7 +215,11 @@ export function useSetup() {
     queryFn: fetchSetup,
     // A build writes its state file after every step, so poll while one is running —
     // that is the whole point of the page during a six-hour backfill. Idle, back off.
-    refetchInterval: (query) => (query.state.data?.build_status?.running ? 2000 : 30000),
+    refetchInterval: (query) => {
+      const d = query.state.data;
+      const busy = d?.build_status?.running || d?.datasets?.some((x) => x.job?.running);
+      return busy ? 2000 : 30000;
+    },
     retry: false,
     staleTime: 0,
   });
