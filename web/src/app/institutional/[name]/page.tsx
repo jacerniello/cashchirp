@@ -155,7 +155,7 @@ function InvestorView({ data, displayName }: { data: InvestorResponse; displayNa
     <div className="max-w-7xl mx-auto px-4 py-6 space-y-6">
       {/* Breadcrumb */}
       <Link
-        href="/filter"
+        href="/screener"
         className="text-sm text-ink-light hover:text-green transition-colors"
       >
         ← Screener

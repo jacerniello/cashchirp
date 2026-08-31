@@ -1,18 +1,25 @@
 'use client';
 
 import Link from 'next/link';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { Suspense } from 'react';
 import { useIdeas, type IdeaCompany } from '@/hooks/useIdeas';
-import { LiveResults } from '../filter/components/LiveResults';
-import { Card, Spinner } from '../filter/components/shared';
-import { formatMarketCap, formatRatio, formatPercent } from '../filter/utils';
+import { LiveResults } from '../components/LiveResults';
+import { Card, Spinner } from '../components/shared';
+import { formatMarketCap, formatRatio, formatPercent } from '../utils';
 import { ScreenerAreaNav } from '@/components/nav/AreaSubNav';
 
 // Idea board — the ACTIVE screen (ACTIVE_SCREEN -> config/screens/<id>.yaml) run live on
 // the snapshot, annotated with the user's own notes from research/watchlist/annotations.json.
 // The title and description come from the screen spec, so this page describes whatever
 // filter you have active rather than naming one. Reuses the screener's LiveResults grid.
-export default function IdeasPage() {
-  const { data, isLoading, error } = useIdeas();
+function IdeasPageContent() {
+  // Which screen's results to show. Lives in the URL so a board is shareable and the
+  // back button works — same source-of-truth rule the grid uses.
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const selected = searchParams.get('screen') || undefined;
+  const { data, isLoading, error } = useIdeas(selected);
   const ideas = (data?.results ?? []).filter((c) => c.thesis);
   const flagged = (data?.results ?? []).filter((c) => c.caution);
 
@@ -38,6 +45,37 @@ export default function IdeasPage() {
             </>
           )}
         </p>
+        {/* Switch screens. Comparing what two filters surface right now is the cheapest
+            way to tell real selectivity from selectivity you assumed when you wrote it. */}
+        {(data?.available?.length ?? 0) > 1 && (
+          <div className="mt-6 flex items-center justify-center gap-2 flex-wrap">
+            {data!.available!.map((s) => {
+              const isOn = (selected ?? data!.screen?.id) === s.id;
+              return (
+                <button
+                  key={s.id}
+                  type="button"
+                  title={s.description}
+                  onClick={() => router.push(`/screener/ideas?screen=${encodeURIComponent(s.id)}`)}
+                  className={`text-sm rounded-full px-4 py-1.5 border cursor-pointer transition-colors ${
+                    isOn
+                      ? 'bg-green text-white border-green'
+                      : 'bg-white text-ink border-rule hover:border-green hover:text-green'
+                  }`}
+                >
+                  {s.title}
+                </button>
+              );
+            })}
+          </div>
+        )}
+        {data?.screen && !data.screen.is_active && (
+          <p className="text-xs text-ink-muted mt-3">
+            Viewing <code className="font-mono">{data.screen.id}</code>. The{' '}
+            <strong>active</strong> screen (<code className="font-mono">ACTIVE_SCREEN</code>)
+            is what the CLI and backtests use by default.
+          </p>
+        )}
         {data?.asof && (
           <p className="text-xs text-ink-muted mt-4">Numbers as of {data.asof}</p>
         )}
@@ -76,7 +114,7 @@ export default function IdeasPage() {
                   </span>
                 )}
               </div>
-              <Link href="/filter" className="text-sm font-medium text-green hover:text-green-dark">
+              <Link href="/screener" className="text-sm font-medium text-green hover:text-green-dark">
                 Screen further →
               </Link>
             </div>
@@ -194,5 +232,14 @@ function CautionCard({ company }: { company: IdeaCompany }) {
         </p>
       </div>
     </div>
+  );
+}
+
+// useSearchParams needs a Suspense boundary in the App Router.
+export default function IdeasPage() {
+  return (
+    <Suspense fallback={<div className="flex justify-center py-12"><Spinner className="h-8 w-8 text-green" /></div>}>
+      <IdeasPageContent />
+    </Suspense>
   );
 }

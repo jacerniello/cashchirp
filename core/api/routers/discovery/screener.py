@@ -1,5 +1,5 @@
-"""Screener endpoints — serve the precomputed `screener_snapshot` to the `/filter` and
-`/ideas` pages.
+"""Screener endpoints — serve the precomputed `screener_snapshot` to the `/screener` and
+`/screener/ideas` pages.
 
     GET /screener/          -> { results: ScreenerCompany[], total, page,
                                  per_page, total_pages, available_sectors,
@@ -213,16 +213,24 @@ def sectors() -> dict[str, Any]:
 
 
 @router.get("/ideas/")
-def ideas() -> dict[str, Any]:
-    """Idea board — the active screen (`ACTIVE_SCREEN`) run live on the snapshot, not a
-    frozen list, enriched with the user's own watchlist notes.
+def ideas(screen: str | None = None) -> dict[str, Any]:
+    """Idea board — one saved screen run live on the snapshot, enriched with the user's
+    own watchlist notes.
 
-    Returns every survivor as a ScreenerCompany row (so a UI can reuse the `/filter` grid),
+    `screen` picks which saved screen to run; omitted, it is `ACTIVE_SCREEN`. Being able
+    to switch is the point of saving several: comparing what two filters surface *right
+    now* is the cheapest way to tell a real difference in selectivity from a difference
+    you imagined when you wrote them.
+
+    Returns every survivor as a ScreenerCompany row (so a UI can reuse the `/screener` grid),
     plus `thesis` + `why_unloved` for annotated names and `caution` for names the screen
     catches but the user has flagged. Annotated names sort first, then cheapest
     (EV/EBITDA) first; flagged names sink to the bottom. With no annotations file, every
     row simply comes back unannotated in cheapest-first order."""
-    spec = screens.active_screen()
+    try:
+        spec = screens.load_screen(screen) if screen else screens.active_screen()
+    except screens.ScreenSpecError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
     ann = watchlist.load_annotations()
     notes, cautions = ann["notes"], ann["cautions"]
     with session_scope() as s:
@@ -259,7 +267,10 @@ def ideas() -> dict[str, Any]:
         "flagged": sum(r["caution"] is not None for r in results),
         "asof": str(asof) if asof is not None else None,
         "screen": {"id": spec.get("id"), "title": spec.get("title"),
-                   "description": (spec.get("description") or "").strip()},
+                   "description": (spec.get("description") or "").strip(),
+                   "is_active": spec.get("id") == settings.active_screen},
+        "available": [{k: v for k, v in x.items() if k != "path"}
+                      for x in screens.list_screens()],
         "criteria": spec.get("criteria") or [],
     }
 
@@ -275,7 +286,7 @@ def screens_index() -> dict[str, Any]:
 
 
 class SaveScreenRequest(BaseModel):
-    """A filter the user wants to keep, as the `/filter` grid holds it."""
+    """A filter the user wants to keep, as the `/screener` grid holds it."""
 
     id: str
     title: str = ""
@@ -283,6 +294,10 @@ class SaveScreenRequest(BaseModel):
     criteria: list[str] = []
     params: dict[str, Any] = {}
     overwrite: bool = False
+    # The screen this filter was loaded FROM, if any. Its grid-invisible constraints
+    # (growth rules, exclusive bounds) are carried forward so editing a loaded screen
+    # cannot silently delete the parts you were never shown.
+    base: str = ""
 
 
 @router.post("/screens/")
@@ -301,6 +316,15 @@ def save_screen(req: SaveScreenRequest) -> dict[str, Any]:
         req.id.strip().lower(), req.params,
         title=req.title, description=req.description, criteria=req.criteria,
     )
+    carried: list[str] = []
+    if req.base:
+        try:
+            base_spec = screens.load_screen(req.base)
+        except screens.ScreenSpecError:
+            base_spec = {}
+        if base_spec:
+            spec, carried = screens.merge_unrepresentable(base_spec, spec)
+
     try:
         path = screens.save_screen(spec, overwrite=req.overwrite)
     except screens.ScreenSpecError as exc:
@@ -310,6 +334,7 @@ def save_screen(req: SaveScreenRequest) -> dict[str, Any]:
         "path": str(path),
         "spec": spec,
         "unsupported": unsupported,
+        "carried": carried,
         "run": f"python -m core.scripts.screen.run_screen {spec['id']}",
     }
 
@@ -331,7 +356,7 @@ def delete_screen(screen_id: str) -> dict[str, Any]:
 
 @router.get("/screens/{screen_id}")
 def get_screen(screen_id: str) -> dict[str, Any]:
-    """One saved screen: its full spec, plus the `/filter` URL params that reproduce it.
+    """One saved screen: its full spec, plus the `/screener` URL params that reproduce it.
 
     `url_params` is what makes a saved screen clickable — the grid can load the filter you
     saved instead of just naming it. `lossy` lists constraints the grid has no widget for

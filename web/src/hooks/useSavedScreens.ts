@@ -29,6 +29,9 @@ export interface SaveScreenResult {
    *  these were not captured — showing them is the difference between "saved" and
    *  "saved the thing you were actually looking at". */
   unsupported: string[];
+  /** Constraints inherited from the screen this was loaded from, because the grid has no
+   *  widget for them. Reported so the carry-forward is visible, not magic. */
+  carried?: string[];
   run: string;
 }
 
@@ -68,6 +71,7 @@ export function useSaveScreen() {
       description?: string;
       params: ScreenerParams;
       overwrite?: boolean;
+      base?: string;
     }): Promise<SaveScreenResult> => (await api.post('/screener/screens/', body)).data,
     onSuccess: () => qc.invalidateQueries({ queryKey: ['screens'] }),
   });

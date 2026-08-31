@@ -13,13 +13,13 @@ export const metadata = {
  *  up. Mirrors the navbar (src/investing/nav.ts) — keep the two in step. */
 const TOOLS: { href: string; label: string; blurb: string }[] = [
   {
-    href: "/filter",
+    href: "/screener",
     label: "Screener",
     blurb:
       "Filter the whole US equity universe on fundamentals, valuation and quality. The general-purpose starting point.",
   },
   {
-    href: "/ideas",
+    href: "/screener/ideas",
     label: "Ideas",
     blurb:
       "Your saved screen, run live, annotated with what you think of each name — and which ones you have already rejected.",
@@ -47,7 +47,7 @@ const TOOLS: { href: string; label: string; blurb: string }[] = [
     blurb: "FRED rates, inflation and activity panels — the regime everything else sits in.",
   },
   {
-    href: "/experiments",
+    href: "/dd/experiments",
     label: "Experiments",
     blurb:
       "Backtest results, point-in-time and survivorship-free, including the ones that failed.",
@@ -91,7 +91,7 @@ export default function RootHome() {
         </p>
         <div className="mt-8 flex items-center justify-center gap-3 flex-wrap">
           <Link
-            href="/filter"
+            href="/screener"
             className="no-underline rounded-lg bg-green px-5 py-2.5 text-[0.9375rem] font-medium text-white transition-colors duration-150 hover:bg-green-dark"
           >
             Open the screener
