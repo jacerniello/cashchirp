@@ -120,8 +120,6 @@ Nothing so far is personal. Two things are:
 - [ ] **`config/screens/*.yaml`** — what you're looking for. Copy `quality-value.yaml`,
       change the numbers, point `ACTIVE_SCREEN` at yours.
       → [../CONFIGURATION.md](../CONFIGURATION.md)
-- [ ] **`research/`** — your run logs, insights and per-name notes. Ships empty.
-      → [../RESEARCH_WORKFLOW.md](../RESEARCH_WORKFLOW.md)
 
 ### 8 · Keep it fresh
 

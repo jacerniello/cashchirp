@@ -5,21 +5,14 @@ import api from '@/lib/api';
 import type { ScreenerCompany } from './useScreener';
 
 // Idea board — the ACTIVE screen (ACTIVE_SCREEN -> config/screens/<id>.yaml) run
-// live on the snapshot, served by GET /screener/ideas/. Each row is a ScreenerCompany (so
-// the `/ideas` page reuses the screener grid), annotated where I have a view: `thesis` +
-// `why_unloved` for names I'd own, `caution` for ones the screen catches but I'd flag.
+// live on the snapshot, served by GET /screener/ideas/. Each row is a ScreenerCompany, so
+// the page reuses the screener grid verbatim.
 // Numbers stay live; see core/api/routers/screener.py → IDEAS / CAUTIONS.
-export interface IdeaCompany extends ScreenerCompany {
-  thesis: string | null;
-  why_unloved: string | null;
-  caution: string | null;
-}
+export type IdeaCompany = ScreenerCompany;
 
 export interface IdeasResponse {
   results: IdeaCompany[];
   total: number;
-  ideas: number;
-  flagged: number;
   asof: string | null;
   criteria: string[];
   /** The screen that produced this board — its own title/description, so the page

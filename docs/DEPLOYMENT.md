@@ -46,7 +46,7 @@ Nightly job        core.scripts.load.update_all              cron / launchd / sy
 
 The API is stateless and the frontend is stateless, so both scale trivially and neither
 holds anything you'd be sad to lose. **All the value is in Postgres and in git** — the
-research folder, the screens, and the watchlist are tracked; the 3.6 GB of downloaded
+the screens and the docs are tracked; the downloaded
 Sharadar files under `core/data/` are gitignored and regenerable.
 
 A common and good split: put Postgres and the nightly job on a machine with the disk (a
@@ -142,7 +142,7 @@ pg_dump -Fc investing > investing-$(date +%F).dump
 
 A full dump of the Full tier is large and slow. The pragmatic position: the Sharadar data
 is **re-downloadable** — your subscription is the backup. What is genuinely irreplaceable is
-the small stuff, and it is all in git: `research/`, `config/screens/`, and your `.env`
+the small stuff, and it is all in git: `config/screens/`, `docs/`, and your `.env`
 values (stored wherever you keep secrets, *not* in git). If you're choosing where to spend
 backup effort, spend it there. Consider dumping only `derived.*` and the derived tables if
 rebuilding them from scratch is slower than restoring them.

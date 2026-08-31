@@ -9,8 +9,8 @@ export const metadata = {
     "A personal research platform for forming hypotheses about how markets behave, testing them against data, and recording what holds up.",
 };
 
-/** The tools, in the order someone new should meet them: find names, form a view, write it
- *  up. Mirrors the navbar (src/investing/nav.ts) — keep the two in step. */
+/** The tools, in the order someone new should meet them: find names, then the context to
+ *  judge them, then the machinery underneath. Mirrors the navbar (src/nav.ts) — keep the two in step. */
 const TOOLS: { href: string; label: string; blurb: string }[] = [
   {
     href: "/screener",
@@ -22,7 +22,7 @@ const TOOLS: { href: string; label: string; blurb: string }[] = [
     href: "/screener/ideas",
     label: "Ideas",
     blurb:
-      "Your saved screen, run live, annotated with what you think of each name — and which ones you have already rejected.",
+      "Every screen you have saved, each run live against the latest snapshot so you can compare what they surface.",
   },
   {
     href: "/sectors",
@@ -33,12 +33,17 @@ const TOOLS: { href: string; label: string; blurb: string }[] = [
     href: "/sp500",
     label: "S&P 500",
     blurb:
-      "Index concentration and a counterfactual lab: how would the index have done without X?",
+      "How concentrated the index has become: cap-weight of the largest names, the effective number of constituents, and the sector mix over time.",
   },
   {
     href: "/macro",
     label: "Macro",
     blurb: "FRED rates, inflation and activity panels — the regime everything else sits in.",
+  },
+  {
+    href: "/setup",
+    label: "Setup",
+    blurb: "What your database holds, where every dataset comes from, and the controls to ingest or rebuild it.",
   },
 ];
 
@@ -47,15 +52,15 @@ const TOOLS: { href: string; label: string; blurb: string }[] = [
 const PRINCIPLES: { title: string; body: string }[] = [
   {
     title: "Hypothesis first",
-    body: "Write the question and what would falsify it before building the model. A screen with no stated question is a black box that returns numbers.",
+    body: "Write the question, and what would change your mind, before you build the screen. A screen with no stated question is a black box that returns names you will rationalise.",
   },
   {
-    title: "Define correct before building",
-    body: "State the baseline, the holdout and the sanity bounds up front. If a result cannot be independently checked, it is unknown — not done.",
+    title: "Distrust the numbers first",
+    body: "Financial data looks entirely plausible while being wrong. Verify the mirror against source, reconcile a screen's figures to the filings, and treat anything you could not check as unknown rather than done.",
   },
   {
-    title: "Record the dead ends",
-    body: "A falsified hypothesis is a result, and the one you are most likely to waste a week rediscovering. The catalogue is what compounds.",
+    title: "Keep what you reject",
+    body: "A name you rejected is a result, and the one you are most likely to waste a week rediscovering when the screen surfaces it again next quarter. Write it down somewhere — this tool no longer does it for you.",
   },
 ];
 
@@ -71,8 +76,8 @@ export default function RootHome() {
           Personal Investing Research Tool
         </h1>
         <p className="text-lg text-ink-light max-w-2xl mx-auto text-pretty">
-          A workbench for forming hypotheses about how markets behave, testing them against
-          two decades of fundamentals and prices, and writing down what actually holds up.
+          A screener over your own mirror of two decades of US fundamentals, prices and
+          filings: define what you are looking for, save it, and see who passes today.
         </p>
         <p className="text-sm text-ink-muted max-w-2xl mx-auto mt-4">
           A research program, not a trading bot — and nothing here is investment advice.
@@ -126,8 +131,14 @@ export default function RootHome() {
             you look for is a screen you define yourself — one definition, read by the idea
             board and the CLI alike, so what you look at is what you run.
           </p>
+          <p className="text-sm text-ink-light leading-relaxed mt-3">
+            What it does <em>not</em> do is tell you whether a screen works. There is no
+            historical validation here, and no place to keep notes: a basket is a list of
+            candidates to research, never evidence of an edge. Judging them, and recording
+            what you concluded, happens outside this tool.
+          </p>
           <div className="mt-5 flex items-center gap-2 flex-wrap text-[0.8125rem] text-ink-faint">
-            {["Define a screen", "Write down what would falsify it", "Run it", "Log the verdict", "Promote what survives"].map(
+            {["Define a screen", "Save it", "Run it", "Research the survivors"].map(
               (step, i, arr) => (
                 <span key={step} className="flex items-center gap-2">
                   <span className="rounded-md bg-green-soft px-2 py-1 font-medium text-green-text">

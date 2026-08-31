@@ -6,7 +6,7 @@
                                  available_industries }
     GET /screener/stats/    -> column min/max for slider bounds
     GET /screener/sectors/  -> sector breakdown
-    GET /screener/ideas/    -> the ACTIVE screen, run live, plus watchlist annotations
+    GET /screener/ideas/    -> one saved screen, run live on the snapshot
     GET /screener/screens/  -> every screen defined in config/screens/, and the active one
 
 `/screener/` is a free-form grid (the user filters interactively); `/ideas/` runs a *saved*
@@ -22,7 +22,7 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
 from core.api.serialize import json_safe
-from core.backend import screens, watchlist
+from core.backend import screens
 from core.backend.db.engine import session_scope
 from core.backend.queries.discovery import screener
 from core.backend.queries.discovery.screener import BIOTECH_INDUSTRIES, COMMODITY_SECTORS
@@ -204,18 +204,14 @@ def sectors() -> dict[str, Any]:
 
 
 # --- Idea board ------------------------------------------------------------
-# The screen itself is a user-owned YAML spec (`config/screens/`, see core.backend.screens);
-# the per-name judgement layered on top is a user-owned JSON file
-# (`research/watchlist/annotations.json`, see core.backend.watchlist). Neither is hardcoded
-# here: this endpoint runs whatever screen is active and annotates it with whatever notes
-# exist, so a fresh clone gets a working idea board with no notes rather than someone
-# else's opinions.
+# The screen is a user-owned YAML spec (`config/screens/`, see core.backend.screens), not
+# anything hardcoded here: this endpoint runs whatever screen you point it at, so a fresh
+# clone gets a working idea board rather than someone else's opinions.
 
 
 @router.get("/ideas/")
 def ideas(screen: str | None = None) -> dict[str, Any]:
-    """Idea board — one saved screen run live on the snapshot, enriched with the user's
-    own watchlist notes.
+    """Idea board — one saved screen run live on the snapshot.
 
     `screen` picks which saved screen to run; omitted, it is `ACTIVE_SCREEN`. Being able
     to switch is the point of saving several: comparing what two filters surface *right
@@ -231,8 +227,6 @@ def ideas(screen: str | None = None) -> dict[str, Any]:
         spec = screens.load_screen(screen) if screen else screens.active_screen()
     except screens.ScreenSpecError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
-    ann = watchlist.load_annotations()
-    notes, cautions = ann["notes"], ann["cautions"]
     with session_scope() as s:
         df = screener.snapshot(s)
     cand = screener.screen_candidates(df, spec=spec)
@@ -248,23 +242,12 @@ def ideas(screen: str | None = None) -> dict[str, Any]:
         row["piotroski_f_score"] = None
         row["inst_ownership_latest"] = None
         row["inst_ownership_prev"] = None
-        note = notes.get(pt) or {}
-        row["thesis"] = note.get("thesis")
-        row["why_unloved"] = note.get("why_unloved")
-        row["caution"] = cautions.get(pt)
         results.append(row)
-    # Annotated names first, flagged names last, cheapest within each group.
-    def _rank(r):
-        bucket = 0 if r["thesis"] else (2 if r["caution"] else 1)
-        ev = r["ev_ebitda"]
-        return (bucket, ev if ev is not None else 1e9)
-    results.sort(key=_rank)
+    results.sort(key=lambda r: r["ev_ebitda"] if r["ev_ebitda"] is not None else 1e9)
     asof = df["asof"].iloc[0] if "asof" in df.columns and len(df) else None
     return {
         "results": json_safe(results),
         "total": len(results),
-        "ideas": sum(r["thesis"] is not None for r in results),
-        "flagged": sum(r["caution"] is not None for r in results),
         "asof": str(asof) if asof is not None else None,
         "screen": {"id": spec.get("id"), "title": spec.get("title"),
                    "description": (spec.get("description") or "").strip(),
