@@ -42,6 +42,9 @@ from typing import Callable
 from core.backend import sources
 from core.config import CORE_DIR, settings
 
+# Default state file. `--state-file` overrides it so that per-dataset jobs, which run
+# concurrently, each write their own — one shared file would have them overwrite each
+# other's progress and leave every job reporting the last writer's steps.
 STATE_PATH = CORE_DIR / "data" / "bootstrap-state.json"
 
 # Cooperative stop. A signal alone is not enough to stop this safely: a step blocked in a
@@ -504,7 +507,8 @@ def _runner(ds: sources.Dataset) -> Callable[[Callable[[str], None]], object]:
 
 
 def build_steps(only: list[str] | None,
-                phases: list[str] | None = None) -> list[Step]:
+                phases: list[str] | None = None,
+                datasets: list[str] | None = None) -> list[Step]:
     """The step list, built from the data-source registry (`core.backend.sources`).
 
     The registry is the single source of truth: `update_all` derives its SHARADAR_PLAN
@@ -517,11 +521,17 @@ def build_steps(only: list[str] | None,
                  phases are skipped entirely.
     - `phases` — whole phases (`fred`, `derived`, …). For a deliberately smaller database:
                  the macro layer without the paid Sharadar bundle, or a derived-only
-                 rebuild after changing a repository."""
+                 rebuild after changing a repository.
+    - `datasets` — exact registry keys (`sharadar:SEP`). For running ONE dataset as its own
+                 process, so a single table can be pulled, watched and stopped on its own
+                 without touching anything else."""
     only_up = {t.upper() for t in only} if only else None
     want_phases = {p.lower() for p in phases} if phases else None
+    want_keys = set(datasets) if datasets else None
     steps: list[Step] = []
     for ds in sources.DATASETS:
+        if want_keys is not None and ds.key not in want_keys:
+            continue
         if want_phases is not None and ds.phase not in want_phases:
             continue
         if only_up is not None:
@@ -746,6 +756,12 @@ def main() -> int:
                    help="Create the database if it does not exist.")
     p.add_argument("--only", nargs="*", default=None,
                    help="Only these Sharadar tables (skips FRED/FINRA/SEC/derived).")
+    p.add_argument("--dataset", nargs="*", default=None, metavar="KEY",
+                   help="Only these registry dataset keys (e.g. sharadar:SEP). Runs one "
+                        "dataset as its own job; see --state-file.")
+    p.add_argument("--state-file", default=None, dest="state_file",
+                   help="Where to write progress (default core/data/bootstrap-state.json). "
+                        "Per-dataset jobs each get their own so they don't clobber.")
     p.add_argument("--only-phase", nargs="*", default=None, dest="only_phase",
                    metavar="PHASE",
                    help="Only these phases: " + " ".join(p for p, _ in sources.PHASES)
@@ -811,7 +827,21 @@ def main() -> int:
     if args.check:
         return 0
 
-    steps = build_steps(args.only, args.only_phase)
+    if args.state_file:
+        globals()["STATE_PATH"] = Path(args.state_file)
+        globals()["STOP_PATH"] = Path(args.state_file).with_suffix(".stop")
+
+    if args.dataset:
+        known = {d.key for d in sources.DATASETS}
+        bad = [k for k in args.dataset if k not in known]
+        if bad:
+            print(f"Unknown dataset key(s): {bad}\nKnown: {sorted(known)}")
+            return 1
+
+    steps = build_steps(args.only, args.only_phase, args.dataset)
+    if not steps:
+        print("Nothing to do — that selection matched no datasets.")
+        return 1
 
     if args.plan:
         print(f"{'step':42} {'mode':9} {'from':14} {'size on disk':>13}")

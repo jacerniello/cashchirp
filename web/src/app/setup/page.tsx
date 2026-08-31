@@ -3,7 +3,8 @@
 import { useState } from 'react';
 import { useSetup, type DatasetStatus, type BuildStep } from '@/hooks/useSetup';
 import { Card } from '@/components/Card';
-import { BuildControls } from './BuildControls';
+import Link from 'next/link';
+import { SetupAreaNav } from './SetupAreaNav';
 
 // Setup — what this database contains, what's missing, and where each piece comes from.
 //
@@ -123,6 +124,7 @@ export default function SetupPage() {
 
   return (
     <div className="bg-white min-h-[calc(100vh-4rem)] font-sans">
+      <SetupAreaNav />
       <div className="py-14 px-8 pb-10 text-center border-b border-rule">
         <h1 className="font-sans text-[2.25rem] max-[570px]:text-[1.75rem] font-bold tracking-tight text-ink mb-3">
           Setup
@@ -205,8 +207,62 @@ export default function SetupPage() {
                   <code className="font-mono">docs/setup/database.md</code>
                 </p>
               </div>
-              <BuildControls data={data} />
             </Card>
+
+            {/* ---- the two operations, as destinations rather than triggers ---- */}
+            <div className="grid grid-cols-2 max-[720px]:grid-cols-1 gap-4">
+              {([
+                {
+                  href: '/setup/ingest', label: 'Ingest',
+                  desc: 'Download from Sharadar, FRED, FINRA and SEC.',
+                  cost: 'Hours · uses your paid subscription',
+                  w: data.work.ingest,
+                },
+                {
+                  href: '/setup/derived', label: 'Derived',
+                  desc: 'Recompute the tables the app reads, from data you already have.',
+                  cost: 'Minutes · free, safe to re-run',
+                  w: data.work.derive,
+                },
+              ] as const).map((x) => (
+                <Link
+                  key={x.href}
+                  href={x.href}
+                  className="group no-underline bg-white rounded-xl border border-rule shadow-sm
+                             p-5 transition-colors hover:border-green"
+                >
+                  <div className="flex items-baseline justify-between gap-2">
+                    <span className="text-base font-semibold text-ink group-hover:text-green
+                                     transition-colors">{x.label}</span>
+                    <span className="text-sm tnum text-ink-light">
+                      {x.w.loaded}/{x.w.datasets}
+                    </span>
+                  </div>
+                  <p className="mt-1.5 text-sm text-ink-light leading-relaxed">{x.desc}</p>
+                  <p className="mt-2 text-xs text-ink-muted">
+                    ~{x.w.expected_size} · {x.cost}
+                  </p>
+                  <p className="mt-3 text-xs text-green">Open to run and monitor →</p>
+                </Link>
+              ))}
+            </div>
+
+            {data.build_status.running && (
+              <Card>
+                <div className="p-4 flex items-center justify-between gap-3 flex-wrap">
+                  <span className="text-sm text-ink">
+                    A build is running — {data.build_status.progress_pct}% ·{' '}
+                    {data.build_status.steps_done}/{data.build_status.steps_total} steps
+                  </span>
+                  <Link
+                    href={data.build_status.phase === 'derived' ? '/setup/derived' : '/setup/ingest'}
+                    className="text-sm font-medium text-green hover:text-green-dark no-underline"
+                  >
+                    Monitor / stop →
+                  </Link>
+                </div>
+              </Card>
+            )}
 
             {/* ---- live build ---- */}
             {data.build && (
