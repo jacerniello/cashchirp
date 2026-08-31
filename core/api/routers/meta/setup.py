@@ -18,9 +18,11 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import signal
 import subprocess
 import sys
+from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, HTTPException
@@ -84,6 +86,20 @@ def status() -> dict[str, Any]:
     """Expected (from the registry) vs actual (from the database), dataset by dataset."""
     stats = _table_stats()
     connected = bool(stats) or _db_reachable()
+    last = _last_runs()
+    # `load_log` keys ingest rows by the provider's dataset name, not our registry key —
+    # match on the endpoint (SHARADAR/SEP) and fall back to the table name.
+    def _last_for(d, job: dict[str, Any]) -> dict[str, Any] | None:
+        for cand in (d.endpoint, d.endpoint.split("/")[-1], *d.tables):
+            if cand in last:
+                return {**last[cand], "source": "load_log"}
+        # Derived rebuilds don't write load_log rows, so their only record of a run is
+        # their own job state. Reported with `source` so "never run here" is not confused
+        # with "never run" — the nightly orchestrator rebuilds them without touching this.
+        if job.get("updated_at") and job.get("status"):
+            return {"status": job["status"], "rows": job.get("rows"),
+                    "at": job["updated_at"], "source": "job"}
+        return None
 
     datasets = []
     loaded_mb = 0
@@ -99,6 +115,7 @@ def status() -> dict[str, Any]:
                  else "loaded" if have_rows > 0
                  else "missing")
         src = sources.SOURCES[d.source]
+        job = _job_state(d.key)
         datasets.append({
             "key": d.key, "label": d.label, "phase": d.phase,
             "source": {"id": d.source, "provider": src.provider, "short": src.short,
@@ -108,6 +125,9 @@ def status() -> dict[str, Any]:
             "tables": tables, "rows": have_rows,
             "size": _human(have_bytes) if have_bytes else "—",
             "state": state,
+            # Its own job (own process, own log) and when it last completed.
+            "job": job,
+            "last_run": _last_for(d, job),
         })
 
     phases = []
@@ -392,3 +412,146 @@ def build_log(tail: int = 200) -> dict[str, Any]:
         return {"lines": lines[-n:], "path": str(_LOG_PATH), "exists": True, "bytes": size}
     except OSError as exc:
         raise HTTPException(500, f"Could not read {_LOG_PATH}: {exc}") from exc
+
+
+# ------------------------------------------------------- per-dataset jobs
+
+# Each dataset can be pulled as ITS OWN process, with its own state file and its own log.
+# One shared state file would have concurrent jobs overwrite each other's progress, and a
+# shared log would interleave two downloads into something neither readable nor
+# attributable. The directory is the job registry.
+_JOBS_DIR = CORE_DIR / "data" / "jobs"
+
+
+def _job_slug(key: str) -> str:
+    """`sharadar:SEP` -> `sharadar__SEP`. Keys come from the registry, but this is what
+    reaches the filesystem, so it is sanitised rather than trusted."""
+    return re.sub(r"[^A-Za-z0-9_.-]", "_", key)
+
+
+def _job_paths(key: str) -> tuple[Path, Path, Path]:
+    slug = _job_slug(key)
+    return (_JOBS_DIR / f"{slug}.json", _JOBS_DIR / f"{slug}.log",
+            _JOBS_DIR / f"{slug}.stop")
+
+
+def _last_runs() -> dict[str, dict[str, Any]]:
+    """Most recent completed load per dataset, from `load_log` — the authoritative record,
+    because it also covers runs from the CLI and the nightly job, not just this UI."""
+    try:
+        from sqlalchemy import text
+
+        from core.backend.db.engine import engine
+        with engine.connect() as conn:
+            rows = conn.execute(text("""
+                SELECT DISTINCT ON (dataset) dataset, status, rows, completed_at
+                FROM load_log
+                WHERE completed_at IS NOT NULL
+                ORDER BY dataset, completed_at DESC
+            """)).all()
+        return {r.dataset: {"status": r.status, "rows": r.rows,
+                            "at": r.completed_at.isoformat() if r.completed_at else None}
+                for r in rows}
+    except Exception:
+        return {}
+
+
+def _job_state(key: str) -> dict[str, Any]:
+    """Live state of one dataset's own job."""
+    state_p, log_p, _ = _job_paths(key)
+    st: dict[str, Any] = {}
+    if state_p.exists():
+        try:
+            st = json.loads(state_p.read_text())
+        except (json.JSONDecodeError, OSError):
+            st = {}
+    pid = st.get("pid")
+    running = _alive(pid) and st.get("phase") not in ("done", "failed", "interrupted")
+    step = (st.get("steps") or [{}])[0]
+    return {
+        "running": running,
+        "pid": pid if running else None,
+        "phase": st.get("phase"),
+        "status": step.get("status"),
+        "detail": step.get("detail") or "",
+        "frac": step.get("frac", 0.0) if step.get("frac_known") else None,
+        "rows": step.get("rows"),
+        "seconds": step.get("seconds"),
+        "updated_at": st.get("updated_at"),
+        "has_log": log_p.exists(),
+    }
+
+
+class DatasetJobRequest(BaseModel):
+    key: str
+    force: bool = False
+
+
+@router.post("/dataset/run")
+def run_dataset(req: DatasetJobRequest) -> dict[str, Any]:
+    """Pull ONE dataset, as its own detached process with its own state file and log.
+
+    Independent by design: a table that fails, hangs, or gets stopped affects nothing
+    else, and you can pull `SEP` without committing to the other 17."""
+    ds = sources.BY_KEY.get(req.key)
+    if ds is None:
+        raise HTTPException(404, f"Unknown dataset {req.key!r}.")
+
+    job = _job_state(req.key)
+    if job["running"]:
+        raise HTTPException(409, f"{req.key} is already running (pid {job['pid']}).")
+
+    state_p, log_p, stop_p = _job_paths(req.key)
+    _JOBS_DIR.mkdir(parents=True, exist_ok=True)
+    stop_p.unlink(missing_ok=True)          # a stale stop would halt it immediately
+
+    argv = [sys.executable, "-m", "core.scripts.setup.bootstrap", "--plain",
+            "--dataset", ds.key, "--state-file", str(state_p)]
+    if req.force:
+        argv.append("--force")
+
+    log = open(log_p, "ab", buffering=0)  # noqa: SIM115 - handed to the child
+    try:
+        proc = subprocess.Popen(
+            argv, cwd=str(PROJECT_ROOT), stdout=log, stderr=subprocess.STDOUT,
+            stdin=subprocess.DEVNULL, start_new_session=True,
+        )
+    finally:
+        log.close()
+    return {"started": True, "key": ds.key, "pid": proc.pid, "log": str(log_p)}
+
+
+@router.post("/dataset/stop")
+def stop_dataset(req: DatasetJobRequest) -> dict[str, Any]:
+    """Stop one dataset's job, leaving it resumable — sentinel plus SIGINT, same as a
+    full build."""
+    job = _job_state(req.key)
+    if not job["running"]:
+        raise HTTPException(409, f"{req.key} is not running.")
+    _, _, stop_p = _job_paths(req.key)
+    stop_p.parent.mkdir(parents=True, exist_ok=True)
+    stop_p.write_text("stop requested\n")
+    try:
+        os.kill(job["pid"], signal.SIGINT)
+    except OSError:
+        pass
+    return {"stopping": True, "key": req.key, "pid": job["pid"]}
+
+
+@router.get("/dataset/log")
+def dataset_log(key: str, tail: int = 200) -> dict[str, Any]:
+    """Tail of ONE dataset's own log."""
+    if key not in sources.BY_KEY:
+        raise HTTPException(404, f"Unknown dataset {key!r}.")
+    _, log_p, _ = _job_paths(key)
+    n = max(1, min(int(tail), 2000))
+    if not log_p.exists():
+        return {"key": key, "lines": [], "exists": False, "path": str(log_p)}
+    size = log_p.stat().st_size
+    with log_p.open("rb") as fh:
+        window = min(size, 256 * 1024)
+        fh.seek(size - window)
+        lines = fh.read().decode("utf-8", errors="replace").splitlines()
+    if window < size and lines:
+        lines = lines[1:]
+    return {"key": key, "lines": lines[-n:], "exists": True, "path": str(log_p)}
