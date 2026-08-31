@@ -12,7 +12,7 @@ Three parts:
   repositories as JSON at `/api/v1`. See [core/README.md](core/README.md) and
   [docs/reference/schema.md](docs/reference/schema.md) (schema, keys, fidelity).
 - **`web/`** — the app. A **Next.js + React + Tailwind** frontend (screener, company pages,
-  macro/commodities, experiments) that reads `core/api`. Routes are `web/src/app`, shared
+  macro/commodities) that reads `core/api`. Routes are `web/src/app`, shared
   components `web/src/investing`.
 - **`research/`** — the study. Experiment designs, run logs, insights, due-diligence
   write-ups, and the data-source registry. Ships empty — the content is yours. See

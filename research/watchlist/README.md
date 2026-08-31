@@ -50,7 +50,6 @@ issuer id. Look one up with `GET /api/v1/search/?q=<ticker>`.
   reauthorisation risk, ~40% of revenue" is a claim you can check.
 - **Write the caution the moment you reject a name.** The screen will surface it again next
   quarter, and a rejection you didn't record is a decision you will re-litigate from scratch.
-- **Notes are hypotheses, not conclusions.** Promote one to a full write-up in
-  [`../dd/`](../dd/README.md) before you act on it, and pre-register what would falsify it
-  in [`../experiments/`](../experiments/README.md).
-- A name you have written a DD for should point at it, so the two don't drift apart.
+- **Notes are hypotheses, not conclusions.** Before acting on one, write down what would
+  prove it wrong in [`../logs/`](../logs/README.md) — a thesis with no stated kill
+  criteria is a story, not a position.

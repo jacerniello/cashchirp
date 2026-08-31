@@ -266,29 +266,61 @@ export default function SetupPage() {
               ))}
             </div>
 
-            {(data.build_status.running || data.datasets.some((d) => d.job.running)) && (
-              <Card>
-                <div className="p-4 flex items-center justify-between gap-3 flex-wrap">
-                  <span className="text-sm text-ink inline-flex items-center gap-2">
-                    <span className="relative flex h-2 w-2 shrink-0">
-                      <span className="absolute inline-flex h-full w-full animate-ping
-                                       rounded-full bg-green opacity-60" />
-                      <span className="relative inline-flex h-2 w-2 rounded-full bg-green" />
-                    </span>
-                    {data.build_status.running
-                      ? `Build running — ${data.build_status.progress_pct}% · `
-                        + `${data.build_status.steps_done}/${data.build_status.steps_total} steps`
-                      : `${data.datasets.filter((d) => d.job.running).length} dataset job(s) running`}
-                  </span>
-                  <Link
-                    href={data.build_status.phase === 'derived' ? '/setup/derived' : '/setup/ingest'}
-                    className="text-sm font-medium text-green hover:text-green-dark no-underline"
-                  >
-                    Monitor / stop →
-                  </Link>
+            {/* Ingest and derived jobs are reported SEPARATELY, each linking to its own
+                page. One combined banner had to guess a destination from the build's
+                phase, which is stale when only a per-dataset job is running — so a
+                derived job sent you to the ingest page. Two kinds, two links, no
+                guessing. */}
+            {(() => {
+              const busy = [
+                {
+                  kind: 'Ingest', href: '/setup/ingest',
+                  jobs: data.datasets.filter((d) => d.job.running && d.phase !== 'derived'),
+                  build: data.build_status.running && data.build_status.phase !== 'derived',
+                },
+                {
+                  kind: 'Derived', href: '/setup/derived',
+                  jobs: data.datasets.filter((d) => d.job.running && d.phase === 'derived'),
+                  build: data.build_status.running && data.build_status.phase === 'derived',
+                },
+              ].filter((x) => x.jobs.length > 0 || x.build);
+              if (!busy.length) return null;
+              return (
+                <div className="space-y-3">
+                  {busy.map((x) => (
+                    <Card key={x.kind}>
+                      <div className="p-4 flex items-center justify-between gap-3 flex-wrap">
+                        <span className="text-sm text-ink inline-flex items-center gap-2">
+                          <span className="relative flex h-2 w-2 shrink-0">
+                            <span className="absolute inline-flex h-full w-full animate-ping
+                                             rounded-full bg-green opacity-60" />
+                            <span className="relative inline-flex h-2 w-2 rounded-full bg-green" />
+                          </span>
+                          <span>
+                            <strong>{x.kind}</strong>
+                            {x.build
+                              ? ` — full build, ${data.build_status.progress_pct}% · `
+                                + `${data.build_status.steps_done}/${data.build_status.steps_total} steps`
+                              : ` — ${x.jobs.length} dataset job${x.jobs.length === 1 ? '' : 's'} running`}
+                            {!x.build && x.jobs.length > 0 && (
+                              <span className="text-ink-muted">
+                                {' · '}{x.jobs.map((j) => j.label).join(', ')}
+                              </span>
+                            )}
+                          </span>
+                        </span>
+                        <Link
+                          href={x.href}
+                          className="text-sm font-medium text-green hover:text-green-dark no-underline"
+                        >
+                          Monitor / stop →
+                        </Link>
+                      </div>
+                    </Card>
+                  ))}
                 </div>
-              </Card>
-            )}
+              );
+            })()}
 
             {/* ---- live build ---- */}
             {data.build && (

@@ -13,15 +13,15 @@ will half-remember and misquote in six months.
 ## The loop
 
 ```
-config/screens/     research/experiments/     research/logs/       research/insights/
-   define      ──▶      pre-register     ──▶      run & record  ──▶     promote
-  the filter          the falsification         the verdict          what survives
-                                    │
-                                    └──▶ research/watchlist/  ──▶  research/dd/
-                                          note the names          write it up properly
+config/screens/          research/logs/            research/insights/
+   define        ──▶      hypothesis, run,   ──▶      promote
+  the filter               and verdict              what survives
+       │
+       └──▶  research/watchlist/   (what you think of each name)
+       └──▶  research/backtests/   (the CSVs the harness writes)
 ```
 
-Five folders, five states of a finding. Each has a README with its own template.
+Four folders, four states of a finding. Each has a README with its own template.
 
 ---
 
@@ -42,17 +42,16 @@ Full reference: [CONFIGURATION.md](CONFIGURATION.md).
 because you asked for profitable and cheap. That tells you the filter runs, not that it
 works. Steps 2–4 are what separate the two.
 
-## 2 · Pre-register the falsification — `research/experiments/`
+## 2 · Pre-register the falsification — `research/logs/`
 
-**Before** running a backtest, write `research/experiments/NNN-slug.md` stating the
-hypothesis and **what result would prove it wrong**. Template and naming:
-[`research/experiments/README.md`](../research/experiments/README.md).
+**Before** running a backtest, write the entry: the hypothesis, and **what result would
+prove it wrong**. Template: [`research/logs/README.md`](../research/logs/README.md).
 
 This ordering is the single most important rule here, and it is not bureaucracy. Outliers
-are trivially easy to explain after the fact; a story that "explains" a past move is
-always available and almost always cheap. Once you have seen the result, you can no longer
-honestly decide what would have refuted it — the goalposts move without you noticing them
-move. So define "correct" first:
+are trivially easy to explain after the fact; a story that "explains" a past move is always
+available and almost always cheap. Once you have seen the result, you can no longer honestly
+decide what would have refuted it — the goalposts move without you noticing them move. So
+define "correct" first:
 
 - **The baseline to beat.** Not zero. "Better than nothing" is not a finding — a small-cap
   screen that beats the S&P is usually just measuring small-cap beta. Compare against the
@@ -91,9 +90,9 @@ captures because of turnover and costs. Run both, and don't let one stand in for
 
 ## 4 · Record the verdict — `research/logs/`
 
-One entry per **run**: parameters, results, whether each pre-stated validation check
-passed, and the verdict — **confirmed / rejected / inconclusive**. Template:
-[`research/logs/README.md`](../research/logs/README.md).
+Back in the same entry you pre-registered: parameters, results, whether each stated
+validation check passed, and the verdict — **confirmed / rejected / inconclusive**. The
+raw CSVs land in `research/backtests/`; the log is what makes them mean something.
 
 **Log the dead ends.** A falsified hypothesis is a result, and it is the one you are most
 likely to waste a week rediscovering. The logs are the audit trail that makes an insight
@@ -116,18 +115,6 @@ A screen finds candidates; it cannot tell you *why* one is cheap or that another
 trap. Record that judgement in `research/watchlist/annotations.json` and it surfaces on the
 idea board. **Write the caution the moment you reject a name** — the screen will surface it
 again next quarter, and an unrecorded rejection is a decision you re-litigate from scratch.
-
-## 7 · Write it up — `research/dd/`
-
-For a name you're serious about, produce a full due-diligence report:
-`research/dd/<TICKER>.json`, one file, self-describing, carrying both the write-up and the
-data its charts need. The evidence standard, the 24-item checklist, the rating scale and
-the full JSON contract are in [`research/dd/README.md`](../research/dd/README.md); start
-from `research/dd/_template.json`.
-
-The bar is: **every material claim cites a source, and screener numbers are reconciled to
-primary filings before being repeated.** If they don't reconcile, that discrepancy *is* the
-finding.
 
 ---
 

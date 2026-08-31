@@ -25,12 +25,6 @@ const TOOLS: { href: string; label: string; blurb: string }[] = [
       "Your saved screen, run live, annotated with what you think of each name — and which ones you have already rejected.",
   },
   {
-    href: "/dd",
-    label: "Due diligence",
-    blurb:
-      "Full write-ups: the checklist, the reverse-DCF, the bear case, and a rating that says what would change it.",
-  },
-  {
     href: "/sectors",
     label: "Sectors",
     blurb: "Where money is being made across the market, and how that has shifted.",
@@ -45,12 +39,6 @@ const TOOLS: { href: string; label: string; blurb: string }[] = [
     href: "/macro",
     label: "Macro",
     blurb: "FRED rates, inflation and activity panels — the regime everything else sits in.",
-  },
-  {
-    href: "/dd/experiments",
-    label: "Experiments",
-    blurb:
-      "Backtest results, point-in-time and survivorship-free, including the ones that failed.",
   },
 ];
 
@@ -97,10 +85,10 @@ export default function RootHome() {
             Open the screener
           </Link>
           <Link
-            href="/dd"
+            href="/screener/ideas"
             className="no-underline rounded-lg border border-rule px-5 py-2.5 text-[0.9375rem] font-medium text-ink transition-colors duration-150 hover:border-green hover:text-green"
           >
-            Read a write-up
+            Browse your ideas
           </Link>
         </div>
       </div>

@@ -78,14 +78,13 @@ export function BuildRunner({
   >(null);
 
   const b = data?.build_status;
-  const running = !!b?.running;
-  const showLog = logOverride ?? running;
-  const log = useBuildLog(showLog || running, running);
-
-  // While a build runs we can't tell from the state file WHICH kind it is, so any run
-  // blocks any other. Saying so is better than a Stop button that appears to belong to
-  // this page when it might be stopping the other one.
-  const mine = data?.build?.steps?.some((s) => KIND_PHASES[kind].includes(s.phase));
+  // A full build walks every phase, so it is "running" for BOTH pages even while it is
+  // busy elsewhere — and no page may offer a competing start while it does. But the
+  // progress shown is only *this* kind's business when the build has reached this kind.
+  const buildRunning = !!b?.running;
+  const buildHere = buildRunning && KIND_PHASES[kind].includes(b!.phase ?? '');
+  const showLog = logOverride ?? buildRunning;
+  const log = useBuildLog(showLog || buildRunning, buildRunning);
 
   const act = async (fn: () => Promise<unknown>) => {
     setErr(null);
@@ -104,6 +103,8 @@ export function BuildRunner({
   const missingCount = rows.filter((r) => r.state === 'missing').length;
   // A per-dataset job that's running opens its own log automatically.
   const runningRow = rows.find((r) => r.job.running);
+  // This page is "busy" if the full build is here, or any of ITS datasets is running.
+  const running = buildHere || !!runningRow;
   const openLog = openOverride === undefined ? (runningRow?.key ?? null) : openOverride;
   const openRow = rows.find((d) => d.key === openLog);
   const dsLog = useDatasetLog(openLog, !!openRow?.job.running);
@@ -157,7 +158,7 @@ export function BuildRunner({
                 </span>
               </div>
 
-              {running ? (
+              {buildRunning ? (
                 <div className="mt-4">
                   <div className="h-2 rounded-full bg-rule-light overflow-hidden">
                     <div className="h-full bg-green rounded-full transition-all"
@@ -165,7 +166,7 @@ export function BuildRunner({
                   </div>
                   <p className="text-sm text-ink-light mt-2">
                     {b.progress_pct}% · {b.steps_done}/{b.steps_total} steps · {b.phase}
-                    {mine ? '' : ' (another build is running)'}
+                    {!buildHere && ' — currently working on another phase'}
                   </p>
                   <button
                     type="button"
