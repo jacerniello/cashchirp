@@ -12,7 +12,7 @@ The classic Altman (1968) Z-score for public manufacturers:
 Zones: **> 2.99 safe · 1.81–2.99 grey · < 1.81 distress.**
 
 This operationalises DFV's "does it survive?" gate (see
-`research/insights/success_stories/DFV.md`): the fundamental half of the
+a deep-value screen): the fundamental half of the
 heavily-shorted-but-survivable setup the short-interest data flags. It is a crude
 proxy, **not** credit analysis — it can't see refinancing walls, covenant breaches
 or who holds the paper (that needs the bond-yield/ratings feed we don't have).

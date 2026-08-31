@@ -112,10 +112,10 @@ spot series: `python -m core.scripts.load.fred.load_spot` (revision-free, upsert
 
 | Object | Kind | Purpose |
 |---|---|---|
-| `finra_short_interest` | table | FINRA Consolidated Equity Short Interest — bi-monthly short positions across all U.S. markets, one row per `(symbol, settlementdate, market)`, 2017-12-29 → present (~3.8M rows). Byte-faithful mirror of FINRA's public Query API (no key/auth); stores only FINRA's own fields. The squeeze signal Sharadar lacks (see `research/insights/success_stories/DFV.md`). Load with `python -m core.scripts.load.finra_load --backfill`. |
+| `finra_short_interest` | table | FINRA Consolidated Equity Short Interest — bi-monthly short positions across all U.S. markets, one row per `(symbol, settlementdate, market)`, 2017-12-29 → present (~3.8M rows). Byte-faithful mirror of FINRA's public Query API (no key/auth); stores only FINRA's own fields. The squeeze signal Sharadar lacks. Load with `python -m core.scripts.load.finra_load --backfill`. |
 | `finra_short_interest_resolved` | view | adds `permaticker`, resolved at read time by a **point-in-time** join (issuer that held the symbol on the settlement date, `tickers.[firstpricedate, lastpricedate]`) — exposed only when unambiguous (recycled-ticker collisions → NULL). **permaticker is deliberately not stored** on the base table; market is not a join key. % of float / days-to-cover are computed at read time against `sf1`/`daily` — mind the split caveat (FINRA short is as-filed, `sf1.sharesbas` is split-adjusted backward; see sources.md). |
 
-See `research/sources/sources.md` for source/provenance details.
+See [`sources.md`](sources.md) for source/provenance details.
 
 ## Indexes (read-side helpers, not data)
 

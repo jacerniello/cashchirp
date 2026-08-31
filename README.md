@@ -14,9 +14,6 @@ Three parts:
 - **`web/`** — the app. A **Next.js + React + Tailwind** frontend (screener, company pages,
   macro/commodities) that reads `core/api`. Routes are `web/src/app`, shared
   components `web/src/investing`.
-- **`research/`** — the study. Experiment designs, run logs, insights, due-diligence
-  write-ups, and the data-source registry. Ships empty — the content is yours. See
-  [research/README.md](research/README.md).
 - **`config/screens/`** — the **screens**: declarative YAML filters that define what you're
   looking for. This is the main personalisation knob, and the live idea board and the
   CLI run the identical file.
@@ -26,7 +23,6 @@ Three parts:
 | | |
 |---|---|
 | **[docs/setup/](docs/setup/README.md)** | **Start here.** The setup checklist: install, keys, build, verify. |
-| [docs/RESEARCH_WORKFLOW.md](docs/RESEARCH_WORKFLOW.md) | The instruction set: define a screen → pre-register → run → log → promote. |
 | [docs/CONFIGURATION.md](docs/CONFIGURATION.md) | Every setting, and the screen-spec schema. |
 | [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) | Sizing tiers, topology, the nightly job, backups. |
 | [CLAUDE.md](CLAUDE.md) | Project charter: mission, operating principles, DB gotchas. |
@@ -77,10 +73,8 @@ python -m core.scripts.screen.run_screen quality-value   # run one, see the bask
 python -m core.scripts.screen.run_screen --columns       # what you can gate on
 ```
 
-Write down what would falsify your screen *before* you run it —
-[docs/RESEARCH_WORKFLOW.md](docs/RESEARCH_WORKFLOW.md) explains why that ordering is the
-whole game. Note there is no built-in historical validation: a basket is a list of
-candidates, not evidence the filter has an edge.
+There is no built-in historical validation: a basket is a list of candidates to research,
+not evidence the filter has an edge.
 
 ## Data
 

@@ -33,7 +33,7 @@ import yaml
 
 from core.config import PROJECT_ROOT, settings
 
-# config/ sits at the repo root, beside core/ and research/ — screens are user content,
+# config/ sits at the repo root, beside core/ — screens are user content,
 # not application code, so they live outside the package.
 SCREENS_DIR = PROJECT_ROOT / "config" / "screens"
 

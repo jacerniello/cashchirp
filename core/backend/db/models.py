@@ -126,7 +126,7 @@ class FinraShortInterest(Base):
     markets (NYSE/Nasdaq/ARCA/AMEX/Cboe/OTC) consolidated. Bi-monthly (mid-month
     + end-of-month settlement), 2017-12-29 → present. This is the squeeze-signal
     layer DFV weighted heavily and the Sharadar bundle lacks (see
-    `research/insights/success_stories/DFV.md`).
+    a squeeze setup).
 
     Stored verbatim (data-fidelity: mirror the source, derive nothing). The feed
     carries **no CUSIP, no permaticker, no float, no shares outstanding** — so we

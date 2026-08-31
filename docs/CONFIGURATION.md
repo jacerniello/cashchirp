@@ -146,12 +146,3 @@ silently skips a gate returns a plausible basket that isn't the filter you wrote
 the worst possible failure mode for research you intend to act on.
 
 ---
-
-## Watchlist annotations — `research/watchlist/annotations.json`
-
-Your judgement on the names a screen surfaces: why the market dislikes each one, why you
-think it's wrong, and which hits are traps you've already rejected. Optional — with no
-file the idea board returns the raw screen.
-
-Keyed by **permaticker**, not ticker. Schema and conventions:
-[`research/watchlist/README.md`](../research/watchlist/README.md).

@@ -18,7 +18,7 @@ Design choices, following the house rules:
   **point-in-time vintage history** — a zip of monthly snapshots, each tagged
   `vintage="YYYY-MM"`, that only contain data known as of that month. The revised
   `current.csv` (`ingest_fred()`, vintage "current") has latest-revision look-ahead and
-  is exploratory-only — **never backtest on it.** See `research/sources/sources.md`
+  is exploratory-only — **never backtest on it.** See `docs/reference/sources.md`
   ("Backtesting with FRED"). Real-time vintages start 2015-01 (MD) / 2018-05 (QD).
 
 Implements the `BaseIngestor` fetch/transform/load contract:

@@ -17,7 +17,7 @@ Idempotent (upserts on series+date+vintage). The full vintage backfill is large
 `python -m core.scripts.setup.init_db` first to create the fred_* tables.
 
 The revised-vs-point-in-time distinction is documented in
-`research/sources/sources.md` ("Backtesting with FRED").
+`docs/reference/sources.md` ("Backtesting with FRED").
 """
 import argparse
 from datetime import datetime

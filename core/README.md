@@ -1,8 +1,7 @@
 # core/
 
 The data engine: a Python **backend** over a **Postgres** database, plus a thin **FastAPI**
-bridge that exposes it as JSON. Lives outside `research/` — `core` is the tool; `research/`
-is the study done with it. The frontend is `web/`.
+bridge that exposes it as JSON. The frontend is `web/`.
 
 ## Layout
 
@@ -15,8 +14,7 @@ core/
 │   ├── db/                # engine, session, ORM models (schema)
 │   ├── ingest/            # BaseIngestor pattern + Sharadar / FRED ingestors
 │   ├── repositories/      # the query API — call these, don't write SQL in routes
-│   ├── screens.py         # screen specs: config/screens/*.yaml -> a DataFrame filter
-│   └── watchlist.py       # user annotations: research/watchlist/annotations.json
+│   └── screens.py         # screen specs: config/screens/*.yaml -> a DataFrame filter
 ├── api/                   # FastAPI bridge, mounted at /api/v1
 │   ├── main.py            # app factory + router mounting
 │   └── routers/           # one module per resource (screener, company, macro, …)
@@ -28,8 +26,7 @@ core/
 Most Sharadar tables need no per-table code — the generic loader is schema-driven.
 
 **Personalisation lives outside this folder** on purpose: what to look for is
-`config/screens/*.yaml`, and what you think of the results is
-`research/watchlist/annotations.json`. `core/` runs whatever those say. See
+`config/screens/*.yaml`, and `core/` runs whatever those say. See
 [../docs/CONFIGURATION.md](../docs/CONFIGURATION.md).
 
 **Database structure** (tables, keys, the faithful-mirror design): see

@@ -144,7 +144,7 @@ Macro data is **revised** for months/years after first release. Two forms of FRE
   daily volume, days-to-cover — one row per security per settlement date.
 - **Why:** The **squeeze signal** the Sharadar bundle lacks and that DFV weighted heavily
   (the GME thesis hinged on ~140%-of-float short interest). Fills the biggest data gap
-  identified in `research/insights/success_stories/DFV.md`. Includes GME's full Jan-2021
+  identified by deep-value screens. Includes GME's full Jan-2021
   squeeze (71M short on 2020-12-31 → 21M by 2021-01-29).
 - **Coverage / history:** **2017-12-29 → present** (verified by probe), **bi-monthly**
   (mid-month + end-of-month settlement, ~24 dates/yr), ~19k symbols/date, ~3.8M rows.
