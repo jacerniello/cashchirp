@@ -104,16 +104,6 @@ export function formatPercent(value: number | null | undefined): string {
 }
 
 /**
- * Format decimal as percentage with +/- sign
- * Useful for returns, changes, etc.
- */
-export function formatPercentSigned(value: number | null | undefined): string {
-  if (value == null) return '-';
-  const pct = value * 100;
-  return `${pct >= 0 ? '+' : ''}${pct.toFixed(2)}%`;
-}
-
-/**
  * Format a value that's already a percentage (15 -> "15.00%")
  */
 export function formatPercentRaw(value: number | null | undefined): string {

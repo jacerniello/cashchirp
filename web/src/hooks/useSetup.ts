@@ -120,7 +120,7 @@ export interface BuildControl {
 }
 
 /** The two kinds of work, which differ in cost and risk: ingest downloads from providers
- *  (hours, spends the paid subscription), derive recomputes locally (minutes, free). */
+ *  (hours, network-bound), derive recomputes locally (minutes). */
 export interface WorkSplit {
   datasets: number;
   loaded: number;
@@ -165,7 +165,7 @@ export function useDatasetJob() {
   const invalidate = () => qc.invalidateQueries({ queryKey: ['setup-status'] });
   return {
     run: useMutation({
-      mutationFn: async (v: { key: string; force?: boolean }) =>
+      mutationFn: async (v: { key: string; mode?: 'update' | 'missing' | 'full' }) =>
         (await api.post('/setup/dataset/run', v)).data,
       onSuccess: invalidate,
     }),
@@ -190,7 +190,11 @@ export function useDatasetLog(key: string | null, running: boolean, tail = 200) 
 export function useStartBuild() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (body: { kind?: 'all' | 'ingest' | 'derive'; force?: boolean }) =>
+    mutationFn: async (body: {
+      kind?: 'all' | 'ingest' | 'derive';
+      /** update = pull what changed · missing = only never-loaded · full = re-download */
+      mode?: 'update' | 'missing' | 'full';
+    }) =>
       (await api.post('/setup/build', body)).data,
     onSuccess: () => qc.invalidateQueries({ queryKey: ['setup-status'] }),
   });
