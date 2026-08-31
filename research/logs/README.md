@@ -7,14 +7,17 @@ failed or went nowhere; a falsified hypothesis is a result.
 ## Naming
 
 `YYYY-MM-DD-experiment-slug.md` (or append entries to a per-experiment log file).
-Always link back to the experiment in `../experiments/`.
+Write the hypothesis and its falsification here BEFORE the run, then fill in the
+verdict after — the ordering is what makes the verdict trustworthy.
 
 ## Per-run entry template
 
 ```markdown
 # YYYY-MM-DD — run of <experiment NNN-slug>
 
-- **Experiment:** [NNN-slug](../experiments/NNN-slug.md)
+- **Screen:** `config/screens/<id>.yaml`
+- **Hypothesis:** <what you expect, and why>
+- **Falsification:** <what result would prove this wrong — state it before running>
 - **Verdict:** confirmed | rejected | inconclusive
 
 ## What was run

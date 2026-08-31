@@ -12,11 +12,6 @@ whole point is that the understanding is cumulative *for the person building it*
 
 ## The folders
 
-- **`experiments/`** — *what we're testing.* One file per experiment: the **design** —
-  hypothesis, what would confirm/falsify it, data used, method, and the pre-stated
-  validation (baseline, holdout, sanity bounds). Write this *before* running. It is the
-  spec and the protocol.
-
 - **`logs/`** — *what actually happened.* The chronological record of experiment **runs**:
   what was executed, when, parameters, results, and the verdict (confirmed / rejected /
   inconclusive). Dead ends are recorded too — a falsified hypothesis is a result. Logs
@@ -31,10 +26,8 @@ whole point is that the understanding is cumulative *for the person building it*
   why the market dislikes it, why you think that's wrong, which hits are traps you've
   already rejected. Read live by the idea-board API.
 
-- **`dd/`** — *the write-ups.* One self-describing JSON per company carrying the full
-  due-diligence report **and** the data its charts need. This is what actually ships to a
-  reader. The evidence standard, the 24-item checklist and the JSON contract are in that
-  folder's README.
+- **`backtests/`** — *what the harness measured.* One CSV per run. Outputs only; the
+  hypothesis and verdict live in `logs/`.
 
 - **`sources/`** — *where data comes from.* `sources.md` registers every data source and
   reference: what it covers, how we access it, where it lands. API keys stay in `core/.env`,
@@ -43,18 +36,15 @@ whole point is that the understanding is cumulative *for the person building it*
 ## Flow
 
 ```
-config/screens/  ──▶  experiments/  ──run──▶  logs/  ──promote──▶  insights/
-   (the filter)        (design +              (record +            (durable
-                        hypothesis)            verdict)             understanding)
-                            │
-                            └──▶  watchlist/  ──▶  dd/
-                                  (per-name         (the full
-                                   judgement)        write-up)
+config/screens/  ──▶  logs/  ──▶  insights/
+  (the filter)      (hypothesis,   (durable
+                     run, verdict)  understanding)
+       │
+       └──▶  backtests/ (CSV output)     watchlist/ (per-name judgement)
 ```
 
-An experiment that confirms something durable graduates into an insight. The logs are the
-audit trail that makes the insight trustworthy — an insight with no run behind it is an
-opinion.
+A run that confirms something durable graduates into an insight. The logs are the audit
+trail that makes the insight trustworthy — an insight with no run behind it is an opinion.
 
 ## Also here
 

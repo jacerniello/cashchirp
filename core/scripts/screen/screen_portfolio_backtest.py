@@ -7,11 +7,11 @@ Re-screens every quarter (point-in-time, survivorship-free), holds the passers e
 and compares to the equal-weight **eligible universe** — the same size/sector gates from your
 screen spec with its quality/value gates removed — so the spread is the filter's contribution,
 not small-cap beta. Prints full-period and out-of-sample stats and writes the quarterly series
-to research/experiments/results/<screen>-portfolio-backtest.csv.
+to research/backtests/<screen>-portfolio-backtest.csv.
 
 SCREEN defaults to ACTIVE_SCREEN. Net of `--cost-bps` on turnover. This is a falsification
-test, not a recommendation: write down what would make you abandon the screen (an experiment
-file in research/experiments/) BEFORE you run it.
+test, not a recommendation: write down what would make you abandon the screen — in
+research/logs/ — BEFORE you run it, or the result is just a number you can rationalise.
 """
 from __future__ import annotations
 
@@ -24,7 +24,7 @@ from core.backend import screens
 from core.backend.db.engine import session_scope
 from core.backend.queries.discovery import backtest
 
-RESULTS_DIR = Path("research/experiments/results")
+RESULTS_DIR = Path("research/backtests")
 
 
 def _row(label: str, st: dict) -> str:

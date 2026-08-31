@@ -21,7 +21,7 @@ from core.backend import screens
 from core.backend.db.engine import session_scope
 from core.backend.queries.discovery import backtest
 
-RESULTS_DIR = Path("research/experiments/results")
+RESULTS_DIR = Path("research/backtests")
 
 
 def main() -> None:

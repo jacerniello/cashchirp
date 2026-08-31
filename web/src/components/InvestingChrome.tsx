@@ -4,7 +4,7 @@
 // before the page content) plus the global keyboard shortcut. Both open the same
 // SearchModal. It sits below the navbar rather than inside it so the bar stays a plain row
 // of links. The per-page research sub-navs (Macro/DD areas) are unaffected — the pages
-// still render <MacroAreaNav/> / <DDAreaNav/>.
+// still render <MacroAreaNav/> / <ScreenerAreaNav/>.
 import { useState } from 'react';
 import { SearchModal } from './SearchModal';
 import { useKeyPress } from '../hooks/useCommon';

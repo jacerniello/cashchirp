@@ -27,7 +27,7 @@ function BodyPortal({ children }: { children: React.ReactNode }) {
 }
 
 /** A plain page link, or a collapsible group that tucks several links under one label
- *  (e.g. "Other" ▾ hiding Macro + Experiments). Built in nav.ts. */
+ *  (e.g. an "Other" ▾ group). Built in nav.ts. */
 export type NavLeaf = { href: string; label: string };
 export type NavLink = NavLeaf | { label: string; children: NavLeaf[] };
 
@@ -90,8 +90,7 @@ export function Navbar() {
 }
 
 /** A collapsible nav group — its label with a ▾ caret that toggles a small menu of the
- *  grouped links. Used to tuck lower-traffic pages (Macro, Experiments) under "Other" so
- *  the top row stays short.
+ *  grouped links, for when the top row would otherwise get too long.
  *
  *  The menu is `position: fixed` on purpose: the nav row is `overflow-x-auto`, which the CSS
  *  spec forces to also clip vertically, so an `absolute` panel would be cut off under the
