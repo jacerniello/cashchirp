@@ -163,7 +163,7 @@ function FilterPageContent() {
       if (maxParam) params.set(`${filter.key}_max`, maxParam);
     }
 
-    const url = `/filter?${params.toString()}`;
+    const url = `/screener?${params.toString()}`;
     if (opts?.replace) router.replace(url, { scroll: false });
     else router.push(url);
   };
@@ -277,7 +277,7 @@ function FilterPageContent() {
       if (maxParam) params.set(`${filter.key}_max`, maxParam);
     }
 
-    router.push(`/filter?${params.toString()}`);
+    router.push(`/screener?${params.toString()}`);
   };
 
   const hasActiveFilters = !!(selectedRange || selectedSector || selectedIndustry ||

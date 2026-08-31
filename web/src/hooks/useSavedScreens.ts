@@ -42,7 +42,7 @@ export interface ScreenDetail {
   criteria: string[];
   active: boolean;
   spec: Record<string, unknown>;
-  /** `/filter` query params that reproduce this screen — what makes it clickable. */
+  /** `/screener` query params that reproduce this screen — what makes it clickable. */
   url_params: Record<string, string>;
   /** Constraints the grid has no widget for. They STILL apply when the screen is run;
    *  they just aren't shown, and the UI must say so. */

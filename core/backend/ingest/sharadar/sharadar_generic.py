@@ -337,14 +337,6 @@ def _enrich_after_load(table_code, dest, header, progress, skip_derived=False):
             _progress(progress, table_code, f"sp500_concentration refresh skipped: {exc}")
         # The counterfactual index-lab panel also keys on the membership log (and the
         # SEP/DAILY caps refreshed earlier in the run); rebuild it when SP500 advances.
-        try:
-            from core.backend.db.engine import session_scope
-            from core.backend.queries.market.index_lab import refresh_member_months
-            with session_scope() as s:
-                n = refresh_member_months(s)
-            _progress(progress, table_code, f"sp500_member_months refreshed: {n:,} rows")
-        except Exception as exc:
-            _progress(progress, table_code, f"sp500_member_months refresh skipped: {exc}")
     # Same idea for the holdings bubble chart: the per-holder time series keys on
     # 13F quarters, so rebuild it whenever SF3 advances (best-effort).
     if dest == "sf3" and not skip_derived:

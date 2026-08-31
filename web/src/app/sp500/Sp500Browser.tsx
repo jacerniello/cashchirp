@@ -108,17 +108,9 @@ export function Sp500Browser() {
   return (
     <div className="max-w-[1200px] mx-auto py-10 px-5 md:py-12 md:px-6">
       <div className="mb-8">
-        <div className="flex items-center gap-3 flex-wrap">
-          <h1 className="text-2xl md:text-3xl font-bold text-ink tracking-tight">
-            S&amp;P 500 Concentration
-          </h1>
-          <Link
-            href="/sp500/lab"
-            className="text-sm font-medium text-green hover:text-green-dark no-underline border border-green/30 rounded-full px-3 py-1"
-          >
-            Index Lab — remove companies/sectors →
-          </Link>
-        </div>
+        <h1 className="text-2xl md:text-3xl font-bold text-ink tracking-tight">
+          S&amp;P 500 Concentration
+        </h1>
         <p className="text-ink-muted mt-1 max-w-3xl">
           How top-heavy the index is, point-in-time from 1998. Membership is taken from the
           S&amp;P 500 log as it stood at each quarter-end and weighted by each constituent&apos;s

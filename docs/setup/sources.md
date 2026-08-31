@@ -24,8 +24,8 @@ python -m core.scripts.setup.bootstrap --sources   # the same information, in th
 | [FRED — Federal Reserve Bank of St. Louis](https://fred.stlouisfed.org/) | Free; most series are public domain (some carry provider terms) | `FRED_API_KEY` | 3 | 2.2 GB |
 | [FINRA](https://www.finra.org/finra-data/browse-catalog/short-interest) | Free, public | — | 1 | 785 MB |
 | [SEC EDGAR](https://www.sec.gov/search-filings) | Free, public domain | `SEC_USER_AGENT` | 1 | 5 MB |
-| Computed locally | Yours — produced from the sources above | — | 7 | 8.9 GB |
-| **Total** | | | **25** | **~46.9 GB** |
+| Computed locally | Yours — produced from the sources above | — | 6 | 8.9 GB |
+| **Total** | | | **24** | **~46.9 GB** |
 
 > Sizes are measured on a fully built instance, not estimated — use them to plan
 > disk. They do NOT drive the progress bar: that reports what the loaders
@@ -148,7 +148,7 @@ Precomputed tables the app reads directly, so a page load never pays for a multi
 
 - **Licence:** Yours — produced from the sources above
 - **Updates:** Rebuilt after every ingest, once all inputs are fresh
-- **Size here:** 8.9 GB across 7 datasets
+- **Size here:** 8.9 GB across 6 datasets
 
 > ⚠ Rebuilt LAST on purpose. Building one while its inputs are still loading gives you a snapshot of half-updated data.
 
@@ -160,12 +160,10 @@ Precomputed tables the app reads directly, so a page load never pays for a multi
 | institutional holdings time-series | `repositories.institutional.refresh_investor_holdings_timeseries` | `institutional_holdings_timeseries` | — | 4.6 GB |
 | insider aggregates | `repositories.insiders.refresh` | `derived.insider`, `derived.insider_company` | — | 98 MB |
 | S&P 500 concentration | `repositories.sp500.refresh_concentration` | `sp500_concentration`, `sp500_sector_weights` | — | 5 MB |
-| S&P 500 member-months | `repositories.index_lab.refresh_member_months` | `sp500_member_months` | — | 19 MB |
 
 - **schema (create tables)** — Creates the tables SQLAlchemy owns. Safe to re-run.
 - **screener snapshot** — What the screener and every saved screen actually read.
 - **insider aggregates** — Lives in the `derived` schema, not `public`.
-- **S&P 500 member-months** — The monthly panel the index lab replays history on.
 
 ---
 
@@ -183,7 +181,7 @@ Phases run in this order, and the order is load-bearing.
 
 **sec** — Fund series/class reference data. (1 step, 5 MB)
 
-**derived** — Precomputed tables the app reads. Rebuilt last, once inputs are fresh. (6 steps, 8.9 GB)
+**derived** — Precomputed tables the app reads. Rebuilt last, once inputs are fresh. (5 steps, 8.9 GB)
 
 Two constraints in particular:
 
