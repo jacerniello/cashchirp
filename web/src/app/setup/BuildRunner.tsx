@@ -41,8 +41,11 @@ export function BuildRunner({
   const stop = useStopBuild();
   const qc = useQueryClient();
   const [err, setErr] = useState<string | null>(null);
-  const [showLog, setShowLog] = useState(false);
-  const [openLog, setOpenLog] = useState<string | null>(null);
+  // Log visibility follows what's RUNNING by default: if something is going, you want to
+  // see it without hunting for a toggle. `undefined` means "follow"; anything else is an
+  // explicit choice you made, which sticks until the next run starts.
+  const [logOverride, setLogOverride] = useState<boolean | undefined>(undefined);
+  const [openOverride, setOpenOverride] = useState<string | null | undefined>(undefined);
   const job = useDatasetJob();
   // A pending expensive action, held until confirmed. Only ingest needs this: derive is
   // minutes, free and safe to re-run, so a confirmation there would be noise that trains
@@ -53,9 +56,8 @@ export function BuildRunner({
 
   const b = data?.build_status;
   const running = !!b?.running;
+  const showLog = logOverride ?? running;
   const log = useBuildLog(showLog || running, running);
-  const openRow = (data?.datasets ?? []).find((d) => d.key === openLog);
-  const dsLog = useDatasetLog(openLog, !!openRow?.job.running);
 
   // While a build runs we can't tell from the state file WHICH kind it is, so any run
   // blocks any other. Saying so is better than a Stop button that appears to belong to
@@ -64,7 +66,7 @@ export function BuildRunner({
 
   const act = async (fn: () => Promise<unknown>) => {
     setErr(null);
-    try { await fn(); setShowLog(true); }
+    try { await fn(); setLogOverride(undefined); setOpenOverride(undefined); }
     catch (e) {
       const d = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
       setErr(d || (e as Error).message);
@@ -77,6 +79,11 @@ export function BuildRunner({
   const rows = (data?.datasets ?? []).filter((d) => KIND_PHASES[kind].includes(d.phase));
 
   const missingCount = rows.filter((r) => r.state === 'missing').length;
+  // A per-dataset job that's running opens its own log automatically.
+  const runningRow = rows.find((r) => r.job.running);
+  const openLog = openOverride === undefined ? (runningRow?.key ?? null) : openOverride;
+  const openRow = rows.find((d) => d.key === openLog);
+  const dsLog = useDatasetLog(openLog, !!openRow?.job.running);
 
   /** Confirm only the genuinely expensive action. `update` is an incremental sync and
    *  `missing` touches nothing already loaded; only `full` re-downloads, so only `full`
@@ -315,7 +322,7 @@ export function BuildRunner({
                                 <button
                                   type="button"
                                   onClick={() => {
-                                    setOpenLog(d.key);
+                                    setOpenOverride(undefined);
                                     act(() => job.run.mutateAsync({ key: d.key, mode: 'update' }));
                                   }}
                                   disabled={running}
@@ -329,7 +336,7 @@ export function BuildRunner({
                               {(j.has_log || j.running) && (
                                 <button
                                   type="button"
-                                  onClick={() => setOpenLog(open ? null : d.key)}
+                                  onClick={() => setOpenOverride(open ? null : d.key)}
                                   className="ml-3 text-xs text-ink-muted hover:text-green bg-transparent
                                              border-0 cursor-pointer"
                                 >
@@ -347,7 +354,7 @@ export function BuildRunner({
                                         + 'pulled again in full rather than just new rows.',
                                       'Runs as its own process — stop it any time.',
                                     ],
-                                    go: () => { setOpenLog(d.key);
+                                    go: () => { setOpenOverride(undefined);
                                       return job.run.mutateAsync({ key: d.key, mode: 'full' }); },
                                   })}
                                   className="ml-3 text-xs text-ink-muted hover:text-neg bg-transparent
@@ -384,7 +391,7 @@ export function BuildRunner({
             <div className="p-5">
               <button
                 type="button"
-                onClick={() => setShowLog((v) => !v)}
+                onClick={() => setLogOverride(!showLog)}
                 className="text-sm font-semibold text-ink uppercase tracking-wide bg-transparent
                            border-0 cursor-pointer p-0"
               >
