@@ -17,12 +17,17 @@ really re-download 35 GB?" — so the page shows you the command and you run it 
 from __future__ import annotations
 
 import json
+import os
+import signal
+import subprocess
+import sys
 from typing import Any
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel
 
 from core.backend import sources
-from core.config import CORE_DIR, settings
+from core.config import CORE_DIR, PROJECT_ROOT, settings
 
 router = APIRouter(prefix="/setup", tags=["setup"])
 
@@ -139,8 +144,19 @@ def status() -> dict[str, Any]:
             for env, providers in sources.required_env()
         ],
         "phases": phases,
+        "work": {
+            kind: {
+                "datasets": sum(1 for d in datasets if d["phase"] in ph),
+                "loaded": sum(1 for d in datasets
+                              if d["phase"] in ph and d["state"] == "loaded"),
+                "expected_size": sources.size_h(sources.total_mb(ph)),
+            }
+            for kind, ph in (("ingest", sources.INGEST_PHASES),
+                             ("derive", sources.DERIVE_PHASES))
+        },
         "datasets": datasets,
         "build": _live_build(),
+        "build_status": _build_status(),
     }
 
 
@@ -182,3 +198,153 @@ def _human(n: int) -> str:
             return f"{n:.0f} {unit}" if unit == "B" else f"{n:.1f} {unit}"
         n /= 1024.0
     return f"{n:.1f} PB"
+
+
+# --------------------------------------------------------------- build control
+
+# A build is a DETACHED subprocess, never work done inside the request. A 6-hour, 35 GB
+# ingest cannot live in an HTTP handler: the request would time out, the client would
+# retry, and there would be no way to interrupt it. So the API only ever starts, signals
+# and reports on a process that owns itself — which is also why closing the browser (or
+# restarting this API) leaves a running build untouched.
+_LOG_PATH = CORE_DIR / "data" / "bootstrap.log"
+
+
+def _alive(pid: int | None) -> bool:
+    """Is that PID still running? `signal 0` checks without touching the process."""
+    if not pid:
+        return False
+    try:
+        os.kill(pid, 0)
+    except (OSError, TypeError):
+        return False
+    return True
+
+
+def _build_status() -> dict[str, Any]:
+    """Current build, from the state file plus a liveness check on its PID.
+
+    The phase alone is not enough: a killed process leaves `phase: sharadar` behind
+    forever, so a page trusting it would show a build running that died days ago."""
+    st = _live_build() or {}
+    pid = st.get("pid")
+    running = _alive(pid) and st.get("phase") not in ("done", "failed", "interrupted")
+    steps = st.get("steps") or []
+    done = sum(1 for s in steps if s.get("status") in ("ok", "skipped", "FAIL"))
+    frac = sum(s.get("frac", 0) for s in steps
+               if s.get("status") == "running" and s.get("frac_known"))
+    return {
+        "running": running,
+        "pid": pid if running else None,
+        "phase": st.get("phase"),
+        "started_at": st.get("started_at"),
+        "updated_at": st.get("updated_at"),
+        "elapsed_seconds": st.get("elapsed_seconds"),
+        # Anything that stopped before finishing can be picked up where it left off,
+        # because bootstrap skips steps whose table already holds rows.
+        "can_resume": (not running) and bool(steps)
+                      and st.get("phase") in ("interrupted", "failed", "starting",
+                                              "schema", "sharadar", "fred", "finra",
+                                              "sec", "derived"),
+        "progress_pct": round((done + frac) / len(steps) * 100, 1) if steps else 0.0,
+        "steps_done": done,
+        "steps_total": len(steps),
+        "log": str(_LOG_PATH),
+    }
+
+
+class BuildRequest(BaseModel):
+    """What to build.
+
+    `kind` is the main control and maps to registry phase groups:
+      * `ingest`  — download from the providers (hours, network-bound, spends the paid
+                    Sharadar subscription)
+      * `derive`  — recompute the derived tables from data already local (minutes, free,
+                    safe to re-run)
+      * `all`     — schema, then ingest, then derive, in dependency order
+
+    `phases` / `only` narrow it further. Every value is validated against the registry —
+    nothing here is ever passed to a subprocess as free text."""
+
+    kind: str = "all"
+    phases: list[str] = []
+    only: list[str] = []
+    force: bool = False
+
+
+@router.post("/build")
+def start_build(req: BuildRequest) -> dict[str, Any]:
+    """Start (or resume) a build as a detached process.
+
+    Resume is the same call: `bootstrap` skips steps whose table already holds rows, so
+    restarting after a stop costs only the step it was interrupted in. There is no
+    separate resume endpoint because there is no separate operation."""
+    status = _build_status()
+    if status["running"]:
+        raise HTTPException(
+            status_code=409,
+            detail=f"A build is already running (pid {status['pid']}). Stop it first.",
+        )
+
+    if req.kind not in ("all", "ingest", "derive"):
+        raise HTTPException(400, f"kind must be all|ingest|derive, got {req.kind!r}")
+
+    valid_phases = {p for p, _ in sources.PHASES}
+    bad = [p for p in req.phases if p not in valid_phases]
+    if bad:
+        raise HTTPException(400, f"Unknown phase(s) {bad}. Valid: {sorted(valid_phases)}")
+
+    valid_tables = {d.key.split(":", 1)[1] for d in sources.DATASETS if d.phase == "sharadar"}
+    bad = [t for t in req.only if t.upper() not in valid_tables]
+    if bad:
+        raise HTTPException(400, f"Unknown table(s) {bad}. Valid: {sorted(valid_tables)}")
+
+    # argv list, never a shell string, and every element is either a literal or a value
+    # that just passed a whitelist above.
+    argv = [sys.executable, "-m", "core.scripts.setup.bootstrap", "--create-db", "--plain"]
+    # An explicit phase list wins; otherwise `kind` selects the group. Schema rides along
+    # with an ingest run because it is idempotent and an ingest into missing tables fails.
+    phases = req.phases
+    if not phases and req.kind == "ingest":
+        phases = ["schema", *sources.INGEST_PHASES]
+    elif not phases and req.kind == "derive":
+        phases = list(sources.DERIVE_PHASES)
+    if phases:
+        argv += ["--only-phase", *phases]
+    if req.only:
+        argv += ["--only", *(t.upper() for t in req.only)]
+    if req.force:
+        argv.append("--force")
+
+    _LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+    log = open(_LOG_PATH, "ab", buffering=0)  # noqa: SIM115 - owned by the child
+    try:
+        proc = subprocess.Popen(
+            argv, cwd=str(PROJECT_ROOT), stdout=log, stderr=subprocess.STDOUT,
+            stdin=subprocess.DEVNULL,
+            # Its own session: the build outlives this request, this connection, and a
+            # restart of the API. Without it, a reload would take the ingest down with it.
+            start_new_session=True,
+        )
+    finally:
+        log.close()
+    return {"started": True, "kind": req.kind, "pid": proc.pid,
+            "phases": phases or "all", "argv": argv[1:], "log": str(_LOG_PATH)}
+
+
+@router.post("/build/stop")
+def stop_build() -> dict[str, Any]:
+    """Stop a running build, leaving it resumable.
+
+    SIGINT, not SIGKILL: bootstrap catches KeyboardInterrupt, marks the in-flight step,
+    writes its state file and exits cleanly. Killing it outright would strand the state
+    file mid-step, and the next run would have nothing to resume from."""
+    status = _build_status()
+    if not status["running"]:
+        raise HTTPException(status_code=409, detail="No build is running.")
+    try:
+        os.kill(status["pid"], signal.SIGINT)
+    except OSError as exc:
+        raise HTTPException(500, f"Could not signal pid {status['pid']}: {exc}") from exc
+    return {"stopping": True, "pid": status["pid"],
+            "note": "Interrupted cleanly — start again to resume where it left off."}

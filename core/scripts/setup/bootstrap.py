@@ -469,15 +469,16 @@ def _runner(ds: sources.Dataset) -> Callable[[Callable[[str], None]], object]:
         return run_sec
 
     if ds.phase == "derived":
-        # endpoint is "repositories.<module>.<function>" — the registry says which
-        # rebuild to call, so this stays declarative.
-        _, module, fname = ds.endpoint.split(".", 2)
+        # endpoint is the FULL dotted path of the rebuild function. Full, not relative:
+        # the previous version assembled the package prefix here, which broke silently
+        # when the query modules moved and failed every derived step at runtime.
+        module, fname = ds.endpoint.rsplit(".", 1)
 
         def run_derived(progress, module=module, fname=fname, name=ds.label):
             import importlib
 
             from core.backend.db.engine import session_scope
-            mod = importlib.import_module(f"core.backend.queries.{module}")
+            mod = importlib.import_module(module)
             progress(f"rebuilding {name}…")
             with session_scope() as session:
                 return getattr(mod, fname)(session)
