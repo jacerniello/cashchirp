@@ -1,9 +1,10 @@
 'use client';
 
-import { useState } from 'react';
+import { Fragment, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import {
-  useBuildLog, useSetup, useStartBuild, useStopBuild, type DatasetStatus,
+  useBuildLog, useDatasetJob, useDatasetLog, useSetup, useStartBuild, useStopBuild,
+  type DatasetStatus,
 } from '@/hooks/useSetup';
 import { Card } from '@/components/Card';
 
@@ -41,10 +42,14 @@ export function BuildRunner({
   const qc = useQueryClient();
   const [err, setErr] = useState<string | null>(null);
   const [showLog, setShowLog] = useState(false);
+  const [openLog, setOpenLog] = useState<string | null>(null);
+  const job = useDatasetJob();
 
   const b = data?.build_status;
   const running = !!b?.running;
   const log = useBuildLog(showLog || running, running);
+  const openRow = (data?.datasets ?? []).find((d) => d.key === openLog);
+  const dsLog = useDatasetLog(openLog, !!openRow?.job.running);
 
   // While a build runs we can't tell from the state file WHICH kind it is, so any run
   // blocks any other. Saying so is better than a Stop button that appears to belong to
@@ -158,6 +163,10 @@ export function BuildRunner({
               <h3 className="text-sm font-semibold text-ink uppercase tracking-wide mb-3">
                 Steps
               </h3>
+              <p className="text-xs text-ink-faint mb-3">
+                Each runs as its own process, with its own log — so one table can be pulled,
+                watched or stopped without touching the rest.
+              </p>
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
@@ -166,21 +175,94 @@ export function BuildRunner({
                       <th className="py-2 pr-3 font-medium">From</th>
                       <th className="py-2 pr-3 font-medium">State</th>
                       <th className="py-2 pr-3 font-medium text-right">Rows</th>
-                      <th className="py-2 font-medium text-right">Size</th>
+                      <th className="py-2 pr-3 font-medium text-right">Size</th>
+                      <th className="py-2 pr-3 font-medium">Last run</th>
+                      <th className="py-2 font-medium text-right">Run</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-rule-light">
-                    {rows.map((d) => (
-                      <tr key={d.key}>
-                        <td className="py-2 pr-3 text-ink">{d.label}</td>
-                        <td className="py-2 pr-3 text-ink-faint">{d.source.short}</td>
-                        <td className="py-2 pr-3"><StateLabel state={d.state} /></td>
-                        <td className="py-2 pr-3 text-right tnum text-ink-light">
-                          {d.rows ? d.rows.toLocaleString() : '—'}
-                        </td>
-                        <td className="py-2 text-right tnum text-ink-muted">{d.expected_size}</td>
-                      </tr>
-                    ))}
+                    {rows.map((d) => {
+                      const j = d.job;
+                      const open = openLog === d.key;
+                      return (
+                        <Fragment key={d.key}>
+                          <tr>
+                            <td className="py-2 pr-3 text-ink">
+                              {d.label}
+                              {j.running && j.detail && (
+                                <div className="text-xs text-ink-faint truncate max-w-[18rem]">
+                                  {j.frac != null ? `${(j.frac * 100).toFixed(0)}% · ` : ''}
+                                  {j.detail}
+                                </div>
+                              )}
+                            </td>
+                            <td className="py-2 pr-3 text-ink-faint">{d.source.short}</td>
+                            <td className="py-2 pr-3"><StateLabel state={d.state} /></td>
+                            <td className="py-2 pr-3 text-right tnum text-ink-light">
+                              {d.rows ? d.rows.toLocaleString() : '—'}
+                            </td>
+                            <td className="py-2 pr-3 text-right tnum text-ink-muted">
+                              {d.expected_size}
+                            </td>
+                            <td className="py-2 pr-3 text-xs text-ink-muted whitespace-nowrap">
+                              {d.last_run?.at ? (
+                                <span title={`${d.last_run.status} · from ${d.last_run.source}`}>
+                                  {new Date(d.last_run.at).toLocaleString(undefined, {
+                                    year: 'numeric', month: 'short', day: 'numeric',
+                                    hour: '2-digit', minute: '2-digit',
+                                  })}
+                                </span>
+                              ) : '—'}
+                            </td>
+                            <td className="py-2 text-right whitespace-nowrap">
+                              {j.running ? (
+                                <button
+                                  type="button"
+                                  onClick={() => act(() => job.stop.mutateAsync(d.key))}
+                                  className="text-xs text-neg hover:underline bg-transparent border-0 cursor-pointer"
+                                >
+                                  stop
+                                </button>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => { setOpenLog(d.key);
+                                                   act(() => job.run.mutateAsync({ key: d.key, force: true })); }}
+                                  disabled={running}
+                                  title={running ? 'A full build is running' : 'Run just this one'}
+                                  className="text-xs text-green hover:underline bg-transparent border-0
+                                             cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                                >
+                                  run
+                                </button>
+                              )}
+                              {(j.has_log || j.running) && (
+                                <button
+                                  type="button"
+                                  onClick={() => setOpenLog(open ? null : d.key)}
+                                  className="ml-3 text-xs text-ink-muted hover:text-green bg-transparent
+                                             border-0 cursor-pointer"
+                                >
+                                  {open ? 'hide log' : 'log'}
+                                </button>
+                              )}
+                            </td>
+                          </tr>
+                          {open && (
+                            <tr>
+                              <td colSpan={7} className="pb-3">
+                                <pre className="max-h-64 overflow-auto rounded-lg bg-ink text-white/85
+                                                text-[0.7rem] leading-relaxed font-mono p-3 whitespace-pre-wrap">
+                                  {dsLog.isLoading && !dsLog.data ? 'Loading…'
+                                    : !dsLog.data?.exists ? 'No log yet — run it to create one.'
+                                    : dsLog.data.lines.join('\n') || '(empty)'}
+                                </pre>
+                              </td>
+                            </tr>
+                          )}
+                        </Fragment>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
