@@ -55,7 +55,7 @@ export default function IdeasIndexPage() {
                   screener
                 </Link>{' '}
                 and save it — it lands in <code className="font-mono">config/screens/</code>,
-                where the backtest harness reads the same file.
+                where the CLI reads the same file.
               </p>
             </div>
           </Card>
@@ -118,7 +118,7 @@ export default function IdeasIndexPage() {
         {screens.length > 0 && (
           <p className="text-xs text-ink-faint pt-2">
             Screens live in <code className="font-mono">config/screens/</code>. The{' '}
-            <strong>active</strong> one is what the CLI and backtests use by default —
+            <strong>active</strong> one is what the CLI uses by default —
             set it with <code className="font-mono">ACTIVE_SCREEN</code> in{' '}
             <code className="font-mono">core/.env</code>.
           </p>

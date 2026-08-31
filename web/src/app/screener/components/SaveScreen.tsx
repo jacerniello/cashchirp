@@ -9,9 +9,9 @@ import type { ScreenerParams } from '@/hooks/useScreener';
 
 // Save the current filter as a named screen, and manage the ones already saved.
 //
-// It writes `config/screens/<id>.yaml` — the same format the idea board and the backtest
-// harness read — so the filter you just built is immediately runnable and testable
-// instead of living only in this page's URL.
+// It writes `config/screens/<id>.yaml` — the same format the idea board and the CLI
+// read — so the filter you just built is immediately runnable instead of living only in
+// this page's URL.
 
 function slug(s: string) {
   return s.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 64);
@@ -136,7 +136,7 @@ export function SaveScreen({ params }: { params: ScreenerParams }) {
                   <code className="font-mono">{result.run}</code>
                 </div>
                 {/* A saved filter that silently lost a constraint is worse than a failed
-                    save — you'd backtest a different screen than the one you looked at. */}
+                    save — the saved screen wouldn't be the one you looked at. */}
                 {result.carried.length > 0 && (
                   <div>
                     Carried over from <strong>{base}</strong> (no widget for these, kept so

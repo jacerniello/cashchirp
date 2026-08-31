@@ -2,9 +2,8 @@
 
 A *screen* is the project's unit of personalisation: which universe to consider and which
 gates a company must clear. Keeping it as data rather than code means someone can define
-their own filter without touching Python, and means the **live screen and the point-in-time
-backtest run the identical definition** — the one way to know a backtest is testing the
-thing you actually ship.
+their own filter without touching Python, and means the screen you run from the CLI and the
+one the idea board shows are provably the same definition.
 
     from core.backend import screens
     spec = screens.load_screen("quality-value")   # or screens.active_screen()
@@ -144,9 +143,8 @@ def apply_screen(
     """Apply a screen spec to a metrics snapshot and return the surviving rows.
 
     Pure pandas — the same function serves the live idea board and the point-in-time
-    backtest. `drop_delisted` overrides `universe.exclude_delisted`: the backtest passes
-    False because `isdelisted` is *today's* flag (the wrong vintage for a historical as-of),
-    where survivorship is instead handled by only including names trading at the as-of date.
+    idea board. `drop_delisted` overrides `universe.exclude_delisted` for callers that
+    need the full universe including names delisted today.
     """
     uni = spec.get("universe") or {}
     d = df
@@ -237,8 +235,8 @@ def spec_from_params(
 
     Returns ``(spec, unsupported)``. **`unsupported` is the important half**: a saved
     filter that quietly drops a constraint is worse than a failed save, because you would
-    go on believing the screen you backtest is the screen you looked at. Callers must
-    surface it rather than discard it.
+    go on believing the saved screen is the one you were looking at. Callers must surface
+    it rather than discard it.
     """
     spec: dict[str, Any] = {
         "id": screen_id,
@@ -304,8 +302,8 @@ def save_screen(spec: dict[str, Any], *, overwrite: bool = False) -> Path:
 
     Validated before writing, so a screen that could never load is never saved. The file
     is plain YAML you can then edit, diff and commit - the point of saving from the UI is
-    to get a filter into the *same* format the backtest harness runs, not into a private
-    store the rest of the tooling cannot see.
+    to get a filter into the *same* format the CLI and the idea board read, not into a
+    private store the rest of the tooling cannot see.
     """
     screen_id = str(spec.get("id") or "").strip()
     if not re.fullmatch(r"[a-z0-9][a-z0-9_-]{0,63}", screen_id):
@@ -330,9 +328,8 @@ def save_screen(spec: dict[str, Any], *, overwrite: bool = False) -> Path:
         "# " + str(spec.get("title", screen_id)) + "\n"
         "#\n"
         "# Saved from the screener UI. This is the SAME format the idea board and the\n"
-        "# point-in-time backtest read, so you can now run:\n"
+        "# CLI read, so you can now run:\n"
         "#   python -m core.scripts.screen.run_screen " + screen_id + "\n"
-        "#   python -m core.scripts.screen.screen_portfolio_backtest " + screen_id + "\n"
         "# Edit it by hand freely - see docs/CONFIGURATION.md for every option.\n"
     )
     path.write_text(header + yaml.safe_dump(spec, sort_keys=False, allow_unicode=True))

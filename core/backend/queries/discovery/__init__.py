@@ -1,1 +1,1 @@
-"""Finding and testing ideas: the screener snapshot and the point-in-time backtest harness."""
+"""Finding ideas: the screener snapshot and the saved-screen filters over it."""

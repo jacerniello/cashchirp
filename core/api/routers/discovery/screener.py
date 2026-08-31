@@ -320,14 +320,13 @@ class SaveScreenRequest(BaseModel):
 def save_screen(req: SaveScreenRequest) -> dict[str, Any]:
     """Save the current filter as a screen — `config/screens/<id>.yaml`.
 
-    It is written in the SAME format the idea board and the point-in-time backtest read,
-    so a filter you built by dragging sliders becomes immediately runnable and
-    backtestable rather than being trapped in the UI.
+    It is written in the SAME format the idea board and the CLI read, so a filter you built
+    by dragging sliders becomes immediately runnable rather than being trapped in the UI.
 
     The response carries `unsupported`: anything in the query that could not be expressed
     as a gate. It is deliberately not an error — the screen still saves — but it must be
-    shown, because a saved filter that silently lost a constraint would have you backtest
-    a different screen from the one you were looking at."""
+    shown, because a saved filter that silently lost a constraint would not be the screen
+    you were looking at."""
     spec, unsupported = screens.spec_from_params(
         req.id.strip().lower(), req.params,
         title=req.title, description=req.description, criteria=req.criteria,

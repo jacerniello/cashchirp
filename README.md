@@ -19,14 +19,14 @@ Three parts:
   [research/README.md](research/README.md).
 - **`config/screens/`** — the **screens**: declarative YAML filters that define what you're
   looking for. This is the main personalisation knob, and the live idea board and the
-  backtest harness run the identical file.
+  CLI run the identical file.
 
 ## Documentation
 
 | | |
 |---|---|
 | **[docs/setup/](docs/setup/README.md)** | **Start here.** The setup checklist: install, keys, build, verify. |
-| [docs/RESEARCH_WORKFLOW.md](docs/RESEARCH_WORKFLOW.md) | The instruction set: define a screen → pre-register → backtest → log → promote. |
+| [docs/RESEARCH_WORKFLOW.md](docs/RESEARCH_WORKFLOW.md) | The instruction set: define a screen → pre-register → run → log → promote. |
 | [docs/CONFIGURATION.md](docs/CONFIGURATION.md) | Every setting, and the screen-spec schema. |
 | [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) | Sizing tiers, topology, the nightly job, backups. |
 | [CLAUDE.md](CLAUDE.md) | Project charter: mission, operating principles, DB gotchas. |
@@ -50,7 +50,7 @@ python -m core.scripts.setup.bootstrap --create-db
 
 The build takes hours and the full dataset is ~47 GB — it is resumable, and
 **[docs/setup/](docs/setup/README.md) is the checklist**, and covers the smaller builds that
-still run the screener and backtests.
+still run the screener.
 
 Then start everything with one command:
 
@@ -72,16 +72,15 @@ cd web && API_URL=http://127.0.0.1:8001 npm run dev              # frontend only
 Define what you're looking for, then find out whether it ever worked:
 
 ```bash
-python -m core.scripts.screen.run_screen --list              # screens in config/screens/
-python -m core.scripts.screen.run_screen quality-value       # run one, see the basket
-python -m core.scripts.screen.screen_backtest_dryrun         # prove the harness is honest
-python -m core.scripts.screen.screen_portfolio_backtest      # does the filter compound?
-python -m core.scripts.screen.screen_cohort_study            # what happens to the names?
+python -m core.scripts.screen.run_screen --list          # screens in config/screens/
+python -m core.scripts.screen.run_screen quality-value   # run one, see the basket
+python -m core.scripts.screen.run_screen --columns       # what you can gate on
 ```
 
-The backtests are point-in-time and survivorship-free. Write down what would falsify your
-screen *before* running them — [docs/RESEARCH_WORKFLOW.md](docs/RESEARCH_WORKFLOW.md)
-explains why that ordering is the whole game.
+Write down what would falsify your screen *before* you run it —
+[docs/RESEARCH_WORKFLOW.md](docs/RESEARCH_WORKFLOW.md) explains why that ordering is the
+whole game. Note there is no built-in historical validation: a basket is a list of
+candidates, not evidence the filter has an edge.
 
 ## Data
 

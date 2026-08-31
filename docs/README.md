@@ -10,7 +10,7 @@ Where things are, and which question each document answers.
 | [reference/schema.md](reference/schema.md) | What is *in* the database: tables, keys, indexes, the fidelity conventions. |
 | [CONFIGURATION.md](CONFIGURATION.md) | Every setting, and the screen-spec schema. |
 | [DEPLOYMENT.md](DEPLOYMENT.md) | Sizing tiers, topology, the nightly job, backups. |
-| [RESEARCH_WORKFLOW.md](RESEARCH_WORKFLOW.md) | Define a screen → pre-register → backtest → log → promote. |
+| [RESEARCH_WORKFLOW.md](RESEARCH_WORKFLOW.md) | Define a screen → pre-register → run → log → promote. |
 
 Two documents live outside this directory on purpose:
 

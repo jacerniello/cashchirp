@@ -158,7 +158,7 @@ You do not need all 47 GB. `--only` takes Sharadar tables:
 | You want | Build | Size |
 |---|---|---:|
 | Screener, ideas, company fundamentals | `--only TICKERS SF1 DAILY` | ~10 GB |
-| **+ backtests** (needs prices) | `--only TICKERS SF1 DAILY SEP` | ~20 GB |
+| **+ price history and charts** | `--only TICKERS SF1 DAILY SEP` | ~20 GB |
 | + insider / 13F / ETF pages | everything | ~47 GB |
 
 Add tables later; the loaders are incremental and independent. Sizes above are the raw

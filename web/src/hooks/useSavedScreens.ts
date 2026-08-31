@@ -6,9 +6,9 @@ import type { ScreenerParams } from './useScreener';
 
 // Saved screens — the filters you keep, stored as `config/screens/<id>.yaml`.
 //
-// Saving writes the SAME format the idea board and the point-in-time backtest read, so a
-// filter built by dragging sliders becomes runnable (`run_screen <id>`) and backtestable
-// rather than being trapped in this page's URL.
+// Saving writes the SAME format the idea board and the CLI read, so a filter built by
+// dragging sliders becomes runnable (`run_screen <id>`) rather than being trapped in this
+// page's URL.
 
 export interface SavedScreen {
   id: string;

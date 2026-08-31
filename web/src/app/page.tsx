@@ -123,12 +123,11 @@ export default function RootHome() {
             <span className="font-medium text-ink">Sharadar</span> US equity bundle —
             fundamentals, prices, insider transactions and 13F holdings back to 1998 —
             alongside <span className="font-medium text-ink">FRED</span> macro panels. What
-            you look for is a screen you define yourself; the same definition drives the live
-            idea board <em>and</em> the point-in-time backtest, so a backtest tests the filter
-            you actually use.
+            you look for is a screen you define yourself — one definition, read by the idea
+            board and the CLI alike, so what you look at is what you run.
           </p>
           <div className="mt-5 flex items-center gap-2 flex-wrap text-[0.8125rem] text-ink-faint">
-            {["Define a screen", "Pre-register the falsification", "Backtest", "Log the verdict", "Promote what survives"].map(
+            {["Define a screen", "Write down what would falsify it", "Run it", "Log the verdict", "Promote what survives"].map(
               (step, i, arr) => (
                 <span key={step} className="flex items-center gap-2">
                   <span className="rounded-md bg-green-soft px-2 py-1 font-medium text-green-text">

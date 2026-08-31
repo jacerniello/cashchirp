@@ -26,8 +26,6 @@ whole point is that the understanding is cumulative *for the person building it*
   why the market dislikes it, why you think that's wrong, which hits are traps you've
   already rejected. Read live by the idea-board API.
 
-- **`backtests/`** — *what the harness measured.* One CSV per run. Outputs only; the
-  hypothesis and verdict live in `logs/`.
 
 - **`sources/`** — *where data comes from.* `sources.md` registers every data source and
   reference: what it covers, how we access it, where it lands. API keys stay in `core/.env`,
@@ -40,7 +38,7 @@ config/screens/  ──▶  logs/  ──▶  insights/
   (the filter)      (hypothesis,   (durable
                      run, verdict)  understanding)
        │
-       └──▶  backtests/ (CSV output)     watchlist/ (per-name judgement)
+       └──▶  watchlist/ (what you think of each name)
 ```
 
 A run that confirms something durable graduates into an insight. The logs are the audit
