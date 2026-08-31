@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { useSetup, type DatasetStatus, type BuildStep } from '@/hooks/useSetup';
 import { Card } from '@/components/Card';
+import { BuildControls } from './BuildControls';
 
 // Setup — what this database contains, what's missing, and where each piece comes from.
 //
@@ -198,18 +199,13 @@ export default function SetupPage() {
                     skips what is already loaded:
                   </p>
                 )}
-                {(!data.summary.complete || !data.database.connected) && (
-                  <div className="mt-3 space-y-2">
-                    <Cmd>python -m core.scripts.setup.bootstrap --check</Cmd>
-                    <Cmd>python -m core.scripts.setup.bootstrap --create-db</Cmd>
-                  </div>
-                )}
                 <p className="text-xs text-ink-muted mt-4">
                   Full walkthrough:{' '}
                   <code className="font-mono">docs/setup/README.md</code> · database only:{' '}
                   <code className="font-mono">docs/setup/database.md</code>
                 </p>
               </div>
+              <BuildControls data={data} />
             </Card>
 
             {/* ---- live build ---- */}

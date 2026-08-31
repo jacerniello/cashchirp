@@ -44,6 +44,22 @@ from core.config import CORE_DIR, settings
 
 STATE_PATH = CORE_DIR / "data" / "bootstrap-state.json"
 
+# Cooperative stop. A signal alone is not enough to stop this safely: a step blocked in a
+# multi-minute Postgres call has SIGINT deferred by the interpreter, and when psycopg does
+# surface it, it arrives as a driver error (PendingRollbackError) rather than
+# KeyboardInterrupt - so the step is recorded as FAILED and the run marches on to the next
+# one. Checking a sentinel file BETWEEN steps is immune to all of that: it always runs, in
+# ordinary Python, at a point where stopping is clean and resumable.
+STOP_PATH = CORE_DIR / "data" / "bootstrap.stop"
+
+
+def stop_requested() -> bool:
+    return STOP_PATH.exists()
+
+
+def clear_stop() -> None:
+    STOP_PATH.unlink(missing_ok=True)
+
 # Sizes and destination tables come from the data-source registry (core.backend.sources),
 # the same place the load plan and the published provenance come from.
 #
@@ -618,15 +634,34 @@ def execute(steps: list[Step], display: Display, resume: bool) -> int:
     derived = [s for s in steps if s.phase == "derived"]
     schema = [s for s in steps if s.phase == "schema"]
 
+    # A stale sentinel from a previous run would stop this one before it began.
+    clear_stop()
+
+    class _Stop(Exception):
+        """Raised between steps when a stop has been requested."""
+
+    def _run_group(group, resume_flag):
+        for step in group:
+            if stop_requested():
+                raise _Stop
+            _run_one(step, steps, display, started, resume_flag)
+
     try:
-        for step in schema:
-            _run_one(step, steps, display, started, resume=False)  # always idempotent
+        _run_group(schema, False)              # schema steps are always idempotent
         if ingest:
             with _suppress_app_rebuilds():
-                for step in ingest:
-                    _run_one(step, steps, display, started, resume)
-        for step in derived:
-            _run_one(step, steps, display, started, resume)
+                _run_group(ingest, resume)
+        _run_group(derived, resume)
+    except _Stop:
+        for s in steps:
+            if s.status in ("running", "pending"):
+                s.status, s.note = ("FAIL", "stopped") if s.status == "running" else (
+                    "pending", "not reached — stopped")
+        display.finish()
+        write_state(steps, started, "interrupted")
+        clear_stop()
+        print("\nStopped. Start again to resume — finished steps are skipped.")
+        return 130
     except KeyboardInterrupt:
         for s in steps:
             if s.status == "running":

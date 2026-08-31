@@ -1,6 +1,6 @@
 'use client';
 
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import api from '@/lib/api';
 
 // Setup status — what the database actually contains versus what the data-source registry
@@ -76,6 +76,32 @@ export interface BuildState {
   steps: BuildStep[];
 }
 
+/** Live control state of a build, distinct from the step list: `phase` alone can't tell
+ *  you whether a build is running, because a killed process leaves its last phase behind
+ *  forever. `running` is phase + a liveness check on the PID. */
+export interface BuildControl {
+  running: boolean;
+  pid: number | null;
+  phase: string | null;
+  started_at: string | null;
+  updated_at: string | null;
+  elapsed_seconds: number | null;
+  can_resume: boolean;
+  progress_pct: number;
+  steps_done: number;
+  steps_total: number;
+  stopping: boolean;
+  log: string;
+}
+
+/** The two kinds of work, which differ in cost and risk: ingest downloads from providers
+ *  (hours, spends the paid subscription), derive recomputes locally (minutes, free). */
+export interface WorkSplit {
+  datasets: number;
+  loaded: number;
+  expected_size: string;
+}
+
 export interface SetupStatus {
   database: { name: string; host: string; connected: boolean; tables: number };
   summary: {
@@ -91,6 +117,25 @@ export interface SetupStatus {
   phases: PhaseStatus[];
   datasets: DatasetStatus[];
   build: BuildState | null;
+  build_status: BuildControl;
+  work: { ingest: WorkSplit; derive: WorkSplit };
+}
+
+export function useStartBuild() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (body: { kind?: 'all' | 'ingest' | 'derive'; force?: boolean }) =>
+      (await api.post('/setup/build', body)).data,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['setup-status'] }),
+  });
+}
+
+export function useStopBuild() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async () => (await api.post('/setup/build/stop', {})).data,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['setup-status'] }),
+  });
 }
 
 async function fetchSetup(): Promise<SetupStatus> {
@@ -104,8 +149,7 @@ export function useSetup() {
     queryFn: fetchSetup,
     // A build writes its state file after every step, so poll while one is running —
     // that is the whole point of the page during a six-hour backfill. Idle, back off.
-    refetchInterval: (query) =>
-      query.state.data?.build?.steps?.some((s) => s.status === 'running') ? 2000 : 30000,
+    refetchInterval: (query) => (query.state.data?.build_status?.running ? 2000 : 30000),
     retry: false,
     staleTime: 0,
   });
