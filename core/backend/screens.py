@@ -143,7 +143,7 @@ def apply_screen(
 ) -> pd.DataFrame:
     """Apply a screen spec to a metrics snapshot and return the surviving rows.
 
-    Pure pandas — the same function serves the live `/ideas` endpoint and the point-in-time
+    Pure pandas — the same function serves the live idea board and the point-in-time
     backtest. `drop_delisted` overrides `universe.exclude_delisted`: the backtest passes
     False because `isdelisted` is *today's* flag (the wrong vintage for a historical as-of),
     where survivorship is instead handled by only including names trading at the as-of date.
@@ -204,7 +204,15 @@ def apply_screen(
 
 # Screener query params that describe *presentation*, not the filter itself. Dropping
 # these on save is correct and silent; anything else unrecognised is reported back.
-_NON_FILTER = {"sort", "page", "per_page", "snapshot_date", "limit", "offset"}
+_NON_FILTER = {"sort", "page", "per_page", "snapshot_date", "limit", "offset",
+               "preset", "range", "from"}
+
+# URL spelling -> API spelling for the three exclusion toggles.
+_TOGGLE_ALIASES = {
+    "excl_commod": "exclude_commodities",
+    "excl_biotech": "exclude_biotech",
+    "incl_delisted": "include_delisted",
+}
 
 # The toggle -> universe-rule mapping the /filter grid uses, so a saved screen expresses
 # the same intent as the checkbox rather than a copy of its implementation.
@@ -225,7 +233,7 @@ def spec_from_params(
     screen_id: str, params: dict[str, Any], *,
     title: str = "", description: str = "", criteria: list[str] | None = None,
 ) -> tuple[dict[str, Any], list[str]]:
-    """Turn a `/filter` query into a screen spec.
+    """Turn a `/screener` query into a screen spec.
 
     Returns ``(spec, unsupported)``. **`unsupported` is the important half**: a saved
     filter that quietly drops a constraint is worse than a failed save, because you would
@@ -245,7 +253,11 @@ def spec_from_params(
     gates: dict[str, dict[str, float]] = {}
     unsupported: list[str] = []
 
-    for key, value in (params or {}).items():
+    # The same three toggles have two vocabularies: the API query (`exclude_commodities`)
+    # and the /filter URL (`excl_commod`). Accept both, because a converter that silently
+    # ignores the other spelling drops the exclusion instead of failing - the screen saves
+    # looking complete and quietly matches a wider universe.
+    for key, value in {_TOGGLE_ALIASES.get(k, k): v for k, v in (params or {}).items()}.items():
         if value in (None, "", []) or key in _NON_FILTER:
             continue
         if key.endswith("_min") or key.endswith("_max"):
@@ -254,10 +266,12 @@ def spec_from_params(
                 gates.setdefault(col, {})[bound] = float(value)
             except (TypeError, ValueError):
                 unsupported.append(f"{key}={value!r} (not a number)")
-        elif key == "exclude_commodities" and _truthy(value):
-            universe["exclude_sectors"] = list(_COMMODITY_SECTORS)
-        elif key == "exclude_biotech" and _truthy(value):
-            universe["exclude_industries"] = list(_BIOTECH_INDUSTRIES)
+        elif key == "exclude_commodities":
+            if _truthy(value):
+                universe["exclude_sectors"] = list(_COMMODITY_SECTORS)
+        elif key == "exclude_biotech":
+            if _truthy(value):
+                universe["exclude_industries"] = list(_BIOTECH_INDUSTRIES)
         elif key == "include_delisted":
             universe["exclude_delisted"] = not _truthy(value)
         elif key == "is_active":
@@ -341,7 +355,7 @@ def delete_screen(screen_id: str) -> bool:
 # are excluded BY DEFAULT (`excl_commod !== '0'`), so a screen that does not exclude them
 # has to say so explicitly or the UI will silently re-apply the exclusion.
 def params_from_spec(spec: dict[str, Any]) -> tuple[dict[str, str], list[str]]:
-    """Turn a saved screen back into `/filter` URL params, so clicking it loads the
+    """Turn a saved screen back into `/screener` URL params, so clicking it loads the
     filter you saved rather than merely naming it.
 
     Returns ``(params, lossy)``. ``lossy`` lists everything the grid cannot represent —
@@ -401,3 +415,65 @@ def params_from_spec(spec: dict[str, Any]) -> tuple[dict[str, str], list[str]]:
             "no widget; they still apply when the screen is run"
         )
     return params, lossy
+
+
+def merge_unrepresentable(
+    base: dict[str, Any], spec: dict[str, Any]
+) -> tuple[dict[str, Any], list[str]]:
+    """Carry the parts of `base` the grid cannot express into a spec saved from the grid.
+
+    Without this, load-a-screen -> tweak -> save is **silent data loss**: the widgets can
+    show `roic >= 0.12` but not `fcf > 0` or a recovery-aware growth rule, so re-saving
+    would write a spec missing constraints the user never chose to remove and could not
+    see. Warning at load time is not enough - the destructive step is the save.
+
+    What is carried is exactly what has no widget:
+      * `growth` rules (wholesale),
+      * exclusive `gt`/`lt` bounds,
+      * sector/industry exclusions beyond the two toggles the grid owns.
+
+    What is NOT carried is anything the grid *did* show, because there the user's edit is
+    authoritative - including narrowing a multi-value `include_*` to the one the dropdown
+    displayed. Returns ``(spec, carried)``; `carried` is reported, never silent.
+    """
+    carried: list[str] = []
+    spec = {k: (dict(v) if isinstance(v, dict) else v) for k, v in spec.items()}
+
+    # -- growth rules: invisible in the grid, so they can only be lost by accident.
+    if base.get("growth") and not spec.get("growth"):
+        spec["growth"] = [dict(g) for g in base["growth"]]
+        carried.append(f"{len(base['growth'])} growth rule(s)")
+
+    # -- exclusive bounds and null handling: the grid has neither.
+    #
+    # `on_null` matters more than it looks. `gross_margin: {on_null: keep}` is what stops
+    # the screen dropping every industrial that doesn't break out COGS - losing it doesn't
+    # error, it just quietly returns a smaller, biased basket (21 names -> 17 on the
+    # example screen). It is invisible in the grid, so it can only be lost by accident.
+    gates = dict(spec.get("gates") or {})
+    for col, rule in (base.get("gates") or {}).items():
+        invisible = {k: v for k, v in rule.items() if k in ("gt", "lt", "on_null")}
+        if not invisible:
+            continue
+        merged = dict(gates.get(col) or {})
+        for k, v in invisible.items():
+            merged.setdefault(k, v)      # never override something the grid did set
+        gates[col] = merged
+        carried.append(f"{col} " + ", ".join(f"{k} {v}" for k, v in invisible.items()))
+    if gates:
+        spec["gates"] = gates
+
+    # -- exclusions the two toggles cannot express.
+    uni = dict(spec.get("universe") or {})
+    base_uni = base.get("universe") or {}
+    for key, owned in (("exclude_sectors", _COMMODITY_SECTORS),
+                       ("exclude_industries", _BIOTECH_INDUSTRIES)):
+        extra = [x for x in (base_uni.get(key) or []) if x not in owned]
+        if not extra:
+            continue
+        uni[key] = sorted(set(uni.get(key) or []) | set(extra))
+        carried.append(f"{key}: {', '.join(extra)}")
+    if uni:
+        spec["universe"] = uni
+
+    return spec, carried

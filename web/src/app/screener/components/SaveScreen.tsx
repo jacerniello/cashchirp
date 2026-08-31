@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import {
   useScreens, useSaveScreen, useDeleteScreen, fetchScreen,
 } from '@/hooks/useSavedScreens';
@@ -24,9 +24,13 @@ export function SaveScreen({ params }: { params: ScreenerParams }) {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
-  const [result, setResult] = useState<{ id: string; unsupported: string[]; run: string } | null>(null);
+  const [result, setResult] = useState<{ id: string; unsupported: string[]; run: string; carried: string[] } | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const router = useRouter();
+  // Which screen these filters came from, if any. Sent back on save so the parts the
+  // grid cannot show (growth rules, exclusive bounds, on_null) are carried forward
+  // instead of being silently deleted by an edit-and-save.
+  const base = useSearchParams().get('from') || undefined;
   const [loading, setLoading] = useState<string | null>(null);
   const [lossy, setLossy] = useState<{ id: string; items: string[] } | null>(null);
 
@@ -37,8 +41,8 @@ export function SaveScreen({ params }: { params: ScreenerParams }) {
     setLoading(id); setErr(null); setLossy(null);
     try {
       const d = await fetchScreen(id);
-      const qs = new URLSearchParams(d.url_params).toString();
-      router.push(`/filter?${qs}`);
+      const qs = new URLSearchParams({ ...d.url_params, from: id }).toString();
+      router.push(`/screener?${qs}`);
       // Constraints with no widget still apply when the screen is RUN — say so, or the
       // grid silently looks like the whole screen.
       if (d.lossy.length) setLossy({ id, items: d.lossy });
@@ -54,8 +58,8 @@ export function SaveScreen({ params }: { params: ScreenerParams }) {
   async function onSave(overwrite = false) {
     setErr(null);
     try {
-      const r = await save.mutateAsync({ id, title: name.trim(), description, params, overwrite });
-      setResult({ id: r.saved, unsupported: r.unsupported, run: r.run });
+      const r = await save.mutateAsync({ id, title: name.trim(), description, params, overwrite, base });
+      setResult({ id: r.saved, unsupported: r.unsupported, run: r.run, carried: r.carried ?? [] });
       setName(''); setDescription('');
     } catch (e) {
       const detail = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
@@ -133,6 +137,12 @@ export function SaveScreen({ params }: { params: ScreenerParams }) {
                 </div>
                 {/* A saved filter that silently lost a constraint is worse than a failed
                     save — you'd backtest a different screen than the one you looked at. */}
+                {result.carried.length > 0 && (
+                  <div>
+                    Carried over from <strong>{base}</strong> (no widget for these, kept so
+                    the edit didn&apos;t delete them): {result.carried.join('; ')}
+                  </div>
+                )}
                 {result.unsupported.length > 0 && (
                   <div className="text-neg">
                     <strong>Not captured:</strong>

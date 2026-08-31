@@ -248,7 +248,7 @@ function FilterPageContent() {
     }
     setFilters(emptyFilters);
 
-    router.push('/filter');
+    router.push('/screener');
   };
 
   const applyPreset = (preset: FilterPreset) => {

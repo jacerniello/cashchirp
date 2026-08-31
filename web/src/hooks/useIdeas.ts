@@ -24,18 +24,21 @@ export interface IdeasResponse {
   criteria: string[];
   /** The screen that produced this board — its own title/description, so the page
    *  describes whatever filter is active rather than hardcoding one. */
-  screen?: { id: string; title: string; description: string };
+  screen?: { id: string; title: string; description: string; is_active: boolean };
+  /** Every saved screen, so the board can offer a switcher without a second request. */
+  available?: { id: string; title: string; description: string }[];
 }
 
-async function fetchIdeas(): Promise<IdeasResponse> {
-  const response = await api.get('/screener/ideas/');
+async function fetchIdeas(screen?: string): Promise<IdeasResponse> {
+  const qs = screen ? `?screen=${encodeURIComponent(screen)}` : '';
+  const response = await api.get(`/screener/ideas/${qs}`);
   return response.data;
 }
 
-export function useIdeas() {
+export function useIdeas(screen?: string) {
   return useQuery({
-    queryKey: ['ideas'],
-    queryFn: fetchIdeas,
+    queryKey: ['ideas', screen ?? '(active)'],
+    queryFn: () => fetchIdeas(screen),
     staleTime: 30 * 60 * 1000,
   });
 }

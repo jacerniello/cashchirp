@@ -9,24 +9,29 @@ import { SubNav, type SubNavItem } from './SubNav';
 //  - Macro area: Macro + Commodities (Commodities was a top-level item, now a tab here).
 //  - DD area:    DD + Experiments (Experiments was top-level, now a tab here).
 //
+// URLs mirror the grouping (/macro/commodities, /dd/experiments). Note that
+// /dd/experiments is a STATIC segment sitting beside the dynamic /dd/[id]: Next resolves
+// static before dynamic, so it wins - at the cost of "experiments" being unusable as a
+// DD id, which is fine since ids are tickers.
+//
 // Rendered at the top of each member page so the toggle is visible from any of them.
 const SCREENER_ITEMS: SubNavItem[] = [
-  { name: 'Screener', key: 'filter', url: '/filter' },
-  { name: 'Ideas', key: 'ideas', url: '/ideas' },
+  { name: 'Screener', key: 'screener', url: '/screener' },
+  { name: 'Ideas', key: 'ideas', url: '/screener/ideas' },
 ];
 
 const MACRO_ITEMS: SubNavItem[] = [
   { name: 'Macro', key: 'macro', url: '/macro' },
-  { name: 'Commodities', key: 'commodities', url: '/commodities' },
+  { name: 'Commodities', key: 'commodities', url: '/macro/commodities' },
 ];
 
 const DD_ITEMS: SubNavItem[] = [
   { name: 'DD', key: 'dd', url: '/dd' },
-  { name: 'Experiments', key: 'experiments', url: '/experiments' },
+  { name: 'Experiments', key: 'experiments', url: '/dd/experiments' },
 ];
 
 export function ScreenerAreaNav() {
-  return <SubNav items={SCREENER_ITEMS} baseUrl="/filter" variant="tools" homeKey="filter" />;
+  return <SubNav items={SCREENER_ITEMS} baseUrl="/screener" variant="tools" homeKey="screener" />;
 }
 
 export function MacroAreaNav() {

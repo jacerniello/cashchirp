@@ -50,7 +50,7 @@ has a worked reference and a fresh clone has something to run. Replace it with y
 
 ### Saving a filter from the UI
 
-The `/filter` page can write one for you: set your filters, open **Saved screens**, name
+The `/screener` page can write one for you: set your filters, open **Saved screens**, name
 it, save. It lands in `config/screens/<id>.yaml` in exactly this format — so a filter you
 built by dragging sliders is immediately runnable and backtestable, not trapped in a URL:
 
