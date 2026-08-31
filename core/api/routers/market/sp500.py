@@ -22,7 +22,7 @@ from fastapi import APIRouter, Query
 
 from core.api.serialize import df_records, json_safe
 from core.backend.db.engine import session_scope
-from core.backend.queries.market import index_lab, sp500
+from core.backend.queries.market import sp500
 
 router = APIRouter(prefix="/sp500", tags=["sp500"])
 
@@ -75,35 +75,3 @@ def constituents(limit: int = Query(25, ge=1, le=100)) -> dict[str, Any]:
     with session_scope() as s:
         df = sp500.latest_constituents(s, limit)
     return {"constituents": df_records(df) if not df.empty else []}
-
-
-# --- Index lab: counterfactual "S&P 500 without X" -------------------------
-
-@router.get("/lab/options")
-def lab_options() -> dict[str, Any]:
-    """Controls for the index lab: sector list, largest constituents (the company
-    picker), and the available month range."""
-    with session_scope() as s:
-        return index_lab.options(s)
-
-
-@router.get("/lab/backtest")
-def lab_backtest(
-    exclude_sectors: list[str] = Query(default=[]),
-    exclude_tickers: list[int] = Query(default=[]),
-    weighting: str = Query("cap", pattern="^(cap|equal)$"),
-    start: str | None = Query(None),
-    end: str | None = Query(None),
-) -> dict[str, Any]:
-    """Reconstruct the baseline S&P 500 and a scenario with the given sectors /
-    companies (`exclude_tickers` = permatickers) removed, plus the removed-only
-    sleeve. `weighting` ∈ {cap, equal}. Returns rebased (=100) level series + stats."""
-    with session_scope() as s:
-        return index_lab.backtest(
-            s,
-            exclude_sectors=exclude_sectors or None,
-            exclude_permatickers=exclude_tickers or None,
-            equal_weight=(weighting == "equal"),
-            start=start,
-            end=end,
-        )

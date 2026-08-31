@@ -228,7 +228,7 @@ export function SectorsBrowser() {
                 <tr key={r.sector} className="border-b border-rule-light hover:bg-surface">
                   <td className="px-3 py-2 font-medium text-ink">
                     <Link
-                      href={`/filter?sector=${encodeURIComponent(r.sector)}`}
+                      href={`/screener?sector=${encodeURIComponent(r.sector)}`}
                       className="text-green hover:text-green-dark no-underline"
                     >
                       {r.sector}

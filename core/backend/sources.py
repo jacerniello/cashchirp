@@ -250,10 +250,6 @@ DATASETS: list[Dataset] = [
     Dataset(key="derived:sp500_concentration", source="derived", label="S&P 500 concentration",
             phase="derived", endpoint="repositories.sp500.refresh_concentration", size_mb=5,
             tables=("sp500_concentration", "sp500_sector_weights")),
-    Dataset(key="derived:sp500_member_months", source="derived", label="S&P 500 member-months",
-            phase="derived", endpoint="repositories.index_lab.refresh_member_months",
-            size_mb=19, tables=("sp500_member_months",),
-            note="The monthly panel the index lab replays history on."),
 ]
 
 BY_KEY: dict[str, Dataset] = {d.key: d for d in DATASETS}

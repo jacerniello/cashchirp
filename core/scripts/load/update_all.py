@@ -21,7 +21,7 @@ No table does a full re-download on a routine run; the heaviest re-pulls are sfp
 restamped day(s) (~1-3M rows) and sf3's two open quarters (~4.7M).
 
 Derived objects (screener_snapshot, holder_timeseries, institutional_holdings_timeseries,
-derived.insider[_company], sp500_concentration[+sector_weights], sp500_member_months) are
+derived.insider[_company], sp500_concentration[+sector_weights]) are
 rebuilt **once at the end**, after every input is fresh —
 so the per-load hooks in the loader are suppressed (`skip_derived=True`) to avoid
 rebuilding the 33M-row holder/institutional time-series tables twice. insiders has no
@@ -180,7 +180,6 @@ def _run_derived() -> list[tuple[str, str, float]]:
     """Rebuild the precomputed objects once, after inputs are fresh. Idempotent."""
     from core.backend.db.engine import session_scope
     from core.backend.queries.discovery import screener
-    from core.backend.queries.market import index_lab, sp500
     from core.backend.queries.ownership import insiders, institutional
 
     steps = [
@@ -190,7 +189,6 @@ def _run_derived() -> list[tuple[str, str, float]]:
          lambda s: institutional.refresh_investor_holdings_timeseries(s)),
         ("derived.insider", lambda s: insiders.refresh(s)),
         ("sp500_concentration", lambda s: sp500.refresh_concentration(s)),
-        ("sp500_member_months", lambda s: index_lab.refresh_member_months(s)),
     ]
     results = []
     for name, fn in steps:
@@ -237,7 +235,7 @@ def main() -> int:
         print("Derived: " + ("skipped" if args.no_derived else
                               "screener_snapshot, holder_timeseries, "
                               "institutional_holdings_timeseries, derived.insider, "
-                              "sp500_concentration, sp500_member_months"))
+                              "sp500_concentration"))
         return 0
 
     started = time.time()
