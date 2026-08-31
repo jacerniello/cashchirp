@@ -681,9 +681,19 @@ def _pick_run(runs: list[Path], name: str | None) -> Path:
 
 def _run_meta(p: Path) -> dict[str, Any]:
     st = p.stat()
+    # The timestamp comes from the FILENAME, which records when the run started. mtime is
+    # wrong for archived runs — gzipping rewrites it, so an old run would display as
+    # newer than runs that actually followed it.
+    at = datetime.fromtimestamp(st.st_mtime)
+    m = re.search(r"-(\d{8}-\d{6})\.log(?:\.gz)?$", p.name)
+    if m:
+        try:
+            at = datetime.strptime(m.group(1), "%Y%m%d-%H%M%S")
+        except ValueError:
+            pass
     return {
         "name": p.name,
         "archived": p.suffix == ".gz",
         "bytes": st.st_size,
-        "at": datetime.fromtimestamp(st.st_mtime).isoformat(timespec="seconds"),
+        "at": at.isoformat(timespec="seconds"),
     }
