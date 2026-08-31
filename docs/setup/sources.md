@@ -155,11 +155,11 @@ Precomputed tables the app reads directly, so a page load never pays for a multi
 | Dataset | Pulled from | Writes | Mode | Size |
 |---|---|---|---|---:|
 | schema (create tables) | `core.backend.db.models` | — | — | 1 MB |
-| screener snapshot | `repositories.screener.refresh_snapshot` | `screener_snapshot` | — | 12 MB |
-| holder time-series | `repositories.institutional.refresh_holder_timeseries` | `holder_timeseries` | — | 4.2 GB |
-| institutional holdings time-series | `repositories.institutional.refresh_investor_holdings_timeseries` | `institutional_holdings_timeseries` | — | 4.6 GB |
-| insider aggregates | `repositories.insiders.refresh` | `derived.insider`, `derived.insider_company` | — | 98 MB |
-| S&P 500 concentration | `repositories.sp500.refresh_concentration` | `sp500_concentration`, `sp500_sector_weights` | — | 5 MB |
+| screener snapshot | `core.backend.queries.discovery.screener.refresh_snapshot` | `screener_snapshot` | — | 12 MB |
+| holder time-series | `core.backend.queries.ownership.institutional.refresh_holder_timeseries` | `holder_timeseries` | — | 4.2 GB |
+| institutional holdings time-series | `core.backend.queries.ownership.institutional.refresh_investor_holdings_timeseries` | `institutional_holdings_timeseries` | — | 4.6 GB |
+| insider aggregates | `core.backend.queries.ownership.insiders.refresh` | `derived.insider`, `derived.insider_company` | — | 98 MB |
+| S&P 500 concentration | `core.backend.queries.market.sp500.refresh_concentration` | `sp500_concentration`, `sp500_sector_weights` | — | 5 MB |
 
 - **schema (create tables)** — Creates the tables SQLAlchemy owns. Safe to re-run.
 - **screener snapshot** — What the screener and every saved screen actually read.

@@ -130,7 +130,10 @@ class Dataset:
     source: str                    # -> SOURCES[...]
     label: str                     # human name
     phase: str                     # schema | sharadar | fred | finra | sec | derived
-    endpoint: str                  # Nasdaq table code, URL, or the function that builds it
+    endpoint: str                  # Nasdaq table code, URL, or - for derived - the FULL
+                                   # dotted path of the function that builds it. Full, not
+                                   # relative: a path assembled from a guessed package
+                                   # prefix breaks silently when modules are moved.
     size_mb: int                   # measured on a fully built instance, not guessed
     tables: tuple[str, ...] = ()   # Postgres tables it writes
     mode: str | None = None        # sharadar loader mode: sync | quarters | full
@@ -233,26 +236,50 @@ DATASETS: list[Dataset] = [
 
     # -- derived (computed here, from everything above) ---------------------------
     Dataset(key="derived:screener_snapshot", source="derived", label="screener snapshot",
-            phase="derived", endpoint="repositories.screener.refresh_snapshot",
+            phase="derived", endpoint="core.backend.queries.discovery.screener.refresh_snapshot",
             size_mb=12, tables=("screener_snapshot",),
             note="What the screener and every saved screen actually read."),
     Dataset(key="derived:holder_timeseries", source="derived", label="holder time-series",
-            phase="derived", endpoint="repositories.institutional.refresh_holder_timeseries",
+            phase="derived", endpoint="core.backend.queries.ownership.institutional.refresh_holder_timeseries",
             size_mb=4301, tables=("holder_timeseries",)),
     Dataset(key="derived:institutional_holdings_timeseries", source="derived",
             label="institutional holdings time-series", phase="derived",
-            endpoint="repositories.institutional.refresh_investor_holdings_timeseries",
+            endpoint="core.backend.queries.ownership.institutional.refresh_investor_holdings_timeseries",
             size_mb=4683, tables=("institutional_holdings_timeseries",)),
     Dataset(key="derived:derived.insider", source="derived", label="insider aggregates",
-            phase="derived", endpoint="repositories.insiders.refresh", size_mb=98,
+            phase="derived", endpoint="core.backend.queries.ownership.insiders.refresh", size_mb=98,
             tables=("derived.insider", "derived.insider_company"),
             note="Lives in the `derived` schema, not `public`."),
     Dataset(key="derived:sp500_concentration", source="derived", label="S&P 500 concentration",
-            phase="derived", endpoint="repositories.sp500.refresh_concentration", size_mb=5,
+            phase="derived", endpoint="core.backend.queries.market.sp500.refresh_concentration", size_mb=5,
             tables=("sp500_concentration", "sp500_sector_weights")),
 ]
 
 BY_KEY: dict[str, Dataset] = {d.key: d for d in DATASETS}
+
+# The two KINDS of work, which differ in every way that matters operationally:
+#
+#   ingest  - pulls bytes from an external provider. Slow, network-bound, rate-limited,
+#             and for Sharadar it spends a paid subscription. Interrupting one costs a
+#             download you may have to repeat.
+#   derive  - computes locally from what is already in the database. No network, no cost,
+#             minutes not hours, and safe to re-run at any time.
+#
+# They are separated because "rebuild the screener snapshot" and "re-download 35 GB" are
+# not the same decision, and a UI that offers one button for both makes the cheap, safe
+# operation feel as risky as the expensive one.
+INGEST_PHASES: tuple[str, ...] = ("sharadar", "fred", "finra", "sec")
+DERIVE_PHASES: tuple[str, ...] = ("derived",)
+
+
+def phase_kind(phase: str) -> str:
+    """`ingest`, `derive`, or `schema` - what kind of work a phase does."""
+    if phase in INGEST_PHASES:
+        return "ingest"
+    if phase in DERIVE_PHASES:
+        return "derive"
+    return "schema"
+
 
 # Phase order + a one-line description, for the docs and the checklist.
 PHASES: list[tuple[str, str]] = [
