@@ -280,9 +280,25 @@ def screens_index() -> dict[str, Any]:
     """Every screen defined in `config/screens/`, and which one is active. Lets a UI offer
     the user's own screens by name instead of assuming one built-in filter."""
     active = settings.active_screen
-    return {"active": active,
-            "screens": [{k: v for k, v in s.items() if k != "path"}
-                        for s in screens.list_screens()]}
+    # Each screen's live count comes along: a list of names with no sense of how many each
+    # finds is a list you have to click through one by one to compare. The snapshot is
+    # cached in memory and a spec is pure pandas over ~17k rows, so this stays instant.
+    with session_scope() as s:
+        df = screener.snapshot(s)
+    out = []
+    for meta in screens.list_screens():
+        row = {k: v for k, v in meta.items() if k != "path"}
+        try:
+            spec = screens.load_screen(meta["id"])
+            row["count"] = int(len(screener.screen_candidates(df, spec=spec)))
+            row["criteria"] = spec.get("criteria") or []
+        except Exception as exc:
+            # A malformed screen must not take the whole list down — show it as broken.
+            row["count"] = None
+            row["error"] = str(exc)[:160]
+        out.append(row)
+    asof = df["asof"].iloc[0] if "asof" in df.columns and len(df) else None
+    return {"active": active, "screens": out, "asof": str(asof) if asof is not None else None}
 
 
 class SaveScreenRequest(BaseModel):
