@@ -21,8 +21,8 @@ export const BANNER: {
   link?: { href: string; label: string };
 } = {
   enabled: true,
-  text: 'Demo site — every figure here is randomly generated and means nothing.',
+  text: 'Demo site — the figures shown are for demonstration purposes and were randomly generated',
   tone: 'demo',
   dismissible: false,
-  id: 'demo-1',
+  id: 'demo-2',
 };
