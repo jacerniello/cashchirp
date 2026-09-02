@@ -12,5 +12,10 @@ export const links: NavLink[] = [
   { href: "/sp500", label: "S&P 500" },
   { href: "/macro", label: "Macro" },
   // Last: the page you need when another page is failing.
-  { href: "/setup", label: "Setup" },
+  // Setup is local-only: it can start and stop ingests. Mirrors SETUP_ENABLED on the
+  // API — a public build sets neither and the link never renders. The API is the real
+  // gate; this only keeps the UI from advertising a route that 404s.
+  ...(process.env.NEXT_PUBLIC_SETUP_ENABLED === "true"
+    ? [{ href: "/setup", label: "Setup" }]
+    : []),
 ];

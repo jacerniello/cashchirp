@@ -146,3 +146,26 @@ silently skips a gate returns a plausible basket that isn't the filter you wrote
 the worst possible failure mode for research you intend to act on.
 
 ---
+
+## `SETUP_ENABLED` — the build-control surface
+
+Off by default, and it should stay off anywhere the app is reachable from the internet.
+
+| | |
+|---|---|
+| `SETUP_ENABLED` | API. Mounts `/api/v1/setup/*` — status, sources, build log, and the endpoints that **start and stop ingests**. |
+| `NEXT_PUBLIC_SETUP_ENABLED` | Frontend. Renders the Setup nav link. Cosmetic; the API flag is the real gate. |
+
+```bash
+# core/.env      — local development
+SETUP_ENABLED=true
+# web/.env.local — local development
+NEXT_PUBLIC_SETUP_ENABLED=true
+```
+
+Set neither in production. The router is gated at **mount** time, so with the flag off the
+paths 404 exactly like any unknown URL — a disabled deployment does not advertise that a
+setup surface exists at all.
+
+The default is `false` deliberately: a deploy that forgets this flag exposes nothing,
+rather than exposing everything. That is the direction you want the mistake to fall.

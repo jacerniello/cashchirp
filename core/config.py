@@ -37,6 +37,12 @@ class Settings(BaseSettings):
     # default. This is the project's main personalisation knob — see docs/CONFIGURATION.md.
     active_screen: str = "quality-value"
 
+    # The setup surface can START AND STOP INGESTS, read build logs, and report which
+    # credentials are configured — none of which belongs on a public deployment. It is
+    # therefore opt-in: a deploy that forgets this flag exposes nothing, rather than
+    # exposing everything. Set SETUP_ENABLED=true in core/.env for local use.
+    setup_enabled: bool = False
+
     # Nasdaq Data Link / Sharadar
     nasdaq_data_link_api_key: str = ""
 
