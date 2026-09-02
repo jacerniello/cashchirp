@@ -12,6 +12,8 @@ from __future__ import annotations
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from core.config import settings
+
 from core.api.routers.discovery import screener, search
 from core.api.routers.market import macro, short_interest, sp500
 from core.api.routers.meta import setup
@@ -31,8 +33,15 @@ app.add_middleware(
 )
 
 API_PREFIX = "/api/v1"
-for _r in (screener, prices, company, institutional, insiders,
-           short_interest, macro, search, etf, sp500, sectors, setup):
+_ROUTERS = [screener, prices, company, institutional, insiders,
+            short_interest, macro, search, etf, sp500, sectors]
+
+# Gated at MOUNT time, not per-request: an unmounted route 404s like any other unknown
+# path, so a disabled deployment does not even advertise that a setup surface exists.
+if settings.setup_enabled:
+    _ROUTERS.append(setup)
+
+for _r in _ROUTERS:
     app.include_router(_r.router, prefix=API_PREFIX)
 
 
