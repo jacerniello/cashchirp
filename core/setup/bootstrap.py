@@ -563,8 +563,10 @@ def _runner(ds: sources.Dataset) -> Callable[[Callable[[str], None]], object]:
     if ds.phase == "finra":
         def run_finra(progress):
             from core.backend.ingest.finra import finra_short_interest as fsi
-            progress("syncing settlement dates…")
-            return fsi.sync_short_interest()
+            # FINRA pages the whole US short-interest tape per settlement date, so this
+            # step runs for a long time. Hand it `progress` so it says which date it is
+            # on out of how many, rather than one line and then silence.
+            return fsi.sync_short_interest(progress=progress)
         return run_finra
 
     if ds.phase == "sec":

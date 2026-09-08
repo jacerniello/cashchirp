@@ -79,14 +79,19 @@ def _post(body: dict) -> requests.Response:
     return r
 
 
-def discover_settlement_dates(start: str, end: str) -> list[str]:
+def discover_settlement_dates(start: str, end: str, progress=None) -> list[str]:
     """Return sorted unique settlement dates in [start, end] (YYYY-MM-DD).
 
     Discovered from the data (union of a few always-present symbols) rather than
     guessed from a calendar, so it tracks FINRA's actual publication schedule.
     """
     dates: set[str] = set()
-    for sym in _CALENDAR_SYMBOLS:
+    for i, sym in enumerate(_CALENDAR_SYMBOLS, 1):
+        if progress:
+            # Deliberately NOT "i/n": discovery is a short prelude, and a ratio here
+            # would drive the bar to 33% and then drop it back to 8% once the real
+            # work starts. A bar that goes backwards is worse than one that waits.
+            progress(f"discovering settlement dates [{sym}, {i} of {len(_CALENDAR_SYMBOLS)}]")
         body = {
             "limit": _PAGE,
             "compareFilters": [
@@ -101,8 +106,11 @@ def discover_settlement_dates(start: str, end: str) -> list[str]:
     return sorted(dates)
 
 
-def fetch_settlement_date(settlement_date: str) -> list[dict]:
-    """Page through every short-interest row for one settlement date."""
+def fetch_settlement_date(settlement_date: str, progress=None, label: str = "") -> list[dict]:
+    """Page through every short-interest row for one settlement date.
+
+    `label` prefixes the progress line with the caller's date counter, so the overall
+    "which of N dates" reads first and the within-date paging second."""
     rows: list[dict] = []
     offset = 0
     while True:
@@ -121,6 +129,8 @@ def fetch_settlement_date(settlement_date: str) -> list[dict]:
         page = resp.json()
         rows.extend(page)
         total = int(resp.headers.get("Record-Total", len(rows)))
+        if progress:
+            progress(f"{label}{settlement_date}: {len(rows):,}/{total:,} rows")
         offset += _PAGE
         if offset >= total or not page:
             break
@@ -192,23 +202,35 @@ def _advance_watermark(session: Session, latest: date, rows: int) -> None:
 
 
 def _run(start: str, end: str, operation: str,
-         on_date=None) -> dict:
+         on_date=None, progress=None) -> dict:
     """Load every settlement date in [start, end]; stamp permaticker; log."""
     requested_at = datetime.now()
-    settlement_dates = discover_settlement_dates(start, end)
+    settlement_dates = discover_settlement_dates(start, end, progress)
+    n_dates = len(settlement_dates)
+    if progress:
+        progress(f"{n_dates} settlement dates to load ({start} .. {end})")
 
     total = 0
     loaded: list[str] = []
-    for sd in settlement_dates:
-        raw = fetch_settlement_date(sd)
+    for i, sd in enumerate(settlement_dates, 1):
+        # The date counter leads so it is the ratio the progress bar reads: it measures
+        # the whole step, where the paging ratio only measures the current date.
+        label = f"({i}/{n_dates}) "
+        raw = fetch_settlement_date(sd, progress, label)
         rows = [_to_row(r) for r in raw]
+        if progress:
+            progress(f"{label}{sd}: upserting {len(rows):,} rows…")
         with session_scope() as session:
             n = _upsert(session, rows)
         total += n
         loaded.append(sd)
+        if progress:
+            progress(f"{label}{sd}: {n:,} rows upserted; {total:,} so far")
         if on_date is not None:
             on_date(sd, n)
 
+    if progress:
+        progress("refreshing resolved view + watermark…")
     with session_scope() as session:
         ensure_resolved_view(session)
         if loaded:
@@ -226,19 +248,25 @@ def _run(start: str, end: str, operation: str,
     return {"rows": total, "dates": len(loaded), "range": span}
 
 
-def backfill_short_interest(start: date = _HISTORY_START, on_date=None) -> dict:
+def backfill_short_interest(start: date = _HISTORY_START, on_date=None, progress=None) -> dict:
     """Full history load: every settlement date from `start` to today."""
-    return _run(start.isoformat(), date.today().isoformat(), "backfill", on_date)
+    return _run(start.isoformat(), date.today().isoformat(), "backfill", on_date, progress)
 
 
-def sync_short_interest(on_date=None) -> dict:
+def sync_short_interest(on_date=None, progress=None) -> dict:
     """Incremental: only settlement dates strictly after the stored watermark."""
+    if progress:
+        progress("reading watermark…")
     with session_scope() as session:
         wm = _watermark(session)
     start = (wm.isoformat() if wm else _HISTORY_START.isoformat())
-    dates = discover_settlement_dates(start, date.today().isoformat())
+    if progress:
+        progress(f"watermark {wm or 'none'} — scanning for newer settlement dates")
+    dates = discover_settlement_dates(start, date.today().isoformat(), progress)
     # Drop the watermark date itself (already loaded); keep strictly-newer ones.
     newer = [d for d in dates if not wm or date.fromisoformat(d) > wm]
     if not newer:
+        if progress:
+            progress("no new settlement dates")
         return {"rows": 0, "dates": 0, "range": (None, None)}
-    return _run(newer[0], newer[-1], "sync", on_date)
+    return _run(newer[0], newer[-1], "sync", on_date, progress)
