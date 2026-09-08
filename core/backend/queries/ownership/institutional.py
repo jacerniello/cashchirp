@@ -63,14 +63,14 @@ def ownership_timeseries(session: Session, permaticker: int | str) -> pd.DataFra
     df = query_df(
         session,
         """
-        SELECT a.calendardate, a.shrholders, a.shrunits,
+        SELECT a.date AS calendardate, a.shrholders, a.shrunits,
                (SELECT f.sharesbas FROM sf1 f
                 WHERE f.permaticker = a.permaticker AND f.dimension = 'ARQ'
-                  AND f.sharesbas IS NOT NULL AND f.datekey <= a.calendardate
+                  AND f.sharesbas IS NOT NULL AND f.datekey <= a.date
                 ORDER BY f.datekey DESC LIMIT 1) AS sharesbas
         FROM sf3a a
         WHERE a.permaticker = :pt
-        ORDER BY a.calendardate
+        ORDER BY a.date
         """,
         {"pt": pt},
     )
@@ -102,9 +102,9 @@ def aggregate_for_security(session: Session, permaticker: int | str) -> pd.DataF
     """SF3A time series: total 13F holders / units / value held in a security."""
     return query_df(
         session,
-        "SELECT calendardate, shrholders, totalvalue, shrunits, shrvalue, "
+        "SELECT date AS calendardate, shrholders, totalvalue, shrunits, shrvalue, "
         "putholders, cllholders, putvalue, cllvalue, percentoftotal "
-        "FROM sf3a WHERE permaticker = :pt ORDER BY calendardate",
+        "FROM sf3a WHERE permaticker = :pt ORDER BY date",
         {"pt": int(permaticker)},
     )
 
@@ -114,9 +114,9 @@ def top_holders(
 ) -> pd.DataFrame:
     """Largest 13F holders of a security in its latest (or given) quarter."""
     params: dict = {"pt": int(permaticker), "limit": limit}
-    date_clause = "calendardate = (SELECT max(calendardate) FROM sf3 WHERE permaticker = :pt)"
+    date_clause = "date = (SELECT max(date) FROM sf3 WHERE permaticker = :pt)"
     if calendardate is not None:
-        date_clause = "calendardate = :cd"; params["cd"] = calendardate
+        date_clause = "date = :cd"; params["cd"] = calendardate
     return query_df(
         session,
         f"""
@@ -143,19 +143,19 @@ _HOLDER_PAGE_LIVE_SQL = """
     ),
     splitfac AS (
         SELECT s.calendardate, COALESCE(exp(sum(ln(a.value))), 1.0) AS factor
-        FROM (SELECT DISTINCT calendardate FROM sf3
+        FROM (SELECT DISTINCT date AS calendardate FROM sf3
               WHERE permaticker = :pt AND securitytype = 'SHR') s
         LEFT JOIN actions a
           ON a.permaticker = :pt AND a.action ILIKE '%split%'
              AND a.value > 0 AND a.date > s.calendardate
         GROUP BY s.calendardate
     )
-    SELECT s.calendardate, s.investorname, p.rank, s.value, s.units,
+    SELECT s.date AS calendardate, s.investorname, p.rank, s.value, s.units,
            s.units * f.factor AS adj_units, s.price
     FROM sf3 s JOIN page p USING (investorname)
-    JOIN splitfac f ON f.calendardate = s.calendardate
+    JOIN splitfac f ON f.calendardate = s.date
     WHERE s.permaticker = :pt AND s.securitytype = 'SHR'
-    ORDER BY p.rank, s.calendardate
+    ORDER BY p.rank, s.date
 """
 
 
@@ -227,7 +227,7 @@ def refresh_holder_timeseries(session: Session) -> int:
     Single-flight + atomic swap: only one process builds at a time (others skip); the
     ~33M-row CTAS goes into `…__new` off the live table and is swapped in with a brief
     metadata lock, so the app's holdings queries never block for minutes on a rebuild."""
-    asof = scalar(session, "SELECT max(calendardate) FROM sf3a")
+    asof = scalar(session, "SELECT max(date) FROM sf3a")
     # `adj_units` restates as-filed 13F share counts onto the current split-adjusted
     # basis (× the product of splits *after* each quarter) so the holdings-over-time
     # "shares" view is continuous across splits instead of jumping 7×/4× (e.g. AAPL).
@@ -245,7 +245,7 @@ def refresh_holder_timeseries(session: Session) -> int:
             GROUP BY permaticker, investorname
         ),
         qdates AS (
-            SELECT DISTINCT permaticker, calendardate
+            SELECT DISTINCT permaticker, date AS calendardate
             FROM sf3 WHERE permaticker IS NOT NULL AND securitytype = 'SHR'
         ),
         splitfac AS (
@@ -257,14 +257,14 @@ def refresh_holder_timeseries(session: Session) -> int:
                  AND a.value > 0 AND a.date > q.calendardate
             GROUP BY q.permaticker, q.calendardate
         )
-        SELECT s.permaticker, s.investorname, r.rank, s.calendardate,
+        SELECT s.permaticker, s.investorname, r.rank, s.date AS calendardate,
                s.value, s.units, s.units * f.factor AS adj_units, s.price,
                CAST(:asof AS date) AS asof
         FROM sf3 s
         JOIN ranked r
           ON s.permaticker = r.permaticker AND s.investorname = r.investorname
         JOIN splitfac f
-          ON f.permaticker = s.permaticker AND f.calendardate = s.calendardate
+          ON f.permaticker = s.permaticker AND f.calendardate = s.date
         WHERE s.securitytype = 'SHR'
         """
     )
@@ -287,9 +287,9 @@ def investor_book(session: Session, investorname: str) -> pd.DataFrame:
     """SF3B time series for one investor: total book value and composition by quarter."""
     return query_df(
         session,
-        "SELECT calendardate, totalvalue, shrvalue, cllvalue, putvalue, "
+        "SELECT date AS calendardate, totalvalue, shrvalue, cllvalue, putvalue, "
         "shrholdings, cllholdings, putholdings, shrunits "
-        "FROM sf3b WHERE investorname = :inv ORDER BY calendardate",
+        "FROM sf3b WHERE investorname = :inv ORDER BY date",
         {"inv": investorname},
     )
 
@@ -304,7 +304,7 @@ def investor_sector_history(
     return query_df(
         session,
         """
-        SELECT s.calendardate,
+        SELECT s.date AS calendardate,
                COALESCE(t.sector, 'Unknown') AS sector,
                sum(s.value) AS value
         FROM sf3 s
@@ -314,8 +314,8 @@ def investor_sector_history(
             ORDER BY permaticker, sector NULLS LAST
         ) t ON t.permaticker::bigint = s.permaticker
         WHERE s.investorname = :inv AND s.securitytype = :st
-        GROUP BY s.calendardate, COALESCE(t.sector, 'Unknown')
-        ORDER BY s.calendardate
+        GROUP BY s.date, COALESCE(t.sector, 'Unknown')
+        ORDER BY s.date
         """,
         {"inv": investorname, "st": securitytype},
     )
@@ -335,7 +335,7 @@ _INVESTOR_HOLDINGS_PAGE_SQL = """
     splitfac AS (
         SELECT s.permaticker, s.calendardate,
                COALESCE(exp(sum(ln(a.value))), 1.0) AS factor
-        FROM (SELECT DISTINCT permaticker, calendardate FROM sf3
+        FROM (SELECT DISTINCT permaticker, date AS calendardate FROM sf3
               WHERE investorname = :inv AND securitytype = 'SHR'
                 AND permaticker IS NOT NULL) s
         LEFT JOIN actions a
@@ -343,12 +343,12 @@ _INVESTOR_HOLDINGS_PAGE_SQL = """
              AND a.value > 0 AND a.date > s.calendardate
         GROUP BY s.permaticker, s.calendardate
     )
-    SELECT s.calendardate, s.ticker, s.permaticker, p.rank, s.value, s.units,
+    SELECT s.date AS calendardate, s.ticker, s.permaticker, p.rank, s.value, s.units,
            s.units * f.factor AS adj_units, s.price
     FROM sf3 s JOIN page p USING (permaticker)
-    JOIN splitfac f ON f.permaticker = s.permaticker AND f.calendardate = s.calendardate
+    JOIN splitfac f ON f.permaticker = s.permaticker AND f.calendardate = s.date
     WHERE s.investorname = :inv AND s.securitytype = 'SHR'
-    ORDER BY p.rank, s.calendardate
+    ORDER BY p.rank, s.date
 """
 
 
@@ -427,7 +427,7 @@ def refresh_investor_holdings_timeseries(session: Session) -> int:
     Single-flight + atomic swap (see `refresh_holder_timeseries`): only one process
     builds at a time, the CTAS goes into `…__new` off the live table, and the swap-in
     takes only a brief metadata lock so readers never block on the rebuild."""
-    asof = scalar(session, "SELECT max(calendardate) FROM sf3a")
+    asof = scalar(session, "SELECT max(date) FROM sf3a")
     # `splitfac` precomputes one split factor per (permaticker, quarter) from the small
     # `actions` table (× the product of splits *after* each quarter), then hash-joins
     # onto the 33M-row body to produce a continuous split-adjusted `adj_units`. `units`
@@ -444,7 +444,7 @@ def refresh_investor_holdings_timeseries(session: Session) -> int:
             GROUP BY investorname, permaticker
         ),
         qdates AS (
-            SELECT DISTINCT permaticker, calendardate
+            SELECT DISTINCT permaticker, date AS calendardate
             FROM sf3 WHERE permaticker IS NOT NULL AND securitytype = 'SHR'
         ),
         splitfac AS (
@@ -456,14 +456,14 @@ def refresh_investor_holdings_timeseries(session: Session) -> int:
                  AND a.value > 0 AND a.date > q.calendardate
             GROUP BY q.permaticker, q.calendardate
         )
-        SELECT s.investorname, s.permaticker, s.ticker, r.rank, s.calendardate,
+        SELECT s.investorname, s.permaticker, s.ticker, r.rank, s.date AS calendardate,
                s.value, s.units, s.units * f.factor AS adj_units, s.price,
                CAST(:asof AS date) AS asof
         FROM sf3 s
         JOIN ranked r
           ON s.investorname = r.investorname AND s.permaticker = r.permaticker
         JOIN splitfac f
-          ON f.permaticker = s.permaticker AND f.calendardate = s.calendardate
+          ON f.permaticker = s.permaticker AND f.calendardate = s.date
         WHERE s.securitytype = 'SHR'
         """
     )
@@ -489,10 +489,10 @@ def investor_holdings(
     """An investor's positions (by security) in its latest (or given) quarter."""
     params: dict = {"inv": investorname, "limit": limit}
     date_clause = (
-        "calendardate = (SELECT max(calendardate) FROM sf3 WHERE investorname = :inv)"
+        "date = (SELECT max(date) FROM sf3 WHERE investorname = :inv)"
     )
     if calendardate is not None:
-        date_clause = "calendardate = :cd"; params["cd"] = calendardate
+        date_clause = "date = :cd"; params["cd"] = calendardate
     return query_df(
         session,
         f"""
@@ -508,11 +508,11 @@ def investor_holdings(
 
 def investor_holding_quarters(session: Session, investorname: str) -> list[str]:
     """Every 13F quarter a filer has reported, newest first — populates the reported-
-    holdings quarter selector. Indexed range over `(investorname, calendardate)`."""
+    holdings quarter selector. Indexed range over `(investorname, date)`."""
     df = query_df(
         session,
-        "SELECT DISTINCT calendardate FROM sf3 WHERE investorname = :inv "
-        "ORDER BY calendardate DESC",
+        "SELECT DISTINCT date AS calendardate FROM sf3 WHERE investorname = :inv "
+        "ORDER BY date DESC",
         {"inv": investorname},
     )
     if df.empty:
@@ -525,7 +525,7 @@ def investor_holdings_count(session: Session, investorname: str, calendardate) -
     the reported-holdings table."""
     n = scalar(
         session,
-        "SELECT count(*) FROM sf3 WHERE investorname = :inv AND calendardate = :cd",
+        "SELECT count(*) FROM sf3 WHERE investorname = :inv AND date = :cd",
         {"inv": investorname, "cd": calendardate},
     )
     return int(n or 0)
@@ -547,7 +547,7 @@ def investor_holdings_page(
         """
         SELECT ticker, permaticker, securitytype, value, units, price
         FROM sf3
-        WHERE investorname = :inv AND calendardate = :cd
+        WHERE investorname = :inv AND date = :cd
         ORDER BY value DESC NULLS LAST
         LIMIT :limit OFFSET :offset
         """,

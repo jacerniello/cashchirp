@@ -41,6 +41,12 @@ from core.config import settings
 _NUMERIC_UNITS = {
     "currency", "ratio", "USD millions", "USD/share", "numeric", "units",
     "USD", "currency/share", "percent", "%",
+    # Sharadar's 13F aggregates declare their share counts as "unit thousands" — the
+    # scale is metadata, the value is a number. Without this the 17 *units columns on
+    # sf3a/sf3b land as text, and the ownership chart dies multiplying a string by a
+    # split factor rather than showing a wrong number, which is at least the good
+    # failure mode.
+    "unit thousands",
 }
 _DATE_RE = r"'^\d{4}-\d{2}-\d{2}$'"  # single backslash -> Postgres \d (digit)
 
@@ -379,16 +385,6 @@ def _enrich_after_load(table_code, dest, header, progress, skip_derived=False):
         from core.backend.ingest.permaticker import denormalise_sf3
         total, named = denormalise_sf3(only_null=True)
         _progress(progress, table_code, f"investorname: {named:,}/{total:,} rows; price computed")
-
-    # sf3a and sf3b were renamed the same way and are read under the old name too, but
-    # they need only the alias — Sharadar still ships their names and values directly.
-    if dest in ("sf3a", "sf3b"):
-        try:
-            from core.backend.ingest.permaticker import add_calendardate
-            if add_calendardate(dest):
-                _progress(progress, table_code, "calendardate restored (generated from date)")
-        except Exception as exc:
-            _progress(progress, table_code, f"calendardate alias skipped: {exc}")
 
     # Same idea for the holdings bubble chart: the per-holder time series keys on
     # 13F quarters, so rebuild it whenever SF3 advances (best-effort).
