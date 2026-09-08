@@ -37,8 +37,11 @@ export const BANNER: {
   link?: { href: string; label: string };
 } = {
   enabled: ENABLED && process.env.NEXT_PUBLIC_BANNER_DISABLED !== 'true',
-  text: 'Demo site — the figures shown are for demonstration purposes and were randomly generated',
+  text: 'Demo site — the figures shown are for demonstration purposes and were randomly generated.',
   tone: 'demo',
   dismissible: false,
-  id: 'demo-2',
+  id: 'demo-3',
+  // Says where the real thing is. A reader told the figures are fake should be one click
+  // from the code that produces real ones, not left to assume the project is a toy.
+  link: { href: 'https://github.com/jacerniello/cashchirp', label: 'Source on GitHub' },
 };
