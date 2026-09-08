@@ -506,6 +506,33 @@ def reset_db(req: ResetRequest) -> dict[str, Any]:
             "note": "Stopping any running builds, then resetting. Follow the log."}
 
 
+@router.get("/reset/log")
+def reset_log(tail: int = 200, run: str | None = None) -> dict[str, Any]:
+    """State and log of the reset job.
+
+    Separate from /dataset/log because that one 404s anything absent from the source
+    registry, and "reset" is a job rather than a dataset. Returns the job's live state
+    alongside its log so the page can show a past reset after a refresh — the browser's
+    own "I just started one" flag does not survive a reload, and the server's does.
+    """
+    n = max(1, min(int(tail), 2000))
+    job = _job_state("reset")
+    runs = _log_runs("reset")
+    if not runs:
+        return {"running": job["running"], "pid": job.get("pid"),
+                "lines": [], "exists": False, "runs": [], "run": None}
+    chosen = _pick_run(runs, run)
+    try:
+        lines = _read_log(chosen, n)
+    except OSError as exc:
+        raise HTTPException(500, f"Could not read {chosen}: {exc}") from exc
+    return {
+        "running": job["running"], "pid": job.get("pid"),
+        "lines": lines, "exists": True, "path": str(chosen),
+        "run": chosen.name, "runs": [_run_meta(p) for p in runs],
+    }
+
+
 @router.get("/build/log")
 def build_log(tail: int = 200, run: str | None = None) -> dict[str, Any]:
     """The tail of the most recent build's log, plus the list of earlier runs.

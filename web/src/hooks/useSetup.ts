@@ -256,6 +256,27 @@ export function useResetDatabase() {
   });
 }
 
+export interface ResetLog {
+  running: boolean;
+  pid: number | null;
+  lines: string[];
+  exists: boolean;
+  run: string | null;
+  runs: LogRun[];
+}
+
+/** The reset job's state and log, read from the SERVER — so a reset that is still running
+ *  (or already finished) is visible after a page refresh, which a local "I started one"
+ *  flag cannot survive. Polls only while the job is running. */
+export function useResetLog(tail = 200) {
+  return useQuery({
+    queryKey: ['reset-log', tail],
+    queryFn: async (): Promise<ResetLog> =>
+      (await api.get(`/setup/reset/log?tail=${tail}`)).data,
+    refetchInterval: (query) => (query.state.data?.running ? 2000 : false),
+  });
+}
+
 async function fetchSetup(): Promise<SetupStatus> {
   const response = await api.get('/setup/status/');
   return response.data;

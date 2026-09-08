@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { useDatasetLog, useResetDatabase, type SetupStatus } from '@/hooks/useSetup';
+import { useResetDatabase, useResetLog, type SetupStatus } from '@/hooks/useSetup';
 
 // Drop everything and start over.
 //
@@ -23,11 +23,12 @@ export function ResetDatabase({ data }: { data?: SetupStatus }) {
   const buildRunning = !!data?.build_status?.running;
   const matches = typed === dbName && dbName.length > 0;
 
-  // Follow the reset's own log once started, and keep polling until it says it finished.
-  const started = reset.isSuccess;
-  const log = useDatasetLog(started ? 'reset' : null, started);
+  // Driven by the SERVER, not by whether this tab started the job: a reset survives a
+  // refresh, and so should the log of it.
+  const log = useResetLog();
   const lines = log.data?.lines ?? [];
-  const done = lines.some((l) => l.includes('reset complete') || l.includes('REFUSED'));
+  const hasRun = !!log.data?.exists && lines.length > 0;
+  const jobRunning = !!log.data?.running;
 
   return (
     <div className="mt-8 rounded border border-neg/40 bg-neg/5 p-5">
@@ -90,7 +91,7 @@ export function ResetDatabase({ data }: { data?: SetupStatus }) {
             />
             <button
               type="button"
-              disabled={!matches || reset.isPending || started}
+              disabled={!matches || reset.isPending || jobRunning}
               onClick={() => reset.mutate(typed)}
               className="px-3 py-1.5 text-sm rounded bg-neg text-white
                          disabled:opacity-40 disabled:cursor-not-allowed"
@@ -118,10 +119,12 @@ export function ResetDatabase({ data }: { data?: SetupStatus }) {
       {/* The job reports itself. Showing its log beats a success message: stopping a
           build can take until its current step ends, and silence for a minute looks
           identical to a hang. */}
-      {started && (
+      {hasRun && (
         <div className="mt-4">
           <p className="text-xs text-ink-muted mb-1">
-            {done ? 'Reset job finished.' : 'Reset job running — stopping builds, then dropping the database…'}
+            {jobRunning
+              ? 'Reset job running — stopping builds, then dropping the database…'
+              : `Last reset${log.data?.run ? ` (${log.data.run})` : ''}`}
           </p>
           <pre className="text-[11px] leading-relaxed bg-ink/90 text-white/90 rounded p-3
                           max-h-56 overflow-auto whitespace-pre-wrap">
