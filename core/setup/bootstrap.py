@@ -429,6 +429,9 @@ def write_state(steps: list[Step], started: float, phase: str) -> None:
             "database": settings.postgres_db,
             "host": f"{settings.postgres_host}:{settings.postgres_port}",
             "phase": phase,
+            # A build has no --state-file in its argv, so the state path cannot prove the
+            # pid is ours. The module name is in every bootstrap command line and is.
+            "marker": "core.setup.bootstrap",
             "pid": os.getpid(),
             "started_at": datetime.fromtimestamp(started).isoformat(timespec="seconds"),
             "updated_at": datetime.now().isoformat(timespec="seconds"),
@@ -707,6 +710,9 @@ def _write_step_state(key: str, step: "Step", log: "Path | None", phase: str) ->
             "database": settings.postgres_db,
             "host": f"{settings.postgres_host}:{settings.postgres_port}",
             "phase": phase,
+            # A build has no --state-file in its argv, so the state path cannot prove the
+            # pid is ours. The module name is in every bootstrap command line and is.
+            "marker": "core.setup.bootstrap",
             "pid": os.getpid(),
             "started_at": datetime.now().isoformat(timespec="seconds"),
             "updated_at": datetime.now().isoformat(timespec="seconds"),
