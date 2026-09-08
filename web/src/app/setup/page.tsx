@@ -398,7 +398,13 @@ export default function SetupPage() {
                 </p>
                 <div className="space-y-2">
                   {data.phases.map((p) => {
-                    const pct = p.count ? (p.loaded / p.count) * 100 : 0;
+                    // Count only what can actually be measured. `count` includes datasets
+                    // whose state is "unknown" — nothing about them is checkable from
+                    // here — and dividing by those renders a shortfall the data never
+                    // claimed: a phase reporting 0 loaded and 0 missing was saying "I
+                    // can't tell", and it came out as 0/1 with an empty bar.
+                    const measurable = p.loaded + p.missing;
+                    const pct = measurable ? (p.loaded / measurable) * 100 : 0;
                     return (
                       <div key={p.id} className="flex items-center gap-3 text-sm">
                         <span className="w-20 shrink-0 font-medium text-ink">
@@ -411,7 +417,7 @@ export default function SetupPage() {
                           />
                         </div>
                         <span className="text-xs text-ink-muted tnum w-16 text-right">
-                          {p.loaded}/{p.count}
+                          {measurable ? `${p.loaded}/${measurable}` : '—'}
                         </span>
                       </div>
                     );
