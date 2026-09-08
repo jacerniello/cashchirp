@@ -329,7 +329,7 @@ export default function SetupPage() {
                 <div className="p-5">
                   <div className="flex items-baseline justify-between gap-3 mb-3">
                     <h2 className="text-sm font-semibold text-ink uppercase tracking-wide">
-                      {data.build.steps.some((s) => s.status === 'running')
+                      {(data.build.steps ?? []).some((s) => s.status === 'running')
                         ? 'Build in progress'
                         : 'Last build'}
                     </h2>
@@ -338,10 +338,10 @@ export default function SetupPage() {
                     </span>
                   </div>
                   <div className="divide-y divide-rule-light">
-                    {data.build.steps.map((s) => <StepRow key={s.key} s={s} />)}
+                    {(data.build.steps ?? []).map((s) => <StepRow key={s.key} s={s} />)}
                   </div>
                   {(() => {
-                    const p = buildProgress(data.build!.steps);
+                    const p = buildProgress(data.build!.steps ?? []);
                     return (
                       <div className="mt-4">
                         <div className="h-2 rounded-full bg-rule-light overflow-hidden">

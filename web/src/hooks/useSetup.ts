@@ -232,21 +232,25 @@ export function useStopBuild() {
   });
 }
 
-export interface ResetResult {
-  before: { objects: number; size: string; database: string };
-  after: { objects: number; size: string; database: string };
-  recreated_tables: string[];
-  cleared_job_files: number;
+export interface ResetStarted {
+  started: boolean;
+  key: string;
+  pid: number;
+  log: string;
+  note: string;
 }
 
-/** Drop every table and return the database to bare. `confirm` must equal the database
- *  name — the API rejects anything else, so a mistyped or mis-aimed request fails
- *  instead of wiping the wrong deployment. */
+/** Start a reset. It runs as a DETACHED job, like an ingest — it stops any running builds
+ *  first, which can take until the current step reaches a boundary, so this returns as
+ *  soon as the job is spawned and the caller follows its log.
+ *
+ *  `confirm` must equal the database name; the API rejects anything else, so a mistyped
+ *  or mis-aimed request fails instead of wiping the wrong deployment. */
 export function useResetDatabase() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (confirm: string) =>
-      (await api.post<ResetResult>('/setup/reset', { confirm })).data,
+      (await api.post<ResetStarted>('/setup/reset', { confirm })).data,
     // Everything on the page describes a database that no longer exists.
     onSuccess: () => qc.invalidateQueries(),
   });

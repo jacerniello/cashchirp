@@ -79,9 +79,17 @@ def _live_build() -> dict[str, Any] | None:
     if not STATE_PATH.exists():
         return None
     try:
-        return json.loads(STATE_PATH.read_text())
+        state = json.loads(STATE_PATH.read_text())
     except (json.JSONDecodeError, OSError):
         return None       # a half-written file is not an error worth surfacing
+    if not isinstance(state, dict):
+        return None
+    # Guarantee the shape the client indexes into. A state file written by an older
+    # version, or by hand, would otherwise reach the page missing `steps` and crash it.
+    state.setdefault("steps", [])
+    if not isinstance(state["steps"], list):
+        state["steps"] = []
+    return state
 
 
 @router.get("/status")
@@ -452,30 +460,20 @@ class ResetRequest(BaseModel):
 
 @router.post("/reset")
 def reset_db(req: ResetRequest) -> dict[str, Any]:
-    """Drop every table and return the database to bare — no data, models only.
+    """Stop every running build, then drop the database back to bare.
 
-    This is not `init_db --reset`, which drops only the tables SQLAlchemy declares and
-    silently leaves the Sharadar mirror and the `derived` schema in place. This drops the
-    schemas, so what remains afterwards really is bare.
+    A reset TAKES PRECEDENCE over running work. Refusing while a build is in flight would
+    be the wrong behaviour: the usual reason to reset is that the database is in a state
+    you no longer want, and being blocked by the very job producing that state is a trap.
+    So the job stops the builds first — sentinel, then SIGINT, then SIGKILL past a grace
+    period — and only drops schemas once nothing is still writing.
 
-    Three guards, in order of how much they matter:
+    It runs DETACHED with its own log, like the ingests, because waiting for a build to
+    reach a stoppable boundary can take minutes and an HTTP request should not.
 
-      1. **A build must not be running.** Dropping schemas under a live ingest leaves a
-         half-written database and a job that keeps writing into tables that no longer
-         exist.
-      2. **The database name must be typed back**, so a stray POST cannot wipe anything.
-      3. **The whole router is off unless SETUP_ENABLED is set**, so this does not exist
-         at all on a public deployment.
-
-    There is no undo. Rebuilding means re-downloading everything.
+    The database name must still be typed back: that guards against doing this to the
+    right button on the wrong deployment, which is the mistake actually worth preventing.
     """
-    if _build_status()["running"]:
-        raise HTTPException(
-            status_code=409,
-            detail="A build is running. Stop it first — resetting under a live ingest "
-                   "leaves a half-written database.",
-        )
-
     expected = settings.postgres_db
     if req.confirm != expected:
         raise HTTPException(
@@ -483,28 +481,29 @@ def reset_db(req: ResetRequest) -> dict[str, Any]:
             detail=f"Type the database name ({expected!r}) to confirm.",
         )
 
-    from core.backend.db.reset import reset_database
+    job = _job_state("reset")
+    if job["running"]:
+        raise HTTPException(409, f"A reset is already running (pid {job['pid']}).")
 
-    result = reset_database()
+    state_p, _, stop_p = _job_paths("reset")
+    _JOBS_DIR.mkdir(parents=True, exist_ok=True)
+    stop_p.unlink(missing_ok=True)
+    _rotate_logs("reset")
+    log_p = _new_log("reset")
 
-    # Job state and logs describe a database that no longer exists; leaving them makes the
-    # setup page report datasets as loaded straight after a wipe.
-    removed = 0
-    jobs_dir = CORE_DIR / "data" / "jobs"
-    if jobs_dir.is_dir():
-        for f in jobs_dir.iterdir():
-            try:
-                f.unlink(); removed += 1
-            except OSError:
-                pass
-    for stale in (CORE_DIR / "data" / "bootstrap-state.json",):
-        if stale.exists():
-            try:
-                stale.unlink(); removed += 1
-            except OSError:
-                pass
-
-    return {**result, "cleared_job_files": removed}
+    argv = [sys.executable, "-u", "-m", "core.scripts.setup.reset_db",
+            "--confirm", expected, "--keep-log", str(log_p)]
+    log = open(log_p, "ab", buffering=0)  # noqa: SIM115 - handed to the child
+    try:
+        proc = subprocess.Popen(
+            argv, cwd=str(PROJECT_ROOT), stdout=log, stderr=subprocess.STDOUT,
+            stdin=subprocess.DEVNULL, start_new_session=True,
+        )
+    finally:
+        log.close()
+    _mark_starting(state_p, proc.pid, log_p)
+    return {"started": True, "key": "reset", "pid": proc.pid, "log": str(log_p),
+            "note": "Stopping any running builds, then resetting. Follow the log."}
 
 
 @router.get("/build/log")

@@ -146,25 +146,13 @@ export function BuildRunner({
   const openRow = rows.find((d) => d.key === openLog);
   const dsLog = useDatasetLog(openLog, !!openRow?.job.running, dsRun);
 
-  /** Confirm only the genuinely expensive action. `update` is an incremental sync and
-   *  `missing` touches nothing already loaded; only `full` re-downloads, so only `full`
-   *  earns a prompt. Confirming the cheap ones too would just train you to click through
-   *  the one that matters. */
+  /** No confirmation left to give: `update` is an incremental sync and `missing` touches
+   *  nothing already loaded, so neither is expensive. Re-downloading everything is no
+   *  longer a button here — resetting the database achieves it, and more honestly: an
+   *  empty table has no watermark, so the next run full-backfills it. One destructive
+   *  control beats two that overlap. */
   const guard = (mode: 'update' | 'missing' | 'full') => {
-    const go = () => start.mutateAsync({ kind, mode });
-    if (kind !== 'ingest' || mode !== 'full') { act(go); return; }
-    setConfirming({
-      title: 'Re-download every table from scratch?',
-      lines: [
-        `All ${rows.length} datasets, about ${data!.work.ingest.expected_size}, pulled again `
-          + 'in full — not just the rows that changed.',
-        'Hours of downloading.',
-        'You almost certainly want "Fetch new data" instead, unless you suspect the local '
-          + 'copy is wrong rather than merely out of date.',
-        'It runs detached and is resumable — you can stop it at any time.',
-      ],
-      go,
-    });
+    act(() => start.mutateAsync({ kind, mode }));
   };
   const loaded = rows.filter((r) => r.state === 'loaded').length;
   const measurable = rows.filter((r) => r.state !== 'unknown').length;
@@ -247,29 +235,15 @@ export function BuildRunner({
                         Load the {missingCount} missing
                       </button>
                     )}
-                    {kind === 'ingest' && (
-                      <button
-                        type="button"
-                        onClick={() => guard('full')}
-                        disabled={start.isPending}
-                        className="rounded-lg border border-neg/40 bg-white text-neg px-4 py-2
-                                   text-sm font-medium cursor-pointer hover:border-neg
-                                   disabled:opacity-40"
-                      >
-                        Re-download everything
-                      </button>
-                    )}
                   </div>
                   <p className="text-xs text-ink-faint max-w-2xl">
                     {kind === 'ingest' ? (
                       <>
                         <strong className="text-ink-light">Fetch new data</strong> pulls only
                         rows added or changed since the last run — minutes, and what you want
-                        almost always.{' '}
-                        <strong className="text-ink-light">Re-download everything</strong>{' '}
-                        discards that shortcut and pulls each table&apos;s full export again:
-                        hours, for when you suspect the local copy is wrong rather than
-                        merely stale.
+                        almost always. To pull everything from scratch, reset the database
+                        first — an empty table has no watermark to sync from, so the next run
+                        full-backfills it anyway.
                       </>
                     ) : (
                       <>Derived tables have no incremental path — each rebuild recomputes
