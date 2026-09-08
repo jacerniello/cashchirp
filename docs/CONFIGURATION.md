@@ -36,9 +36,8 @@ looks:
    browser is exactly what `run_screen` returns — no second definition to drift.
 
 ```bash
-python -m core.scripts.screen.run_screen --list       # what's defined
-python -m core.scripts.screen.run_screen --columns    # what you can gate on
-python -m core.scripts.screen.run_screen my-screen    # run it
+# The CLI screen runner has been removed. Screens are defined in config/screens/ and
+# run from the Screener: /screener, with every saved screen at /screener/ideas.
 ```
 
 Copy `quality-value.yaml`, change the numbers, point `ACTIVE_SCREEN` at yours. Files
@@ -54,7 +53,7 @@ it, save. It lands in `config/screens/<id>.yaml` in exactly this format — so a
 built by dragging sliders is immediately runnable, not trapped in a URL:
 
 ```bash
-python -m core.scripts.screen.run_screen my-filter
+open /screener/ideas/my-filter
 ```
 
 **Watch the "Not captured" list.** Some screener controls have no gate equivalent — the

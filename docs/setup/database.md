@@ -5,7 +5,7 @@ data and nothing else, or if a build failed and you need to understand what happ
 
 This database is a **local mirror of data you license from someone else**: Sharadar (via
 Nasdaq Data Link), FRED, FINRA and SEC. Nobody ships you a copy. You rebuild it from those
-sources with your own keys, and `core.scripts.setup.bootstrap` is the thing that does it.
+sources with your own keys, and `core.setup.bootstrap` is the thing that does it.
 
 Where each dataset comes from, what it costs and what it's licensed for:
 **[sources.md](sources.md)** (generated) or `bootstrap --sources`.
@@ -15,7 +15,7 @@ Where each dataset comes from, what it costs and what it's licensed for:
 ## The one command
 
 ```bash
-python -m core.scripts.setup.bootstrap --create-db
+python -m core.setup.bootstrap --create-db
 ```
 
 Everything else on this page is a variation on that.
@@ -38,7 +38,7 @@ Everything else on this page is a variation on that.
 ## 1 · Preflight
 
 ```bash
-python -m core.scripts.setup.bootstrap --check
+python -m core.setup.bootstrap --check
 ```
 
 Checks the five things that actually go wrong, and prints the fix for any that fail:
@@ -61,7 +61,7 @@ A missing database is the one failure it can fix itself, with `--create-db`.
 ## 2 · See the work before committing to it
 
 ```bash
-python -m core.scripts.setup.bootstrap --plan
+python -m core.setup.bootstrap --plan
 ```
 
 Steps are grouped by phase, with the size each lands on disk so you can plan the disk.
@@ -73,7 +73,7 @@ no percentage at all rather than a fabricated one, and a step skipped on resume 
 done without pretending gigabytes moved.
 
 ```bash
-python -m core.scripts.setup.bootstrap --sources
+python -m core.setup.bootstrap --sources
 ```
 
 ...answers the other question: *where is this actually coming from, and am I allowed to
@@ -83,7 +83,7 @@ endpoint, and the tables each dataset writes.
 ## 3 · Build
 
 ```bash
-python -m core.scripts.setup.bootstrap --create-db
+python -m core.setup.bootstrap --create-db
 ```
 
 Phases run in dependency order — **schema → Sharadar → FRED → FINRA → SEC → derived** —
@@ -120,7 +120,7 @@ State is written to `core/data/bootstrap-state.json` after every step and at lea
 second during one. From any other terminal:
 
 ```bash
-python -m core.scripts.setup.bootstrap --watch
+python -m core.setup.bootstrap --watch
 ```
 
 That file is why you can close the laptop lid on a six-hour backfill and still find out
@@ -133,16 +133,16 @@ Piping to a file or a CI log switches automatically to one line per event (force
 Re-run the exact same command:
 
 ```bash
-python -m core.scripts.setup.bootstrap --create-db
+python -m core.setup.bootstrap --create-db
 ```
 
 Steps whose table already holds rows are **skipped**, so a resume costs only the work that
 didn't finish. Ctrl-C is safe.
 
 ```bash
-python -m core.scripts.setup.bootstrap --force            # redo everything, ignore existing rows
-python -m core.scripts.setup.bootstrap --only SEP SF1     # rebuild specific Sharadar tables
-python -m core.scripts.setup.bootstrap --only-phase derived   # just rebuild the derived tables
+python -m core.setup.bootstrap --force            # redo everything, ignore existing rows
+python -m core.setup.bootstrap --only SEP SF1     # rebuild specific Sharadar tables
+python -m core.setup.bootstrap --only-phase derived   # just rebuild the derived tables
 ```
 
 ### When a step fails
@@ -153,7 +153,7 @@ python -m core.scripts.setup.bootstrap --only-phase derived   # just rebuild the
 | API `403` / `429` | key wrong, or your subscription lacks that table | check the key; confirm your Sharadar plan covers it |
 | a single table exceeds the query-API cap | Sharadar restamped a huge day | `--only <TABLE>` re-runs just it |
 | `connection refused` | Postgres not running | `cd core && docker compose up -d` |
-| a step hangs for many minutes | lock contention | `python -m core.scripts.ops.unjam` |
+| a step hangs for many minutes | lock contention | `the Database tab at /setup/database` |
 | out of disk mid-build | the 2× headroom rule | free space, then re-run — it resumes |
 
 **`unjam` is the first thing to try on a stall.** A hang is almost always Postgres lock
@@ -163,16 +163,16 @@ behind. `unjam` stops this project's jobs and terminates the jammed backends —
 scoped, never touching other projects or its own connection.
 
 ```bash
-python -m core.scripts.ops.unjam --dry-run   # show what's running / blocked, change nothing
-python -m core.scripts.ops.unjam             # clear it (asks first)
+the Database tab at /setup/database
+the Database tab at /setup/database
 ```
 
 ## 6 · Confirm it worked
 
 ```bash
-python -m core.scripts.setup.bootstrap --status   # tables, row counts, sizes
-python -m core.scripts.ops.verify_sharadar      # local rows == the downloaded files
-python -m core.scripts.ops.load_status          # latest load per dataset, from load_log
+python -m core.setup.bootstrap --status   # tables, row counts, sizes
+# fidelity check: the verification helpers in `core/backend/verify.py` (`verify_all()`, importable; no CLI)
+the Runs tab at /setup/runs          # latest load per dataset, from load_log
 ```
 
 `verify_sharadar` is the one that matters. `--status` tells you rows *exist*;
@@ -195,8 +195,8 @@ curl 'http://localhost:8001/api/v1/screener/?limit=5'
 is incremental:
 
 ```bash
-python -m core.scripts.load.update_all           # only what changed
-python -m core.scripts.load.update_all --dry-run
+python -m core.setup.bootstrap           # only what changed
+python -m core.setup.bootstrap --dry-run
 ```
 
 No table does a full re-download on a routine run. `update_all` derives its plan from the
@@ -218,8 +218,7 @@ loader — not an edit in four places.
 3. Regenerate the docs:
 
 ```bash
-python -m core.scripts.ops.gen_setup_docs           # rewrite docs/setup/sources.md
-python -m core.scripts.ops.gen_setup_docs --check   # CI gate: fails if stale
+# docs/setup/sources.md was generated from the registry; the generator has been removed.
 ```
 
 `bootstrap`, `update_all` and [sources.md](sources.md) all pick it up automatically. That

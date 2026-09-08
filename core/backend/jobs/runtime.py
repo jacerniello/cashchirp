@@ -54,7 +54,7 @@ def _bootstrap_procs() -> dict[int, str]:
         for line in out.splitlines():
             line = line.strip()
             pid_s, _, cmd = line.partition(" ")
-            if "core.scripts.setup.bootstrap" in cmd and pid_s.isdigit():
+            if "core.setup.bootstrap" in cmd and pid_s.isdigit():
                 procs[int(pid_s)] = cmd
     except (OSError, subprocess.SubprocessError):
         # Can't enumerate — fall back to "assume alive" rather than declaring a live
@@ -334,7 +334,7 @@ def spawn_dataset(key: str, mode: str = "update") -> dict[str, Any]:
     _rotate_logs(key)
     log_path = _new_log(key)
 
-    argv = [sys.executable, "-u", "-m", "core.scripts.setup.bootstrap", "--plain",
+    argv = [sys.executable, "-u", "-m", "core.setup.bootstrap", "--plain",
             "--dataset", key, "--state-file", str(state_p)]
     if mode == "full":
         argv.append("--full")
@@ -359,7 +359,7 @@ def spawn_build(kind: str = "all", mode: str = "update",
     if kind not in BUILD_KINDS:
         raise ValueError(f"kind must be one of {BUILD_KINDS}, got {kind!r}")
 
-    argv = [sys.executable, "-u", "-m", "core.scripts.setup.bootstrap", "--create-db",
+    argv = [sys.executable, "-u", "-m", "core.setup.bootstrap", "--create-db",
             "--plain"]
     chosen = list(phases or [])
     # Schema rides along with an ingest run: it is idempotent, and an ingest into

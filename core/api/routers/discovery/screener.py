@@ -333,7 +333,7 @@ def save_screen(req: SaveScreenRequest) -> dict[str, Any]:
         "spec": spec,
         "unsupported": unsupported,
         "carried": carried,
-        "run": f"python -m core.scripts.screen.run_screen {spec['id']}",
+        "open": f"/screener/ideas/{spec['id']}",
     }
 
 

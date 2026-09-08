@@ -32,8 +32,8 @@ drives what `bootstrap` actually ingests, so the published provenance cannot cla
 source the build does not use.
 
 ```bash
-python -m core.scripts.ops.gen_setup_docs           # regenerate
-python -m core.scripts.ops.gen_setup_docs --check   # exit 1 if stale (CI gate)
+# docs/setup/sources.md was generated from core/backend/sources.py; the generator has
+# been removed, so keep it in step with the registry by hand.
 ```
 
 Do not hand-edit it; change the registry and re-run.

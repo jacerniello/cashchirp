@@ -285,7 +285,7 @@ def recent(session: Session, limit: int = 300, code: str | None = None) -> pd.Da
 # `owner_id` = md5(upper(name))[:12]: deterministic (stable across rebuilds, so URLs
 # don't rot) and keeps the raw name out of the URL — but it inherits the name's
 # ambiguity (two people sharing a name collapse to one id). Two derived tables, both
-# built by `core.scripts.build.build_insiders` and documented in docs/reference/schema.md:
+# built by `core.setup.bootstrap --dataset derived:derived.insider`, documented in docs/reference/schema.md:
 #
 #   derived.insider          one row per insider — id, name, role flags, activity span.
 #   derived.insider_company  one row per (insider, company) — transaction $ valued at

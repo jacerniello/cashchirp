@@ -66,10 +66,10 @@ The full list of what each credential unlocks: [sources.md](sources.md#credentia
 This is the long step, and it has its own guide: **[database.md](database.md)**.
 
 ```bash
-python -m core.scripts.setup.bootstrap --check       # preflight — catches the 5 things that go wrong
-python -m core.scripts.setup.bootstrap --plan        # what will run, from where, how big
-python -m core.scripts.setup.bootstrap --sources     # where every byte comes from
-python -m core.scripts.setup.bootstrap --create-db   # go
+python -m core.setup.bootstrap --check       # preflight — catches the 5 things that go wrong
+python -m core.setup.bootstrap --plan        # what will run, from where, how big
+python -m core.setup.bootstrap --sources     # where every byte comes from
+python -m core.setup.bootstrap --create-db   # go
 ```
 
 - [ ] Preflight passes (`--check` prints `all checks passed`)
@@ -86,9 +86,9 @@ Don't skip this. Financial data looks entirely plausible while being wrong, and 
 downstream conclusion inherits the corruption silently.
 
 ```bash
-python -m core.scripts.setup.bootstrap --status   # tables, row counts, sizes on disk
-python -m core.scripts.ops.verify_sharadar      # local rows == what was downloaded, per table
-python -m core.scripts.ops.load_status          # what loaded, and when
+python -m core.setup.bootstrap --status   # tables, row counts, sizes on disk
+# fidelity check: the verification helpers in `core/backend/verify.py` (`verify_all()`, importable; no CLI)
+the Runs tab at /setup/runs          # what loaded, and when
 ```
 
 - [ ] `--status` shows the tables you expect, at plausible sizes
@@ -108,7 +108,7 @@ open http://localhost:3000
 
 - [ ] http://localhost:3000 loads
 - [ ] http://127.0.0.1:8001/health returns `{"status":"ok"}`
-- [ ] `python -m core.scripts.screen.run_screen` prints a basket
+- [ ] `/screener/ideas` shows a basket
 
 That last one is the real end-to-end test: it exercises the database, the derived
 snapshot, and your screen spec in one go.
@@ -126,7 +126,7 @@ Nothing so far is personal. Two things are:
 `bootstrap` goes from nothing to a database. After that, refreshes are incremental:
 
 ```bash
-python -m core.scripts.load.update_all
+python -m core.setup.bootstrap
 ```
 
 - [ ] Scheduled nightly (optional) — see [../DEPLOYMENT.md](../DEPLOYMENT.md#nightly-refresh)
@@ -142,7 +142,7 @@ quietly serves last week's numbers.
 The macro layer is free and independent. Build just it:
 
 ```bash
-python -m core.scripts.setup.bootstrap --create-db --only-phase schema fred
+python -m core.setup.bootstrap --create-db --only-phase schema fred
 ```
 
 You get the `/macro` endpoints. The screener, company, insider and institutional pages
@@ -170,7 +170,7 @@ tables — the derived rebuilds add ~9 GB on a full build.
 | `relation "daily" does not exist` | That table isn't loaded — `bootstrap --status` |
 | SEC calls return `403` | `SEC_USER_AGENT` unset, or not a real contact |
 | API `403`/`429` mid-build | Key wrong, or your Sharadar plan doesn't cover that table |
-| A load hangs for many minutes | Lock contention — `python -m core.scripts.ops.unjam` |
+| A load hangs for many minutes | Lock contention — `the Database tab at /setup/database` |
 | `No screen 'x' in config/screens` | `ACTIVE_SCREEN` names a missing file — `run_screen --list` |
 | `operator does not exist: text = integer` | Joining `tickers.permaticker` (TEXT) to an equity table's (bigint). Cast: `tickers.permaticker::bigint` |
 | `syntax error at or near "table"` | `table` is reserved *and* a real column in `tickers`. Quote it: `"table"` |

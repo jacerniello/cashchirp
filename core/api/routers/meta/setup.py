@@ -428,7 +428,7 @@ def reset_db(req: ResetRequest) -> dict[str, Any]:
     _rotate_logs("reset")
     log_p = _new_log("reset")
 
-    argv = [sys.executable, "-u", "-m", "core.scripts.setup.reset_db",
+    argv = [sys.executable, "-u", "-m", "core.setup.reset_db",
             "--confirm", expected, "--keep-log", str(log_p)]
     log = open(log_p, "ab", buffering=0)  # noqa: SIM115 - handed to the child
     try:
@@ -710,3 +710,60 @@ def run_log(name: str, tail: int = 200) -> dict[str, Any]:
                 return {"name": name, "lines": _read_log(p, n), "exists": True,
                         "archived": p.suffix == ".gz"}
     raise HTTPException(404, f"No log named {name!r}.")
+
+
+# ------------------------------------------------------------------ database health
+
+
+class KillRequest(BaseModel):
+    pid: int
+    what: str = "backend"          # backend | process
+
+
+class UnjamRequest(BaseModel):
+    dry_run: bool = False
+    db_only: bool = False
+    procs_only: bool = False
+
+
+@router.get("/database")
+@router.get("/database/")
+def database_health() -> dict[str, Any]:
+    """Who is connected, what is blocking what, and this project's running processes.
+
+    The page this serves is the answer to "the app is hanging and I don't know why" —
+    so it reports rather than assumes, and separates a real lock jam (something is
+    waiting) from an idle transaction (often an ingest legitimately holding the
+    rebuild guard)."""
+    from core.backend.db import health
+    conns = health.connections()
+    return {
+        "database": settings.postgres_db,
+        "host": f"{settings.postgres_host}:{settings.postgres_port}",
+        "connections": conns,
+        "diagnosis": health.diagnose(conns),
+        "processes": health.our_processes(),
+    }
+
+
+@router.post("/database/kill")
+def database_kill(req: KillRequest) -> dict[str, Any]:
+    """Terminate ONE backend, or SIGTERM one of this project's processes.
+
+    Both paths refuse anything outside their allowlist — a browser-reachable kill
+    switch is only as safe as what it declines to aim at."""
+    from core.backend.db import health
+    try:
+        if req.what == "process":
+            return {"pid": req.pid, "result": health.kill_process(req.pid)}
+        return {"pid": req.pid, "terminated": health.terminate_backend(req.pid)}
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
+@router.post("/database/unjam")
+def database_unjam(req: UnjamRequest) -> dict[str, Any]:
+    """Stop this project's jobs and clear jammed backends in one go."""
+    from core.backend.db import health
+    return health.unjam(dry_run=req.dry_run, db_only=req.db_only,
+                        procs_only=req.procs_only)

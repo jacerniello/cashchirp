@@ -40,8 +40,8 @@ pip install -r core/requirements.txt
 cp core/.env.example core/.env           # add your API keys + SEC_USER_AGENT
 cd core && docker compose up -d && cd ..  # local Postgres (or your own instance)
 cd web && npm install && cd ..            # one-time: install the frontend deps
-python -m core.scripts.setup.bootstrap --check  # preflight, then:
-python -m core.scripts.setup.bootstrap --create-db
+python -m core.setup.bootstrap --check  # preflight, then:
+python -m core.setup.bootstrap --create-db
 ```
 
 The build takes hours and the full dataset is ~47 GB — it is resumable, and
@@ -68,9 +68,9 @@ cd web && API_URL=http://127.0.0.1:8001 npm run dev              # frontend only
 Define what you're looking for, then find out whether it ever worked:
 
 ```bash
-python -m core.scripts.screen.run_screen --list          # screens in config/screens/
-python -m core.scripts.screen.run_screen quality-value   # run one, see the basket
-python -m core.scripts.screen.run_screen --columns       # what you can gate on
+# Screens live in config/screens/ and run from the Screener UI:
+#   /screener            build and save one
+#   /screener/ideas      every saved screen, run against the latest snapshot
 ```
 
 There is no built-in historical validation: a basket is a list of candidates to research,
@@ -78,12 +78,12 @@ not evidence the filter has an edge.
 
 ## Data
 
-- **Load/update any Sharadar table:** `python -m core.scripts.load.sharadar_load_generic <CODE>`
+- **Load/update any Sharadar table:** `python -m core.setup.bootstrap --dataset sharadar:<CODE>`
   (`--sync` for incremental). One schema-driven loader; tables are 1:1 mirrors.
-- **Refresh everything:** `python -m core.scripts.load.update_all` (the nightly job).
-- **Verify** local == downloaded files: `python -m core.scripts.ops.verify_sharadar`.
-- **What's loaded + when:** `python -m core.scripts.ops.load_status`.
-- **If a load hangs:** `python -m core.scripts.ops.unjam` — it's almost always lock contention.
+- **Refresh everything:** `python -m core.setup.bootstrap` (the nightly job).
+- **Verify** local == downloaded files: the verification helpers in `core/backend/verify.py` (`verify_all()`, importable; no CLI).
+- **What's loaded + when:** `the Runs tab at /setup/runs`.
+- **If a load hangs:** `the Database tab at /setup/database` — it's almost always lock contention.
 
 > API keys live in `core/.env` (gitignored). The downloaded data under `core/data/` is
 > gitignored and regenerable.

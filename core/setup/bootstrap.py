@@ -5,13 +5,13 @@ it takes someone from "I cloned the repo" to "I have my own populated copy", che
 the things that actually go wrong first, and shows where a multi-hour backfill has
 got to instead of leaving them staring at a silent terminal.
 
-    python -m core.scripts.setup.bootstrap --check      # preflight only, touches nothing
-    python -m core.scripts.setup.bootstrap --plan       # print the step list and exit
-    python -m core.scripts.setup.bootstrap --create-db  # create the database if missing, then run
-    python -m core.scripts.setup.bootstrap              # preflight -> schema -> load -> derived
-    python -m core.scripts.setup.bootstrap --only SEP SF1
-    python -m core.scripts.setup.bootstrap --status     # what's in the DB right now
-    python -m core.scripts.setup.bootstrap --watch      # follow a run started in another terminal
+    python -m core.setup.bootstrap --check      # preflight only, touches nothing
+    python -m core.setup.bootstrap --plan       # print the step list and exit
+    python -m core.setup.bootstrap --create-db  # create the database if missing, then run
+    python -m core.setup.bootstrap              # preflight -> schema -> load -> derived
+    python -m core.setup.bootstrap --only SEP SF1
+    python -m core.setup.bootstrap --status     # what's in the DB right now
+    python -m core.setup.bootstrap --watch      # follow a run started in another terminal
 
 The load plan is NOT duplicated here: `SHARADAR_PLAN` and the rebuild guard are
 imported from `update_all`, so the two stay in step by construction. What this adds
@@ -452,7 +452,7 @@ def watch(interval: float = 1.0) -> int:
     """Follow a run happening in another terminal by tailing the state file."""
     if not STATE_PATH.exists():
         print(f"No run state at {STATE_PATH}.\n"
-              f"Start one with: python -m core.scripts.setup.bootstrap")
+              f"Start one with: python -m core.setup.bootstrap")
         return 1
     drawn = 0
     try:
@@ -566,7 +566,7 @@ def _runner(ds: sources.Dataset) -> Callable[[Callable[[str], None]], object]:
 
     if ds.phase == "sec":
         def run_sec(progress):
-            from core.scripts.load.load_sec_fund_classes import load
+            from core.backend.ingest.sec.sec_fund_classes import load
             progress("company_tickers_mf.json…")
             return f"{load()} rows"
         return run_sec
@@ -715,7 +715,7 @@ def _run_one(step: Step, steps: list[Step], display: Display, started: float,
 
 
 def execute(steps: list[Step], display: Display, resume: bool) -> int:
-    from core.scripts.load.update_all import _suppress_app_rebuilds
+    from core.backend.queries._rebuild import suppress_app_rebuilds
 
     started = display.started
     write_state(steps, started, "starting")
@@ -739,7 +739,7 @@ def execute(steps: list[Step], display: Display, resume: bool) -> int:
     try:
         _run_group(schema, False)              # schema steps are always idempotent
         if ingest:
-            with _suppress_app_rebuilds():
+            with suppress_app_rebuilds(log=print):
                 _run_group(ingest, resume)
         _run_group(derived, resume)
     except _Stop:
@@ -864,14 +864,14 @@ def main() -> int:
         rows = db_status()
         if not rows:
             print(f"{settings.postgres_db}: no tables yet. "
-                  f"Run: python -m core.scripts.setup.bootstrap")
+                  f"Run: python -m core.setup.bootstrap")
             return 0
         print(f"{settings.postgres_db} @ {settings.postgres_host}:{settings.postgres_port}\n")
         print(f"{'table':52} {'rows':>14} {'size':>10}")
         print("-" * 78)
         for name, n, size in rows:
             print(f"{name:52} {n:>14,} {size:>10}")
-        print(f"\n{len(rows)} tables. Load history: python -m core.scripts.ops.load_status")
+        print(f"\n{len(rows)} tables. Load history: the Runs tab under /setup")
         return 0
 
     checks = preflight()
@@ -942,7 +942,7 @@ def main() -> int:
             print("This downloads tens of GB from Sharadar and takes hours. It is resumable.")
         else:
             print("No Sharadar steps in this plan — nothing paid is downloaded.")
-        print("Provenance per source: python -m core.scripts.setup.bootstrap --sources")
+        print("Provenance per source: python -m core.setup.bootstrap --sources")
         return 0
 
     if args.full:
