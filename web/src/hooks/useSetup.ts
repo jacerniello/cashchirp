@@ -168,6 +168,7 @@ export interface LogResponse {
  *  polling is disabled then, since a finished run cannot change. */
 export function useBuildLog(
   enabled: boolean, running: boolean, run?: string | null, tail = 300,
+  justStarted = false,
 ) {
   return useQuery({
     queryKey: ['build-log', tail, run ?? 'latest'],
@@ -175,7 +176,9 @@ export function useBuildLog(
       (await api.get(`/setup/build/log?tail=${tail}`
         + (run ? `&run=${encodeURIComponent(run)}` : ''))).data,
     enabled,
-    refetchInterval: running && !run ? 2000 : false,
+    // `justStarted` covers the gap between spawning a job and the status endpoint
+    // admitting it is running: without it the first poll never happens.
+    refetchInterval: (running || justStarted) && !run ? 1500 : false,
     retry: false,
   });
 }
@@ -199,6 +202,7 @@ export function useDatasetJob() {
 
 export function useDatasetLog(
   key: string | null, running: boolean, run?: string | null, tail = 200,
+  justStarted = false,
 ) {
   return useQuery({
     queryKey: ['dataset-log', key, tail, run ?? 'latest'],
@@ -206,7 +210,9 @@ export function useDatasetLog(
       (await api.get(`/setup/dataset/log?key=${encodeURIComponent(key!)}&tail=${tail}`
         + (run ? `&run=${encodeURIComponent(run)}` : ''))).data,
     enabled: !!key,
-    refetchInterval: running && !run ? 2000 : false,
+    // `justStarted` covers the gap between spawning a job and the status endpoint
+    // admitting it is running: without it the first poll never happens.
+    refetchInterval: (running || justStarted) && !run ? 1500 : false,
     retry: false,
   });
 }
@@ -268,12 +274,15 @@ export interface ResetLog {
 /** The reset job's state and log, read from the SERVER — so a reset that is still running
  *  (or already finished) is visible after a page refresh, which a local "I started one"
  *  flag cannot survive. Polls only while the job is running. */
-export function useResetLog(tail = 200) {
+export function useResetLog(tail = 200, justStarted = false) {
   return useQuery({
     queryKey: ['reset-log', tail],
     queryFn: async (): Promise<ResetLog> =>
       (await api.get(`/setup/reset/log?tail=${tail}`)).data,
-    refetchInterval: (query) => (query.state.data?.running ? 2000 : false),
+    // Poll while the job runs, and also for the moment right after starting one — the
+    // last fetch still says running:false, so without this it would never poll again.
+    refetchInterval: (query) =>
+      (query.state.data?.running || justStarted ? 1500 : false),
   });
 }
 
