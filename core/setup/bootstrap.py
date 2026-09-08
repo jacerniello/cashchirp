@@ -663,9 +663,72 @@ def _report_frac(step: Step, msg: str) -> None:
             step.frac_known = True
 
 
+
+# --------------------------------------------------------------- per-step state
+
+# A whole-build run used to write ONE state file and ONE log, so while it was loading
+# SFP the /setup/ingest row for SFP still showed whatever its last standalone job did —
+# "failed", in the case that prompted this. A row claiming FAIL while the dataset is
+# actively loading is worse than a blank one.
+#
+# So the orchestrator now drives each dataset's own state file and log, exactly as if
+# that dataset had been started on its own. One place produces the state, whoever ran it.
+
+
+def _step_key(step: "Step") -> str | None:
+    """The registry key whose per-dataset state this step owns, if any."""
+    return step.key if step.key in sources.BY_KEY else None
+
+
+def _open_step_log(key: str) -> "Path | None":
+    """Start this dataset's own dated log, rotating older ones."""
+    try:
+        from core.backend.jobs import runtime as rt
+        rt._rotate_logs(key)
+        return rt._new_log(key)
+    except Exception:
+        return None
+
+
+def _write_step_state(key: str, step: "Step", log: "Path | None", phase: str) -> None:
+    """Mirror one step into `core/data/jobs/<slug>.json` — the file the per-dataset UI
+    row reads. Best-effort: reporting must never break the load it is reporting on."""
+    try:
+        from core.backend.jobs import runtime as rt
+        state_p, _, _ = rt._job_paths(key)
+        # A single-dataset job is already pointed at this exact file by --state-file, so
+        # write_state() owns it. Writing it from here too would race two writers against
+        # one path for no gain.
+        if state_p.resolve() == STATE_PATH.resolve():
+            return
+        state_p.parent.mkdir(parents=True, exist_ok=True)
+        tmp = state_p.with_suffix(".tmp")
+        tmp.write_text(json.dumps({
+            "database": settings.postgres_db,
+            "host": f"{settings.postgres_host}:{settings.postgres_port}",
+            "phase": phase,
+            "pid": os.getpid(),
+            "started_at": datetime.now().isoformat(timespec="seconds"),
+            "updated_at": datetime.now().isoformat(timespec="seconds"),
+            "elapsed_seconds": step.seconds,
+            "log": str(log) if log else "",
+            "steps": [{
+                "key": step.key, "label": step.label, "phase": step.phase,
+                "status": step.status, "seconds": step.seconds, "rows": step.rows,
+                "note": step.note, "detail": step.detail,
+                "frac": step.frac, "frac_known": step.frac_known,
+            }],
+        }, indent=2))
+        tmp.replace(state_p)      # atomic: a reader never sees a half-written file
+    except Exception:
+        pass
+
+
 def _run_one(step: Step, steps: list[Step], display: Display, started: float,
              resume: bool) -> None:
-    """Execute one step, keeping display + state file current throughout."""
+    """Execute one step, keeping the display, the run state and this dataset's OWN
+    state file and log current throughout."""
+    key = _step_key(step)
     if resume and step.table:
         existing = table_rows(step.table)
         if existing and existing > 0:
@@ -673,12 +736,17 @@ def _run_one(step: Step, steps: list[Step], display: Display, started: float,
             step.note = f"already has {existing:,} rows — use --force to rebuild"
             display.transition(step)
             write_state(steps, started, step.phase)
+            if key:
+                _write_step_state(key, step, None, "done")
             return
 
     step.status = "running"
     step.frac, step.frac_known = 0.0, False
+    step_log = _open_step_log(key) if key else None
     display.transition(step)
     write_state(steps, started, step.phase)
+    if key:
+        _write_step_state(key, step, step_log, "running")
     t0 = time.time()
 
     def progress(msg: str) -> None:
@@ -691,6 +759,17 @@ def _run_one(step: Step, steps: list[Step], display: Display, started: float,
         if now - getattr(progress, "_last", 0.0) > 1.0:
             progress._last = now  # type: ignore[attr-defined]
             write_state(steps, started, step.phase)
+            if key:
+                step.seconds = now - t0
+                _write_step_state(key, step, step_log, "running")
+        # Every line also goes to this dataset's own log, so /setup/dataset/log shows the
+        # run that is happening rather than the last standalone one.
+        if step_log is not None:
+            try:
+                with step_log.open("a") as fh:
+                    fh.write(f"[{datetime.now():%H:%M:%S}] {msg}\n")
+            except OSError:
+                pass
 
     try:
         out = step.run(progress)
@@ -712,6 +791,8 @@ def _run_one(step: Step, steps: list[Step], display: Display, started: float,
         step.frac = 1.0 if step.status in ("ok", "skipped") else step.frac
         display.transition(step)
         write_state(steps, started, step.phase)
+        if key:
+            _write_step_state(key, step, step_log, "done" if step.status == "ok" else "failed")
 
 
 def execute(steps: list[Step], display: Display, resume: bool) -> int:

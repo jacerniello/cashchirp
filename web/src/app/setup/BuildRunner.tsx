@@ -3,7 +3,7 @@
 import { Fragment, useEffect, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import {
-  useBuildLog, useDatasetJob, useDatasetLog, useSetup, useStartBuild, useStopBuild,
+  useDatasetJob, useDatasetLog, useSetup, useStartBuild, useStopBuild,
   type DatasetStatus, type LogRun,
 } from '@/hooks/useSetup';
 import { Card } from '@/components/Card';
@@ -97,10 +97,8 @@ export function BuildRunner({
   // Log visibility follows what's RUNNING by default: if something is going, you want to
   // see it without hunting for a toggle. `undefined` means "follow"; anything else is an
   // explicit choice you made, which sticks until the next run starts.
-  const [logOverride, setLogOverride] = useState<boolean | undefined>(undefined);
   const [openOverride, setOpenOverride] = useState<string | null | undefined>(undefined);
   // null = follow the latest run; a name pins that historical run.
-  const [buildRun, setBuildRun] = useState<string | null>(null);
   const [dsRun, setDsRun] = useState<string | null>(null);
   const job = useDatasetJob();
   // A pending expensive action, held until confirmed. Only ingest needs this: derive is
@@ -116,13 +114,10 @@ export function BuildRunner({
   // progress shown is only *this* kind's business when the build has reached this kind.
   const buildRunning = !!b?.running;
   const buildHere = buildRunning && KIND_PHASES[kind].includes(b!.phase ?? '');
-  const showLog = logOverride ?? buildRunning;
   // Set the instant a job is spawned. `buildRunning` comes from status fetched BEFORE the
   // click, so without this the log query never starts polling and stays blank until
   // something else re-primes it — which in practice meant a manual refresh.
   const [justStarted, setJustStarted] = useState(false);
-  const log = useBuildLog(showLog || buildRunning || justStarted, buildRunning,
-                          buildRun, 300, justStarted);
 
   useEffect(() => {
     if (!justStarted) return;
@@ -135,8 +130,8 @@ export function BuildRunner({
     setErr(null);
     try {
       await fn();
-      setLogOverride(undefined); setOpenOverride(undefined);
-      setBuildRun(null); setDsRun(null);   // a new run is the one you want to watch
+      setOpenOverride(undefined);
+      setDsRun(null);   // a new run is the one you want to watch
       setJustStarted(true);
     }
     catch (e) {
@@ -444,45 +439,6 @@ export function BuildRunner({
             </div>
           </Card>
 
-          {/* --- log --- */}
-          <Card>
-            <div className="p-5">
-              <div className="flex items-center justify-between gap-3 flex-wrap">
-                <button
-                  type="button"
-                  onClick={() => setLogOverride(!showLog)}
-                  className="text-sm font-semibold text-ink uppercase tracking-wide bg-transparent
-                             border-0 cursor-pointer p-0"
-                >
-                  {showLog ? '▾' : '▸'} Build log{running && !showLog ? ' (live)' : ''}
-                </button>
-                {showLog && log.data?.runs?.length ? (
-                  <RunPicker runs={log.data.runs} value={buildRun} onChange={setBuildRun} />
-                ) : null}
-              </div>
-              {showLog && (
-                <>
-                  <pre
-                    ref={(el) => { if (el && running) el.scrollTop = el.scrollHeight; }}
-                    className="mt-3 max-h-96 overflow-auto rounded-lg bg-ink text-white/85
-                               text-[0.72rem] leading-relaxed font-mono p-3 whitespace-pre-wrap"
-                  >
-                    {log.isLoading && !log.data ? 'Loading…'
-                      : !log.data?.exists ? 'No build has run yet — the log appears once you start one.'
-                      : log.data.lines.length ? log.data.lines.join('\n')
-                      : running ? 'Starting… the first output appears in a second or two.'
-                      : '(log is empty)'}
-                  </pre>
-                  <p className="text-xs text-ink-faint mt-2">
-                    <code className="font-mono">{log.data?.path ?? b.log}</code>
-                    {buildRun
-                      ? ' · viewing an earlier run (not live)'
-                      : running && ' · refreshing every 2s'}
-                  </p>
-                </>
-              )}
-            </div>
-          </Card>
         </>
       )}
     </div>
