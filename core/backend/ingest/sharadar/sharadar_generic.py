@@ -165,6 +165,28 @@ ON CONFLICT (table_name) DO UPDATE SET
 """
 
 
+def _dest_ready(dest: str) -> bool:
+    """Does `dest` exist and hold at least one row — i.e. is there anything to sync INTO?
+
+    Separate from the watermark because the two answer different questions. A watermark
+    says WHERE to resume from; this says whether resuming is possible at all. Only the
+    second can veto, and it does.
+    """
+    raw = engine.raw_connection()
+    try:
+        cur = raw.cursor()
+        cur.execute("SELECT to_regclass(%s);", (dest,))
+        if cur.fetchone()[0] is None:
+            return False
+        cur.execute(f"SELECT EXISTS (SELECT 1 FROM {dest} LIMIT 1);")
+        return bool(cur.fetchone()[0])
+    except Exception:
+        raw.rollback()
+        return False
+    finally:
+        raw.close()
+
+
 def _get_watermark(dataset: str, dest: str, sync_col: str = "lastupdated") -> date | None:
     """Watermark from sync_state, falling back to max(`sync_col`) in the table
     (so an already-backfilled table can sync without a full re-download)."""
@@ -174,18 +196,12 @@ def _get_watermark(dataset: str, dest: str, sync_col: str = "lastupdated") -> da
         # The DESTINATION decides whether a watermark means anything — ask it first.
         #
         # A watermark is the claim "this table already holds everything up to this date".
-        # If the table is missing or empty the claim is about nothing, and there is no
-        # incremental sync to do: the only correct action is a full backfill. sync_state
-        # outlives the table it describes, so consulting it first let a leftover row for
-        # SF3A route a load into a table that did not exist, where it then failed on a
-        # column the backfill would never have read.
-        cur.execute("SELECT to_regclass(%s);", (dest,))
-        if cur.fetchone()[0] is None:
+        # If the table is missing or empty the claim is about nothing. sync_state outlives
+        # the table it describes, so consulting it first let a leftover row for SF3A route
+        # a load into a table that did not exist, where it then failed on a column the
+        # backfill would never have read.
+        if not _dest_ready(dest):
             return None
-        cur.execute(f"SELECT EXISTS (SELECT 1 FROM {dest} LIMIT 1);")
-        if not cur.fetchone()[0]:
-            return None
-
         cur.execute(
             "SELECT last_updated_date FROM sync_state WHERE table_name = %s;", (dataset,)
         )
@@ -532,9 +548,19 @@ def sync_table(
     # `calendardate` to `date`, when a full backfill would have worked and was what an
     # empty table needed anyway. `_get_watermark` already tolerates a missing table and an
     # unknown column, returning None for both, so it is safe to ask first.
+    # Checked before `since` is consulted, because `since` says where to resume from, not
+    # that resuming is possible. Passing one used to skip this entirely and go straight to
+    # the incremental path — and when that path finds no changes it writes a watermark for
+    # the table it never created, leaving a sync_state row that routes every later load
+    # back down the same dead branch. That is exactly how sf3a ended up with a watermark
+    # and no table.
+    if not _dest_ready(dest):
+        _progress(progress, table_code, "table missing or empty — full backfill")
+        return load_table(table_code, dest_table=dest, progress=progress)
+
     watermark = since or _get_watermark(dataset, dest, sync_col)
     if watermark is None:
-        _progress(progress, table_code, "no watermark / table empty — full backfill")
+        _progress(progress, table_code, "no watermark — full backfill")
         return load_table(table_code, dest_table=dest, progress=progress)
 
     # Past here an incremental sync really is what is happening, so the column has to work.
