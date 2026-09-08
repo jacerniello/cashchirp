@@ -511,6 +511,21 @@ def sync_table(
     requested_at = datetime.now()
 
     types, pk = fetch_schema(table_code)
+
+    # Decide WHETHER to sync before validating what we would sync ON. An empty table has
+    # no watermark and takes the full-backfill path, which reads the bulk export and never
+    # looks at `sync_col` — so a table whose sync column is wrong or renamed can still be
+    # loaded from zero. Validating first turned that recoverable case into a hard failure:
+    # SF3A/SF3B refused to load at all on a fresh database because Sharadar renamed their
+    # `calendardate` to `date`, when a full backfill would have worked and was what an
+    # empty table needed anyway. `_get_watermark` already tolerates a missing table and an
+    # unknown column, returning None for both, so it is safe to ask first.
+    watermark = since or _get_watermark(dataset, dest, sync_col)
+    if watermark is None:
+        _progress(progress, table_code, "no watermark / table empty — full backfill")
+        return load_table(table_code, dest_table=dest, progress=progress)
+
+    # Past here an incremental sync really is what is happening, so the column has to work.
     if sync_col not in types:
         date_cols = sorted(c for c, t in types.items() if t == "date")
         raise RuntimeError(
@@ -520,11 +535,6 @@ def sync_table(
         )
     if types[sync_col] != "date":
         raise RuntimeError(f"{table_code}.{sync_col} is not a date column — can't be a watermark.")
-
-    watermark = since or _get_watermark(dataset, dest, sync_col)
-    if watermark is None:
-        _progress(progress, table_code, "no watermark / table empty — full backfill")
-        return load_table(table_code, dest_table=dest, progress=progress)
 
     start = watermark - timedelta(days=lookback_days)
     _progress(progress, table_code, f"querying {sync_col} >= {start} ...")
@@ -612,6 +622,17 @@ def sync_coarse_table(
     requested_at = datetime.now()
 
     types, pk = fetch_schema(table_code)
+
+    # Same ordering point as sync_table, and the same reason — but this path had no
+    # empty-table branch at all. On a fresh database it went straight to re-pulling the
+    # last couple of quarters, which is not a backfill: it would leave the table holding
+    # two quarters and call that done. The docstring above already says a full backfill is
+    # the only complete option for a fresh table; this is that sentence in code.
+    if _get_watermark(dataset, dest, quarter_col) is None:
+        _progress(progress, table_code, "table empty — full backfill")
+        return load_table(table_code, dest_table=dest, skip_derived=skip_derived,
+                          progress=progress)
+
     for col in (quarter_col, chunk_key):
         if col not in types:
             raise RuntimeError(f"{table_code} has no `{col}` column — can't coarse-sync on it.")
