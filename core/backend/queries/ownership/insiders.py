@@ -319,7 +319,7 @@ def owner_id_for(ownername: str) -> str:
     return hashlib.md5(ownername.upper().encode("utf-8")).hexdigest()[:12]
 
 
-def refresh(session: Session) -> dict:
+def refresh(session: Session, progress=None) -> dict:
     """(Re)build both derived insider tables. Idempotent; stamped with `asof` = max SF2
     filing date. Returns row counts. See the module note above for the schema.
 
@@ -327,11 +327,16 @@ def refresh(session: Session) -> dict:
     tables); each table is built into `…__new` off the live table and swapped in with a
     brief metadata lock — no DROP-convoy with concurrent app warmers."""
     asof = scalar(session, "SELECT max(filingdate) FROM sf2")
+    say = progress or (lambda _m: None)
+    say(f"asof {asof}; waiting for the build lock")
     with single_flight(LOCK_INSIDERS) as mine:
         if not mine:  # another worker is rebuilding — don't stampede
+            say("another process holds the lock — skipped, serving the live tables")
             return {"insider": live_count(_INSIDER_TABLE),
                     "insider_company": live_count(_INSIDER_CO_TABLE)}
+        say("building derived.insider + derived.insider_company from sf2…")
         _build_insider_tables(asof)
+        say("built; swapping in")
     return {"insider": live_count(_INSIDER_TABLE),
             "insider_company": live_count(_INSIDER_CO_TABLE)}
 
