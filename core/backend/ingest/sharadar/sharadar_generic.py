@@ -369,6 +369,27 @@ def _enrich_after_load(table_code, dest, header, progress, skip_derived=False):
             _progress(progress, table_code, f"sp500_concentration refresh skipped: {exc}")
         # The counterfactual index-lab panel also keys on the membership log (and the
         # SEP/DAILY caps refreshed earlier in the run); rebuild it when SP500 advances.
+    # sf3 arrives without `investorname` or `price` — Sharadar ships investorid and
+    # neither of the other two. Put them back before anything downstream reads the table:
+    # the derived rebuild immediately below is one of the things that needs them, so this
+    # has to happen first, and unlike the enrichment above it is NOT best-effort. A
+    # silently unnamed sf3 leaves every institution page blank while reporting a clean
+    # load, so a failure here fails the load and says why.
+    if dest == "sf3":
+        from core.backend.ingest.permaticker import denormalise_sf3
+        total, named = denormalise_sf3(only_null=True)
+        _progress(progress, table_code, f"investorname: {named:,}/{total:,} rows; price computed")
+
+    # sf3a and sf3b were renamed the same way and are read under the old name too, but
+    # they need only the alias — Sharadar still ships their names and values directly.
+    if dest in ("sf3a", "sf3b"):
+        try:
+            from core.backend.ingest.permaticker import add_calendardate
+            if add_calendardate(dest):
+                _progress(progress, table_code, "calendardate restored (generated from date)")
+        except Exception as exc:
+            _progress(progress, table_code, f"calendardate alias skipped: {exc}")
+
     # Same idea for the holdings bubble chart: the per-holder time series keys on
     # 13F quarters, so rebuild it whenever SF3 advances (best-effort).
     if dest == "sf3" and not skip_derived:
