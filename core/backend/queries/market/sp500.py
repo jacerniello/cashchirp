@@ -146,7 +146,7 @@ def _build_frames(session: Session, asof) -> tuple[pd.DataFrame, pd.DataFrame]:
     return conc, sectors
 
 
-def refresh_concentration(session: Session) -> int:
+def refresh_concentration(session: Session, progress=None) -> int:
     """Rebuild both `sp500_concentration` and `sp500_sector_weights`; return the
     concentration row count. Idempotent — safe after every SP500/DAILY load.
 
@@ -155,12 +155,18 @@ def refresh_concentration(session: Session) -> int:
     so readers never block. The frames are tiny, so the whole build is ~45s (one
     bounded `daily` scan per snapshot date)."""
     asof = _membership_asof(session)
+    say = progress or (lambda _m: None)
+    say(f"asof {asof}; waiting for the build lock")
     with single_flight(LOCK_SP500_CONCENTRATION) as mine:
         if not mine:  # another worker is rebuilding — don't stampede
+            say("another process holds the lock — skipped, serving the live table")
             return live_count(_CONC_TABLE)
+        say("building concentration + sector frames (one bounded daily scan per date)…")
         conc, sectors = _build_frames(session, asof)
+        say(f"writing {len(conc):,} concentration + {len(sectors):,} sector rows…")
         conc.to_sql(f"{_CONC_TABLE}{NEW}", engine, if_exists="replace", index=False)
         sectors.to_sql(f"{_SECTOR_TABLE}{NEW}", engine, if_exists="replace", index=False)
+        say("indexing + swapping in…")
         with engine.begin() as conn:
             conn.execute(text(f"CREATE INDEX ix_{_SECTOR_TABLE}_date{NEW} "
                               f"ON {_SECTOR_TABLE}{NEW} (date)"))

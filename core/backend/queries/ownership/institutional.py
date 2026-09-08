@@ -216,7 +216,7 @@ def holder_timeseries_page(
     return query_df(session, _HOLDER_PAGE_LIVE_SQL, {"pt": pt, "lo": lo, "hi": hi})
 
 
-def refresh_holder_timeseries(session: Session) -> int:
+def refresh_holder_timeseries(session: Session, progress=None) -> int:
     """Rebuild the `holder_timeseries` table from `sf3` and return its row count.
 
     For every security, ranks each SHR holder by its largest-ever position value
@@ -269,18 +269,28 @@ def refresh_holder_timeseries(session: Session) -> int:
         """
     )
     idx_new = f"ix_{_HOLDER_TABLE}_permaticker_rank{NEW}"
+    say = progress or (lambda _m: None)
+    say(f"asof {asof}; waiting for the build lock")
     with single_flight(LOCK_HOLDERS) as mine:
         if not mine:  # another worker is rebuilding — don't stampede
+            # Worth saying out loud: this returns a row count and looks exactly like a
+            # successful build, when in fact nothing was rebuilt here.
+            say("another process holds the lock — skipped, serving the live table")
             return live_count(_HOLDER_TABLE)
         # Build off the live table (no lock on holder_timeseries), then swap atomically.
         with engine.begin() as conn:
             conn.execute(text(f"DROP TABLE IF EXISTS {_HOLDER_TABLE}{NEW}"))
+            say("building (CTAS over sf3; several minutes on ~33M rows)…")
             conn.execute(ctas, {"asof": asof})
+            say("indexing (permaticker, rank)…")
             conn.execute(text(f"CREATE INDEX {idx_new} ON {_HOLDER_TABLE}{NEW} (permaticker, rank)"))
+        say("swapping in…")
         with engine.begin() as conn:
             swap_in(conn, _HOLDER_TABLE,
                     ((idx_new, f"ix_{_HOLDER_TABLE}_permaticker_rank"),))
-    return live_count(_HOLDER_TABLE)
+    n = live_count(_HOLDER_TABLE)
+    say(f"done — {n:,} rows")
+    return n
 
 
 def investor_book(session: Session, investorname: str) -> pd.DataFrame:
@@ -415,7 +425,7 @@ def investor_holdings_timeseries_page(
     )
 
 
-def refresh_investor_holdings_timeseries(session: Session) -> int:
+def refresh_investor_holdings_timeseries(session: Session, progress=None) -> int:
     """Rebuild the `investor_holdings_timeseries` table from `sf3` and return its row
     count — the per-investor transpose of `refresh_holder_timeseries`.
 
@@ -468,19 +478,27 @@ def refresh_investor_holdings_timeseries(session: Session) -> int:
         """
     )
     idx_new = f"ix_{_INST_HOLDINGS_TABLE}_investorname_rank{NEW}"
+    say = progress or (lambda _m: None)
+    say(f"asof {asof}; waiting for the build lock")
     with single_flight(LOCK_INVESTOR_HOLDINGS) as mine:
         if not mine:  # another worker is rebuilding — don't stampede
+            say("another process holds the lock — skipped, serving the live table")
             return live_count(_INST_HOLDINGS_TABLE)
         with engine.begin() as conn:
             conn.execute(text(f"DROP TABLE IF EXISTS {_INST_HOLDINGS_TABLE}{NEW}"))
+            say("building (CTAS over sf3; several minutes on ~33M rows)…")
             conn.execute(ctas, {"asof": asof})
+            say("indexing (investorname, rank)…")
             conn.execute(
                 text(f"CREATE INDEX {idx_new} ON {_INST_HOLDINGS_TABLE}{NEW} (investorname, rank)")
             )
+        say("swapping in…")
         with engine.begin() as conn:
             swap_in(conn, _INST_HOLDINGS_TABLE,
                     ((idx_new, f"ix_{_INST_HOLDINGS_TABLE}_investorname_rank"),))
-    return live_count(_INST_HOLDINGS_TABLE)
+    n = live_count(_INST_HOLDINGS_TABLE)
+    say(f"done — {n:,} rows")
+    return n
 
 
 def investor_holdings(

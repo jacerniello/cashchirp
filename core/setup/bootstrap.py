@@ -584,12 +584,19 @@ def _runner(ds: sources.Dataset) -> Callable[[Callable[[str], None]], object]:
 
         def run_derived(progress, module=module, fname=fname, name=ds.label):
             import importlib
+            import inspect
 
             from core.backend.db.engine import session_scope
             mod = importlib.import_module(module)
             progress(f"rebuilding {name}…")
+            fn = getattr(mod, fname)
+            # Hand the builder our progress sink when it takes one. A derived rebuild is
+            # minutes of CTAS on tens of millions of rows, and "rebuilding X…" followed by
+            # silence is indistinguishable from a hang. Checked rather than assumed so a
+            # builder without the parameter still runs instead of raising TypeError.
+            kw = {"progress": progress} if "progress" in inspect.signature(fn).parameters else {}
             with session_scope() as session:
-                return getattr(mod, fname)(session)
+                return fn(session, **kw)
         return run_derived
 
     raise ValueError(f"registry dataset {ds.key!r} has no runner (phase {ds.phase!r})")

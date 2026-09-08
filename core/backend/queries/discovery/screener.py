@@ -249,7 +249,7 @@ def _max_daily_date(session: Session):
     return scalar(session, "SELECT max(date) FROM daily")
 
 
-def refresh_snapshot(session: Session) -> int:
+def refresh_snapshot(session: Session, progress=None) -> int:
     """Build the snapshot and **persist** it to the `screener_snapshot` table (tagged with
     the `daily` as-of date). Idempotent — safe to call after every load. Returns row count.
 
@@ -257,12 +257,18 @@ def refresh_snapshot(session: Session) -> int:
     serving the live table); the build goes into `…__new` and is swapped in with a brief
     metadata lock, so readers never block on the multi-second build (no DROP-convoy)."""
     max_date = _max_daily_date(session)
+    say = progress or (lambda _m: None)
+    say(f"asof {max_date}; waiting for the build lock")
     with single_flight(LOCK_SCREENER) as mine:
         if not mine:  # another worker is rebuilding — don't stampede
+            say("another process holds the lock — skipped, serving the live table")
             return live_count(_TABLE)
+        say("querying sf1/daily/metrics/sf3a…")
         df = build_snapshot(session).copy()
         df["asof"] = max_date
+        say(f"writing {len(df):,} rows…")
         df.to_sql(f"{_TABLE}{NEW}", engine, if_exists="replace", index=False)
+        say("indexing + swapping in…")
         with engine.begin() as conn:
             conn.execute(text(f"CREATE INDEX ix_{_TABLE}_permaticker{NEW} "
                               f"ON {_TABLE}{NEW} (permaticker)"))
