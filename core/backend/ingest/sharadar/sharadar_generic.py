@@ -120,6 +120,11 @@ def _build_sql(header, types, pk, dest):
     return ddl, dml, stage_defs, stage_cols, ("lastupdated" in header)
 
 
+# Below this, a buffered COPY is written in one call: it finishes faster than a
+# progress line would be read, and chunking it would only add noise.
+_BUFFER_PROGRESS_MIN = 64 * 1024 * 1024
+
+
 def _run(cur, table_code, dest, header, types, pk, copy_writer, progress):
     """Create table + staging, COPY via copy_writer, upsert. Returns
     (staged_rows, dest_total, watermark|None)."""
@@ -427,6 +432,40 @@ def load_table(
     return {"rows": staged, "total": total, "watermark": watermark}
 
 
+def _buffer_writer(csv_bytes: bytes, table_code: str, progress):
+    """COPY an in-memory buffer, reporting progress against its known length.
+
+    The incremental paths build the whole payload in memory before writing it, so unlike
+    the API fetch that produced it this phase has an exact denominator — `len(csv_bytes)`.
+    The write is chunked purely so there is something to report between "not started" and
+    "done": a single `write()` is atomic from the caller's point of view, so a large
+    payload would sit silent and look stalled.
+
+    Small payloads are written in one go. A routine sync is a few MB and finishes before
+    a progress line would be read, so chunking it only adds noise.
+    """
+    total = len(csv_bytes)
+    step = 1 << 20
+
+    def writer(copy):
+        if total <= _BUFFER_PROGRESS_MIN:
+            copy.write(csv_bytes)
+            return
+        # memoryview so slicing does not copy the payload a second time.
+        mv = memoryview(csv_bytes)
+        every = max(total // 10, step)   # ~10 updates, whatever the size
+        sent, mark = 0, every
+        while sent < total:
+            copy.write(mv[sent:sent + step])
+            sent += step
+            if sent >= mark:
+                _progress(progress, table_code,
+                          f"COPY {min(sent, total) / 1e6:.0f}/{total / 1e6:.0f} MB ...")
+                mark += every
+
+    return writer
+
+
 def sync_table(
     table_code: str,
     dest_table: str | None = None,
@@ -499,8 +538,7 @@ def sync_table(
     col_max = pd.to_datetime(df[sync_col], errors="coerce").max()
     new_wm = col_max.date() if pd.notna(col_max) else watermark
 
-    def writer(copy):
-        copy.write(csv_bytes)
+    writer = _buffer_writer(csv_bytes, table_code, progress)
 
     raw = engine.raw_connection()
     try:
@@ -579,8 +617,7 @@ def sync_coarse_table(
         header = list(df.columns)
         csv_bytes = df.to_csv(index=False).encode()
 
-        def writer(copy, _b=csv_bytes):
-            copy.write(_b)
+        writer = _buffer_writer(csv_bytes, table_code, progress)
 
         raw = engine.raw_connection()
         try:
