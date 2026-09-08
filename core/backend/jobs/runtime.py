@@ -42,6 +42,19 @@ _PS_TTL = 1.0
 _ps_cache: dict[str, Any] = {"at": 0.0, "procs": {}}
 
 
+# What one of our job processes looks like on the process table.
+#
+# Matched on the `-m ...setup.bootstrap` INVOCATION rather than a hardcoded dotted path,
+# because that path has moved twice — out of `core/` into `core/scripts/setup/`, then back
+# to `core/setup/` — and each move silently broke this. The failure is quiet and bad: every
+# running job reports dead, so the UI shows nothing running AND the duplicate-start guard
+# stops guarding, which is how a second bulk load gets launched on top of a live one.
+#
+# Requiring `-m` also makes it stricter than the substring test it replaces, which matched
+# any command line that merely mentioned the module — an editor, a grep, a shell one-liner.
+_BOOTSTRAP_INVOCATION = re.compile(r"(?:^|\s)-m\s+[\w.]*\bsetup\.bootstrap(?:\s|$)")
+
+
 def _bootstrap_procs() -> dict[int, str]:
     """`{pid: command}` for this project's bootstrap runs, cached briefly."""
     now = time.time()
@@ -54,7 +67,7 @@ def _bootstrap_procs() -> dict[int, str]:
         for line in out.splitlines():
             line = line.strip()
             pid_s, _, cmd = line.partition(" ")
-            if "core.setup.bootstrap" in cmd and pid_s.isdigit():
+            if pid_s.isdigit() and _BOOTSTRAP_INVOCATION.search(cmd):
                 procs[int(pid_s)] = cmd
     except (OSError, subprocess.SubprocessError):
         # Can't enumerate — fall back to "assume alive" rather than declaring a live
