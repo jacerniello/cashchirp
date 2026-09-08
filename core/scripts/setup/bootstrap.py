@@ -94,7 +94,6 @@ class Step:
     detail: str = ""     # live sub-step message from the loader
     frac: float = 0.0    # 0..1 completion REPORTED by the loader (not estimated)
     frac_known: bool = False  # False => the loader gave no denominator; frac is meaningless
-    _zip_mb: float = 0.0      # bulk-export size, once the loader announces it
 
 
 # --------------------------------------------------------------------------- preflight
@@ -635,29 +634,25 @@ def build_steps(only: list[str] | None,
 
 # ------------------------------------------------------------------------------- run
 
-# The loaders report free text, and only some of it carries a denominator. These pull a
+# The loaders report free text, and only some of it carries a denominator. This pulls a
 # REAL completion fraction out of the messages that do; everything else leaves frac_known
 # False, and the display shows no per-step percentage rather than inventing one.
-#   "zip ready (1234 MB)"        -> the denominator for the COPY that follows
-#   "COPY 512 MB ..."            -> bytes copied against that denominator
 #   "permaticker: 8,400,000/41,000,000 rows" -> an explicit ratio
-_RE_ZIP = re.compile(r"zip ready \(([\d.]+)\s*MB\)", re.I)
-_RE_COPY = re.compile(r"COPY\s+([\d.]+)\s*MB", re.I)
+#
+# There is deliberately NO rule for the bulk COPY. The loader announces the download as
+# "zip ready (661 MB)" and then reports "COPY 1049 MB ...", and it is tempting to read the
+# first as the denominator of the second. It is not: the zip is compressed and the COPY
+# counts uncompressed bytes, so the ratio passes 1.0 early and stays there. Clamping it
+# only hid that — SF1 sat at "running 100%" for the ten minutes it was still copying,
+# which is worse than no number, because a wrong percentage is one people act on. The
+# byte count still shows in the step's detail line; it just no longer claims to be a
+# fraction of anything.
 _RE_RATIO = re.compile(r"([\d,]+)\s*/\s*([\d,]+)")
 
 
 def _report_frac(step: Step, msg: str) -> None:
     """Update `step.frac` from a loader message, if that message actually says how far
     along it is. Never guesses: a message with no denominator leaves the step unmeasured."""
-    if m := _RE_ZIP.search(msg):
-        step._zip_mb = float(m.group(1))
-        return
-    if (m := _RE_COPY.search(msg)) and step._zip_mb > 0:
-        # The zip is compressed and the COPY counts uncompressed bytes, so this can run
-        # past 100% — clamp, and treat it as "nearly done" rather than a wrong number.
-        step.frac = min(float(m.group(1)) / step._zip_mb, 1.0)
-        step.frac_known = True
-        return
     if m := _RE_RATIO.search(msg):
         done = float(m.group(1).replace(",", ""))
         total = float(m.group(2).replace(",", ""))
@@ -681,7 +676,7 @@ def _run_one(step: Step, steps: list[Step], display: Display, started: float,
             return
 
     step.status = "running"
-    step.frac, step.frac_known, step._zip_mb = 0.0, False, 0.0
+    step.frac, step.frac_known = 0.0, False
     display.transition(step)
     write_state(steps, started, step.phase)
     t0 = time.time()
