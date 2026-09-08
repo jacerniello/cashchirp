@@ -259,9 +259,7 @@ export default function SetupPage() {
                     </span>
                   </div>
                   <p className="mt-1.5 text-sm text-ink-light leading-relaxed">{x.desc}</p>
-                  <p className="mt-2 text-xs text-ink-muted">
-                    ~{x.w.expected_size} · {x.cost}
-                  </p>
+                  <p className="mt-2 text-xs text-ink-muted">{x.cost}</p>
                   <p className="mt-3 text-xs text-green">Open to run and monitor →</p>
                 </Link>
               ))}

@@ -1,6 +1,7 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { useResetDatabase, useResetLog, type SetupStatus } from '@/hooks/useSetup';
 
 // Drop everything and start over.
@@ -29,10 +30,31 @@ export function ResetDatabase({ data }: { data?: SetupStatus }) {
 
   // Driven by the SERVER, not by whether this tab started the job: a reset survives a
   // refresh, and so should the log of it.
-  const log = useResetLog();
+  // `justStarted` forces polling for the moment between spawning the job and the server
+  // admitting it is running — without it the first poll never fires and the log stays
+  // blank until something else re-primes the query.
+  const [justStarted, setJustStarted] = useState(false);
+  const log = useResetLog(200, justStarted);
   const lines = log.data?.lines ?? [];
-  const hasRun = !!log.data?.exists && lines.length > 0;
   const jobRunning = !!log.data?.running;
+  const hasRun = justStarted || !!log.data?.exists;
+
+  useEffect(() => {
+    if (!justStarted) return;
+    if (jobRunning) { setJustStarted(false); return; }  // server took over
+    const t = setTimeout(() => setJustStarted(false), 20000);  // don't poll forever
+    return () => clearTimeout(t);
+  }, [justStarted, jobRunning]);
+
+  // When the job FINISHES, everything else on the page — sizes, table counts, per-dataset
+  // state — still describes the database as it was before the wipe. Nothing refetches on
+  // its own, so the numbers would sit there stale until a manual reload.
+  const qc = useQueryClient();
+  const wasRunning = useRef(false);
+  useEffect(() => {
+    if (wasRunning.current && !jobRunning) qc.invalidateQueries();
+    wasRunning.current = jobRunning;
+  }, [jobRunning, qc]);
 
   return (
     <div className="mt-8 rounded border border-neg/40 bg-neg/5 p-5">
@@ -96,7 +118,7 @@ export function ResetDatabase({ data }: { data?: SetupStatus }) {
             <button
               type="button"
               disabled={!matches || reset.isPending || jobRunning}
-              onClick={() => reset.mutate(typed)}
+              onClick={() => { setJustStarted(true); reset.mutate(typed); }}
               className="px-3 py-1.5 text-sm rounded bg-neg text-white
                          disabled:opacity-40 disabled:cursor-not-allowed"
             >

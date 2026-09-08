@@ -1,6 +1,6 @@
 'use client';
 
-import { Fragment, useState } from 'react';
+import { Fragment, useEffect, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import {
   useBuildLog, useDatasetJob, useDatasetLog, useSetup, useStartBuild, useStopBuild,
@@ -117,7 +117,19 @@ export function BuildRunner({
   const buildRunning = !!b?.running;
   const buildHere = buildRunning && KIND_PHASES[kind].includes(b!.phase ?? '');
   const showLog = logOverride ?? buildRunning;
-  const log = useBuildLog(showLog || buildRunning, buildRunning, buildRun);
+  // Set the instant a job is spawned. `buildRunning` comes from status fetched BEFORE the
+  // click, so without this the log query never starts polling and stays blank until
+  // something else re-primes it — which in practice meant a manual refresh.
+  const [justStarted, setJustStarted] = useState(false);
+  const log = useBuildLog(showLog || buildRunning || justStarted, buildRunning,
+                          buildRun, 300, justStarted);
+
+  useEffect(() => {
+    if (!justStarted) return;
+    if (buildRunning) { setJustStarted(false); return; }   // status caught up
+    const t = setTimeout(() => setJustStarted(false), 20000);
+    return () => clearTimeout(t);
+  }, [justStarted, buildRunning]);
 
   const act = async (fn: () => Promise<unknown>) => {
     setErr(null);
@@ -125,6 +137,7 @@ export function BuildRunner({
       await fn();
       setLogOverride(undefined); setOpenOverride(undefined);
       setBuildRun(null); setDsRun(null);   // a new run is the one you want to watch
+      setJustStarted(true);
     }
     catch (e) {
       const d = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
@@ -144,7 +157,7 @@ export function BuildRunner({
   const running = buildHere || !!runningRow;
   const openLog = openOverride === undefined ? (runningRow?.key ?? null) : openOverride;
   const openRow = rows.find((d) => d.key === openLog);
-  const dsLog = useDatasetLog(openLog, !!openRow?.job.running, dsRun);
+  const dsLog = useDatasetLog(openLog, !!openRow?.job.running, dsRun, 200, justStarted);
 
   /** No confirmation left to give: `update` is an incremental sync and `missing` touches
    *  nothing already loaded, so neither is expensive. Re-downloading everything is no
