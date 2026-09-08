@@ -443,6 +443,70 @@ def stop_build() -> dict[str, Any]:
                     "and will re-run. Start again to resume."}
 
 
+class ResetRequest(BaseModel):
+    """`confirm` must equal the database name. Typing the target back is the point:
+    it makes a reset something you can only do on purpose, and it makes a mis-aimed
+    request (right button, wrong deployment) fail instead of succeeding."""
+    confirm: str
+
+
+@router.post("/reset")
+def reset_db(req: ResetRequest) -> dict[str, Any]:
+    """Drop every table and return the database to bare — no data, models only.
+
+    This is not `init_db --reset`, which drops only the tables SQLAlchemy declares and
+    silently leaves the Sharadar mirror and the `derived` schema in place. This drops the
+    schemas, so what remains afterwards really is bare.
+
+    Three guards, in order of how much they matter:
+
+      1. **A build must not be running.** Dropping schemas under a live ingest leaves a
+         half-written database and a job that keeps writing into tables that no longer
+         exist.
+      2. **The database name must be typed back**, so a stray POST cannot wipe anything.
+      3. **The whole router is off unless SETUP_ENABLED is set**, so this does not exist
+         at all on a public deployment.
+
+    There is no undo. Rebuilding means re-downloading everything.
+    """
+    if _build_status()["running"]:
+        raise HTTPException(
+            status_code=409,
+            detail="A build is running. Stop it first — resetting under a live ingest "
+                   "leaves a half-written database.",
+        )
+
+    expected = settings.postgres_db
+    if req.confirm != expected:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Type the database name ({expected!r}) to confirm.",
+        )
+
+    from core.backend.db.reset import reset_database
+
+    result = reset_database()
+
+    # Job state and logs describe a database that no longer exists; leaving them makes the
+    # setup page report datasets as loaded straight after a wipe.
+    removed = 0
+    jobs_dir = CORE_DIR / "data" / "jobs"
+    if jobs_dir.is_dir():
+        for f in jobs_dir.iterdir():
+            try:
+                f.unlink(); removed += 1
+            except OSError:
+                pass
+    for stale in (CORE_DIR / "data" / "bootstrap-state.json",):
+        if stale.exists():
+            try:
+                stale.unlink(); removed += 1
+            except OSError:
+                pass
+
+    return {**result, "cleared_job_files": removed}
+
+
 @router.get("/build/log")
 def build_log(tail: int = 200, run: str | None = None) -> dict[str, Any]:
     """The tail of the most recent build's log, plus the list of earlier runs.
