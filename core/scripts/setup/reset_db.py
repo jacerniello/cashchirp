@@ -63,12 +63,20 @@ def _running_pids() -> dict[str, int]:
         except (OSError, ValueError, KeyError):
             pass
     if JOBS_DIR.is_dir():
+        me = os.getpid()
         for f in sorted(JOBS_DIR.glob("*.json")):
+            # Skip this job's own state. The API writes jobs/reset.json the instant it
+            # spawns us, so without this the reset finds itself in the job list and
+            # SIGINTs its own pid — which it does, immediately, every time.
+            if f.stem == "reset":
+                continue
             try:
                 st = json.loads(f.read_text())
             except (OSError, ValueError):
                 continue
             pid = st.get("pid")
+            if pid == me:
+                continue
             if _alive(pid) and st.get("phase") not in ("done", "failed", "interrupted"):
                 found[f.stem] = int(pid)
     return found
