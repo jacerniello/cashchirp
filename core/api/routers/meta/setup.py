@@ -147,11 +147,19 @@ def status() -> dict[str, Any]:
         have_rows = sum(t["rows"] for t in tables)
         have_bytes = sum(t["bytes"] for t in tables)
         loaded_mb += have_bytes / 1_048_576
-        # No declared table (schema, some derived rebuilds) => nothing to measure; report
-        # "unknown" rather than implying it's missing.
-        state = ("unknown" if not d.tables
-                 else "loaded" if have_rows > 0
-                 else "missing")
+        # No declared table => a row count cannot answer "has this run".
+        #
+        # For the schema step it is still answerable, just not by counting rows, so it is
+        # asked properly below. Reporting "unknown" there made the page draw schema as
+        # 0/1 with an empty bar — indistinguishable from never run — for a step that had
+        # completed. Anything else without declared tables stays "unknown": that is
+        # genuinely not measurable from here, and guessing reads worse than saying so.
+        if d.tables:
+            state = "loaded" if have_rows > 0 else "missing"
+        elif d.phase == "schema":
+            state = "loaded" if _schema_ready(stats) else "missing"
+        else:
+            state = "unknown"
         src = sources.SOURCES[d.source]
         job = _job_state(d.key)
         datasets.append({
@@ -243,6 +251,20 @@ def _db_reachable() -> bool:
         return True
     except Exception:
         return False
+
+
+def _schema_ready(stats: dict[str, Any]) -> bool:
+    """Have the tables the models own actually been created?
+
+    The schema step writes no rows, so the `rows > 0` test every other dataset uses cannot
+    see it — but its completion is not unknowable, just measured differently: what it does
+    is CREATE the tables in `Base.metadata`, and those exist or they do not.
+    """
+    from core.backend.db import models  # noqa: F401  (registers tables on Base)
+    from core.backend.db.base import Base
+    names = set(Base.metadata.tables)
+    # `stats` is keyed both bare and schema-qualified, so check the entry either way.
+    return bool(names) and all(n in stats or n.split(".")[-1] in stats for n in names)
 
 
 def _human(n: int) -> str:
