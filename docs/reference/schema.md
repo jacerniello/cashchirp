@@ -18,7 +18,7 @@ loaded by the one schema-driven generic loader.
   Sharadar's unchanging issuer id. It lives natively only in `tickers`; it is stamped onto
   the other equity tables from `TICKERS` per `(table, ticker)` — never derived (ambiguous
   pairs are left NULL, not guessed). See `core/backend/ingest/permaticker.py`.
-- **Verified, not trusted.** the verification helpers in `core/backend/verify.py` (`verify_all()`, importable; no CLI) checks every table
+- **Verified, not trusted.** `core/backend/verify.py` (`verify_all()`) checks each table against the zip it was loaded from. Loads delete that zip when they finish, so pass `keep_download=True` to `load_table` when you intend to verify; it checks every table
   against its downloaded file (row count + per-column non-null). All 13 Sharadar tables
   currently pass.
 - **Loading/updating:** `python -m core.setup.bootstrap --dataset sharadar:<CODE>` (add `--full`

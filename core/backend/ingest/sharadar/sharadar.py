@@ -10,7 +10,7 @@ from pathlib import Path
 
 import nasdaqdatalink
 
-from core.config import settings
+from core.config import CORE_DIR, settings
 
 # Tables in the Sharadar Core US Equities bundle (vendor code SHARADAR).
 SHARADAR_TABLES: dict[str, str] = {
@@ -33,7 +33,11 @@ SHARADAR_TABLES: dict[str, str] = {
 # Sensible daily default: prices + fundamentals + metrics + reference data.
 DEFAULT_TABLES = ["SEP", "SF1", "DAILY", "TICKERS", "ACTIONS", "SP500"]
 
-DEFAULT_DEST = Path(__file__).resolve().parents[2] / "data" / "sharadar"
+# Anchored on CORE_DIR, never Path(__file__).parents[N]: an index-counted path
+# silently retargets when a module moves between packages, and that is exactly what
+# happened here — every docstring said core/data/sharadar while the code had been
+# writing to core/backend/data/sharadar since the reorganisation into core/backend/.
+DEFAULT_DEST = CORE_DIR / "data" / "downloads" / "sharadar"
 
 
 def _ensure_api_key() -> None:

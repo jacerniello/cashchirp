@@ -8,6 +8,12 @@ Comparing the table to it validates the *load* — exactly where our bugs were:
   so we compare against the CSV's non-empty counts and flag a material shortfall.
 
 Columns we add (id, permaticker) are ignored — they aren't in the file.
+
+Needs the downloaded zip, which `load_table` deletes on success (nothing else uses it:
+the routine refresh syncs deltas over the query API and never opens one). To verify a
+load, run it with `keep_download=True` and check before deleting. A table whose zip is
+gone reports "no zip on disk" rather than failing — an unverifiable load is unknown, not
+broken.
 """
 import zipfile
 

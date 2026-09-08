@@ -81,7 +81,7 @@ not evidence the filter has an edge.
 - **Load/update any Sharadar table:** `python -m core.setup.bootstrap --dataset sharadar:<CODE>`
   (`--sync` for incremental). One schema-driven loader; tables are 1:1 mirrors.
 - **Refresh everything:** `python -m core.setup.bootstrap` (the nightly job).
-- **Verify** local == downloaded files: the verification helpers in `core/backend/verify.py` (`verify_all()`, importable; no CLI).
+- **Verify** local == downloaded files: `core/backend/verify.py` (`verify_all()`) checks each table against the zip it was loaded from. Loads delete that zip when they finish, so pass `keep_download=True` to `load_table` when you intend to verify.
 - **What's loaded + when:** `the Runs tab at /setup/runs`.
 - **If a load hangs:** `the Database tab at /setup/database` — it's almost always lock contention.
 

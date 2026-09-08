@@ -115,7 +115,7 @@ python -m core.setup.bootstrap --dataset sharadar:ACTIONS
 #                        filingdate, calendardate for tables that lack lastupdated)
 #   --sync-quarters      re-pull recent quarters in key-chunks (tables with no change
 #                        column at all, e.g. SF3); --quarters N / --chunk-key <col>
-#   --no-download        reuse an existing core/data/sharadar/<CODE>.zip
+#   --no-download        reuse an existing core/data/downloads/sharadar/<CODE>.zip
 #   --dest <name>        override the destination table name
 ```
 
@@ -155,7 +155,9 @@ python -m core.setup.bootstrap --dataset derived:screener_snapshot
 ```
 
 **Inspect what's loaded:** `the Runs tab at /setup/runs` (latest run per dataset).
-Raw zips are downloaded on demand to `core/data/sharadar/` (gitignored);
+Raw zips are downloaded on demand to `core/data/downloads/sharadar/` (gitignored) and
+deleted once the load commits — the routine refresh syncs deltas over the query API and
+never opens one. A load that RAISES keeps its zip so a retry can pass `download=False`;
 The download-only CLI has been removed.
 
 **Scheduling:** copy `core/scripts/com.investing.sharadar.plist.example` (macOS launchd),

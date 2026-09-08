@@ -11,9 +11,11 @@ from pathlib import Path
 
 from core.backend.db.engine import session_scope
 from core.backend.db.models import FredFile
+from core.config import CORE_DIR
 
-# core/data/fred  — sibling of data/sharadar; gitignored via data/.
-DATA_DIR = Path(__file__).resolve().parents[2] / "data" / "fred"
+# Sibling of downloads/sharadar; gitignored via data/. Anchored on CORE_DIR rather
+# than counted parents — see the note in ingest/sharadar/sharadar.py.
+DATA_DIR = CORE_DIR / "data" / "downloads" / "fred"
 
 
 def save_file(
