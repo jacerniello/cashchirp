@@ -647,7 +647,7 @@ def sync_table(
 def sync_coarse_table(
     table_code: str,
     dest_table: str | None = None,
-    quarter_col: str = "calendardate",
+    quarter_col: str = "date",
     chunk_key: str = "ticker",
     quarters: int = 2,
     since: date | None = None,
@@ -666,7 +666,8 @@ def sync_coarse_table(
     delete only runs if the chunked fetch returned a complete quarter (a partial
     fetch raises before any DB write), so it can't truncate on a half-pull.
 
-    SF3 (13F holdings) is the motivating case: its only date is `calendardate`,
+    SF3 (13F holdings) is the motivating case: its only date is `date` (Sharadar
+    renamed it from `calendardate`),
     one value per quarter (~2.4M rows), past the query cap and impossible to
     date-window. NOTE only the refreshed quarters are made exact — amendments to
     *older* quarters are missed (no `lastupdated` to detect them); for those, a

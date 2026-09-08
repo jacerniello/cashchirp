@@ -139,7 +139,9 @@ def _snapshot_sql(since) -> str:
     inst AS (
         SELECT DISTINCT ON (permaticker) permaticker, shrholders, totalvalue
         FROM sf3a WHERE permaticker IS NOT NULL
-        ORDER BY permaticker, calendardate DESC
+        -- sf3a dates on `date`; the other CTEs here read sf1, which still has a real
+        -- `calendardate`. Same word, two tables, only one of them renamed.
+        ORDER BY permaticker, date DESC
     ),
     m AS ({_MASTER})
     SELECT m.permaticker, m.ticker, m.name, m.sector, m.industry, m.exchange,
