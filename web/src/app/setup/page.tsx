@@ -121,7 +121,10 @@ function StepRow({ s }: { s: BuildStep }) {
 
 export default function SetupPage() {
   const { data, isLoading, error } = useSetup();
-  const [showAll, setShowAll] = useState(false);
+  // Show the whole registry by default. Filtering to missing-only hid every dataset
+  // that had loaded, so a table you had just built simply vanished from the list —
+  // which reads as "not in the registry", not as "done".
+  const [showAll, setShowAll] = useState(true);
 
   return (
     <div className="bg-white min-h-[calc(100vh-4rem)] font-sans">
