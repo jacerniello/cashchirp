@@ -599,19 +599,38 @@ def run_dataset(req: DatasetJobRequest) -> dict[str, Any]:
 
 @router.post("/dataset/stop")
 def stop_dataset(req: DatasetJobRequest) -> dict[str, Any]:
-    """Stop one dataset's job, leaving it resumable — sentinel plus SIGINT, same as a
-    full build."""
+    """Stop one dataset's job, leaving it resumable.
+
+    Writes the dataset's stop sentinel; the loader notices on its next progress callback
+    and abandons that step, rolling back its transaction.
+
+    The SIGINT is sent ONLY to a job that owns its process. When a whole build is running
+    the step, every row reports the ORCHESTRATOR's pid — signalling it would end the
+    entire run, so a request to stop one dataset would quietly kill the other twelve. The
+    sentinel is enough there: the build drops that step and carries on to the next."""
     job = _job_state(req.key)
     if not job["running"]:
         raise HTTPException(409, f"{req.key} is not running.")
-    _, _, stop_p = _job_paths(req.key)
+    state_p, _, stop_p = _job_paths(req.key)
     stop_p.parent.mkdir(parents=True, exist_ok=True)
     stop_p.write_text("stop requested\n")
-    try:
-        os.kill(job["pid"], signal.SIGINT)
-    except OSError:
-        pass
-    return {"stopping": True, "key": req.key, "pid": job["pid"]}
+
+    # Authoritative, and independent of what the state file recorded: a standalone job
+    # carries `--state-file <this path>` in its argv. A build does not, so a pid that
+    # does not name this file is running the step on the dataset's behalf.
+    owns_process = _alive(job["pid"], str(state_p))
+    if owns_process:
+        try:
+            os.kill(job["pid"], signal.SIGINT)
+        except OSError:
+            pass
+    return {"stopping": True, "key": req.key, "pid": job["pid"],
+            "signalled": owns_process,
+            "note": ("stopping this dataset" if owns_process
+                     else "asked the running build to drop this step; the rest continue")}
+
+
+
 
 
 @router.get("/dataset/log")
