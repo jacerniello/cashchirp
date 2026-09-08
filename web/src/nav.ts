@@ -11,11 +11,10 @@ export const links: NavLink[] = [
   { href: "/sectors", label: "Sectors" },
   { href: "/sp500", label: "S&P 500" },
   { href: "/macro", label: "Macro" },
-  // Last: the page you need when another page is failing.
-  // Setup is local-only: it can start and stop ingests. Mirrors SETUP_ENABLED on the
-  // API — a public build sets neither and the link never renders. The API is the real
-  // gate; this only keeps the UI from advertising a route that 404s.
-  ...(process.env.NEXT_PUBLIC_SETUP_ENABLED === "true"
-    ? [{ href: "/setup", label: "Setup" }]
-    : []),
 ];
+
+// Setup is local-only — it can start and stop ingests — so the link appears only where
+// the API actually serves it. That is asked at runtime (see useSetupEnabled) rather than
+// baked in from NEXT_PUBLIC_SETUP_ENABLED, which duplicated SETUP_ENABLED on the API and
+// could disagree with it: a link to a route that 404s, or a working surface with no way in.
+export const SETUP_LINK: NavLink = { href: "/setup", label: "Setup" };
