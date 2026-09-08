@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { useResetDatabase, type SetupStatus } from '@/hooks/useSetup';
+import { useDatasetLog, useResetDatabase, type SetupStatus } from '@/hooks/useSetup';
 
 // Drop everything and start over.
 //
@@ -20,8 +20,14 @@ export function ResetDatabase({ data }: { data?: SetupStatus }) {
   const reset = useResetDatabase();
 
   const dbName = data?.database?.name ?? '';
-  const running = !!data?.build_status?.running;
+  const buildRunning = !!data?.build_status?.running;
   const matches = typed === dbName && dbName.length > 0;
+
+  // Follow the reset's own log once started, and keep polling until it says it finished.
+  const started = reset.isSuccess;
+  const log = useDatasetLog(started ? 'reset' : null, started);
+  const lines = log.data?.lines ?? [];
+  const done = lines.some((l) => l.includes('reset complete') || l.includes('REFUSED'));
 
   return (
     <div className="mt-8 rounded border border-neg/40 bg-neg/5 p-5">
@@ -43,19 +49,17 @@ export function ResetDatabase({ data }: { data?: SetupStatus }) {
         </p>
       )}
 
-      {/* A reset during an ingest leaves a half-written database and a job writing into
-          tables that no longer exist, so the API refuses it — say so before they try. */}
-      {running && (
+      {/* A reset is not blocked by a build — it stops them. Say so, because the thing
+          people fear here is leaving a half-written database behind. */}
+      {buildRunning && (
         <p className="text-xs text-gold mt-3">
-          A build is running. Stop it first — resetting under a live ingest leaves a
-          half-written database.
+          A build is running. The reset will stop it first, then drop the database.
         </p>
       )}
 
       {!open ? (
         <button
           type="button"
-          disabled={running}
           onClick={() => setOpen(true)}
           className="mt-4 px-3 py-1.5 text-sm rounded border border-neg/50 text-neg
                      hover:bg-neg/10 disabled:opacity-40 disabled:cursor-not-allowed"
@@ -86,7 +90,7 @@ export function ResetDatabase({ data }: { data?: SetupStatus }) {
             />
             <button
               type="button"
-              disabled={!matches || reset.isPending || running}
+              disabled={!matches || reset.isPending || started}
               onClick={() => reset.mutate(typed)}
               className="px-3 py-1.5 text-sm rounded bg-neg text-white
                          disabled:opacity-40 disabled:cursor-not-allowed"
@@ -111,17 +115,19 @@ export function ResetDatabase({ data }: { data?: SetupStatus }) {
         </p>
       )}
 
-      {/* Report what actually happened rather than claiming success: the before/after
-          object counts come back from the API. */}
-      {reset.isSuccess && reset.data && (
-        <p className="text-xs text-pos mt-3">
-          Reset {reset.data.after.database}: {reset.data.before.objects} objects (
-          {reset.data.before.size}) removed, {reset.data.recreated_tables.length} empty
-          tables recreated
-          {reset.data.cleared_job_files > 0 &&
-            `, ${reset.data.cleared_job_files} job files cleared`}
-          .
-        </p>
+      {/* The job reports itself. Showing its log beats a success message: stopping a
+          build can take until its current step ends, and silence for a minute looks
+          identical to a hang. */}
+      {started && (
+        <div className="mt-4">
+          <p className="text-xs text-ink-muted mb-1">
+            {done ? 'Reset job finished.' : 'Reset job running — stopping builds, then dropping the database…'}
+          </p>
+          <pre className="text-[11px] leading-relaxed bg-ink/90 text-white/90 rounded p-3
+                          max-h-56 overflow-auto whitespace-pre-wrap">
+            {lines.length ? lines.join('\n') : 'starting…'}
+          </pre>
+        </div>
       )}
     </div>
   );
