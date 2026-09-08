@@ -381,10 +381,17 @@ def load_table(
     if download or not path.exists():
         _progress(progress, table_code, "downloading bulk export...")
         path = export_table(table_code.upper(), DEFAULT_DEST)
-    _progress(progress, table_code, f"zip ready ({path.stat().st_size / 1e6:.0f} MB)")
-
     zf = zipfile.ZipFile(path)
     csv_name = zf.namelist()[0]
+    # A zip's central directory records each entry's UNCOMPRESSED size, so the size of
+    # the COPY is known exactly before a byte of it is written. Report it: the compressed
+    # size is not a usable stand-in — SF1 is 661 MB zipped and 2,415 MB on the wire, a
+    # 3.7x difference — and progress measured against the wrong one runs off the end.
+    total_bytes = zf.getinfo(csv_name).file_size
+    _progress(progress, table_code,
+              f"zip ready ({path.stat().st_size / 1e6:.0f} MB compressed, "
+              f"{total_bytes / 1e6:.0f} MB to copy)")
+
     with zf.open(csv_name) as fh:
         header = [c.strip() for c in fh.readline().decode().strip().split(",")]
 
@@ -395,7 +402,10 @@ def load_table(
                 copy.write(chunk)
                 copied += len(chunk)
                 if copied >= mark:
-                    _progress(progress, table_code, f"COPY {copied / 1e6:.0f} MB ...")
+                    # "done/total" is the form the progress reader understands as a real
+                    # ratio, so this drives the percentage without it having to guess.
+                    _progress(progress, table_code,
+                              f"COPY {copied / 1e6:.0f}/{total_bytes / 1e6:.0f} MB ...")
                     mark += 200 * 1024 * 1024
 
     raw = engine.raw_connection()
