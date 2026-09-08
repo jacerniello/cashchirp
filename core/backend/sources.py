@@ -182,12 +182,19 @@ DATASETS: list[Dataset] = [
     Dataset(key="sharadar:SF2", source="sharadar", label="insider transactions",
             phase="sharadar", endpoint="SHARADAR/SF2", tables=("sf2",), mode="sync", kwargs={"sync_col": "filingdate"},
             note="No lastupdated column — deltas come off filingdate."),
+    # The 13F tables date on `date`, not `calendardate`: Sharadar renamed it, and SF3
+    # swapped `investorname` for `investorid` and dropped `price`. Verified against
+    # INDICATORS, the query API and the bulk export, which all agree. SF3B carries the
+    # investorid -> investorname map (13,247 ids, 1:1), which is why it must load BEFORE
+    # SF3 — the sf3 enrichment reads it to denormalise the name back on.
     Dataset(key="sharadar:SF3A", source="sharadar", label="13F holdings by investor",
-            phase="sharadar", endpoint="SHARADAR/SF3A", tables=("sf3a",), mode="sync", kwargs={"sync_col": "calendardate"}),
+            phase="sharadar", endpoint="SHARADAR/SF3A", tables=("sf3a",), mode="sync", kwargs={"sync_col": "date"}),
     Dataset(key="sharadar:SF3B", source="sharadar", label="13F holdings by security",
-            phase="sharadar", endpoint="SHARADAR/SF3B", tables=("sf3b",), mode="sync", kwargs={"sync_col": "calendardate"}),
+            phase="sharadar", endpoint="SHARADAR/SF3B", tables=("sf3b",), mode="sync", kwargs={"sync_col": "date"},
+            note="Also the investor dimension: investorid -> investorname for SF3."),
     Dataset(key="sharadar:SF3", source="sharadar", label="13F holdings detail",
             phase="sharadar", endpoint="SHARADAR/SF3", tables=("sf3",), mode="quarters",
+            kwargs={"quarter_col": "date"},
             note="No change column at all — recent quarters are re-pulled in key-chunks."),
 
     # -- FRED --------------------------------------------------------------------

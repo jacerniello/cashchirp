@@ -139,14 +139,11 @@ def enrich_table(
                 "CREATE INDEX IF NOT EXISTS ix_sep_permaticker_date "
                 "ON sep (permaticker, date);"
             )
-        #   sf3(investorname, calendardate) — the investor (13F filer) page filters SF3
-        #     by investorname alone; without this a large filer (BlackRock) seq-scans
-        #     ~46M rows (~21–60s). See core/api/routers/institutional.py.
-        if table == "sf3":
-            cur.execute(
-                "CREATE INDEX IF NOT EXISTS ix_sf3_investorname_calendardate "
-                "ON sf3 (investorname, calendardate);"
-            )
+        #   sf3(investorname, date) — the investor (13F filer) page filters SF3 by
+        #     investorname alone; without this a large filer (BlackRock) seq-scans
+        #     ~46M rows (~21–60s). See core/api/routers/institutional.py. `investorname`
+        #     is not Sharadar's any more — see denormalise_sf3() — so the index is built
+        #     there, once the column exists, rather than here where it would not yet.
         cur.execute(f"SELECT count(*), count(permaticker) FROM {table};")
         total, has = cur.fetchone()
         raw.commit()
@@ -177,3 +174,108 @@ def enrich_all(progress=print) -> dict:
             if progress:
                 progress(f"  {table:14} FAILED: {exc}")
     return results
+
+
+# --------------------------------------------------------------- sf3 denormalisation
+
+# Sharadar reshaped the 13F detail table: `calendardate` became `date`, `investorname`
+# became `investorid`, and `price` was dropped. Everything the app reads from sf3 —
+# 59 investorname references, 11 price references, both derived holdings tables — was
+# written against the old shape.
+#
+# Rather than thread investorid through all of it and join sf3b on every read, the two
+# missing fields are put back on sf3 at load time. sf3 is the ~46M-row table and the
+# institution page is the one that already needed an index to stay usable, so a join per
+# read is the wrong side to pay on. This is the same trade permaticker already makes.
+#
+# `price` is not stored twice over: it is GENERATED, computed once at write time from the
+# columns Sharadar does ship. value is in millions and units in thousands, so the ×1000
+# reconciles them — checked against SEP, where AAPL's 2026-06-30 close of 289.36 comes
+# back to the cent from seven of its eight largest holders (the eighth is a filer marking
+# its own price, which is ordinary 13F variance, not arithmetic).
+_PRICE_EXPR = "value / NULLIF(units, 0) * 1000"
+
+
+def denormalise_sf3(only_null: bool = True) -> tuple[int, int]:
+    """Put `investorname` and `price` back on sf3. Returns (total_rows, rows_named).
+
+    Reads the investorid -> investorname map from sf3b, which the registry loads first.
+    Raises if that map is missing or empty: stamping 46M NULLs and reporting success
+    would leave every institution page silently blank, which is far worse than a load
+    that stops and says why.
+    """
+    raw = engine.raw_connection()
+    try:
+        cur = raw.cursor()
+        cur.execute("SELECT to_regclass('sf3b');")
+        if cur.fetchone()[0] is None:
+            raise RuntimeError(
+                "sf3b is missing — it is the investorid -> investorname map sf3 needs. "
+                "Load it first: --dataset sharadar:SF3B"
+            )
+        cur.execute("SELECT count(DISTINCT investorid) FROM sf3b;")
+        n_map = cur.fetchone()[0]
+        if not n_map:
+            raise RuntimeError("sf3b holds no investors — cannot name sf3 rows.")
+
+        cur.execute("SET maintenance_work_mem = '1GB';")
+        cur.execute("ALTER TABLE sf3 ADD COLUMN IF NOT EXISTS investorname text;")
+        where_null = " AND s.investorname IS NULL" if only_null else ""
+        cur.execute(
+            f"UPDATE sf3 s SET investorname = b.investorname "
+            f"FROM (SELECT DISTINCT investorid, investorname FROM sf3b) b "
+            f"WHERE s.investorid = b.investorid{where_null};"
+        )
+        # Generated, so it cannot drift from value/units and needs no backfill pass.
+        cur.execute(
+            f"ALTER TABLE sf3 ADD COLUMN IF NOT EXISTS price double precision "
+            f"GENERATED ALWAYS AS ({_PRICE_EXPR}) STORED;"
+        )
+        cur.execute(
+            "CREATE INDEX IF NOT EXISTS ix_sf3_investorname_date "
+            "ON sf3 (investorname, date);"
+        )
+        # The queries filter on the old name, and it is generated from `date`, so the
+        # index above serves them after the planner rewrites the predicate.
+        cur.execute(
+            "ALTER TABLE sf3 ADD COLUMN IF NOT EXISTS calendardate date "
+            "GENERATED ALWAYS AS (date) STORED;"
+        )
+        cur.execute("SELECT count(*), count(investorname) FROM sf3;")
+        total, named = cur.fetchone()
+        raw.commit()
+        return total, named
+    finally:
+        raw.close()
+
+
+# Sharadar also renamed the 13F date column from `calendardate` to `date`. That name is
+# not merely internal: it is in the API responses and in 33 places in the frontend, and it
+# reaches them through ~38 separate SQL sites. Rewriting all of those by hand is a change
+# too large to review and impossible to test until the 46M-row sf3 finishes loading, so
+# the column is restored here instead, alongside the other two.
+#
+# GENERATED, so it cannot drift from `date` and needs no backfill. `date` stays exactly as
+# Sharadar ships it — the mirror is still faithful; this is an app-facing alias on top of
+# it, the same thing permaticker already is.
+def add_calendardate(table: str) -> bool:
+    """Expose the renamed `date` under its former name. True if the table has it after."""
+    raw = engine.raw_connection()
+    try:
+        cur = raw.cursor()
+        cur.execute("SELECT to_regclass(%s);", (table,))
+        if cur.fetchone()[0] is None:
+            return False
+        cur.execute(
+            "SELECT count(*) FROM information_schema.columns "
+            "WHERE table_name = %s AND column_name = %s;", (table, "date"))
+        if not cur.fetchone()[0]:
+            return False        # already the old shape, or no date at all — nothing to do
+        cur.execute(
+            f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS calendardate date "
+            f"GENERATED ALWAYS AS (date) STORED;"
+        )
+        raw.commit()
+        return True
+    finally:
+        raw.close()

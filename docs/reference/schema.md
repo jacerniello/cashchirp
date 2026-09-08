@@ -71,6 +71,15 @@ insiders, or short interest).
 
 ### `derived` schema — insider people pages
 
+
+> **13F column names (Sharadar, 2026).** Sharadar renamed the 13F date column from
+> `calendardate` to `date`, replaced `sf3.investorname` with `investorid`, and dropped
+> `sf3.price`. The mirror stores what Sharadar ships. Three app-facing columns are
+> restored at load time: `investorname` (joined from `sf3b`, the 13,247-row investor
+> map), `price` (GENERATED as `value / units * 1000` — value is in millions, units in
+> thousands; reconciled against SEP closes), and `calendardate` (GENERATED from
+> `date`). See `core/backend/ingest/permaticker.py`.
+
 Built from `sf2` (+ `sep` for market valuation) by **`python -m core.setup.bootstrap --dataset derived:derived.insider`**.
 **Rerun whenever `sf2` changes** (any new insider load) — both tables are stamped with
 `asof` = `max(sf2.filingdate)` at build time. **Rerun it after every SF2 load** — nothing rebuilds
