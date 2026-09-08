@@ -35,6 +35,17 @@ NEW = "__new"  # suffix for the off-table staging copy (table and its indexes)
 
 
 @contextlib.contextmanager
+class RebuildSkipped(RuntimeError):
+    """Raised when an explicitly-requested rebuild could not run because another process
+    held the single-flight lock.
+
+    The app's automatic post-load hooks pass `require_build=False` and treat a skip as
+    fine — something else is already building the same thing, and the live table keeps
+    serving. But when someone asks for a rebuild by name, a skip is not success: the
+    builders return a live row count, which is a plausible number from a table nobody
+    rebuilt, and it reads as a completed build. This makes that case say so."""
+
+
 def single_flight(lock_key: int):
     """Yield True iff we acquired the cross-process lock (caller should build); yield
     False if another process is already rebuilding (caller should skip). The lock is

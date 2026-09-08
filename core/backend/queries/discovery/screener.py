@@ -32,7 +32,8 @@ from core.backend import screens
 from core.backend.db.engine import engine
 from core.backend.queries.securities import health
 from core.backend.queries._common import query_df, scalar
-from core.backend.queries._rebuild import LOCK_SCREENER, NEW, live_count, single_flight, swap_in
+from core.backend.queries._rebuild import (
+    LOCK_SCREENER, NEW, RebuildSkipped, live_count, single_flight, swap_in)
 
 # The snapshot is **precomputed** into a Postgres table (`screener_snapshot`) so the page
 # reads it instantly — building it live scans SF1's ART/ARQ/ARY panels (~10s). It is
@@ -249,7 +250,7 @@ def _max_daily_date(session: Session):
     return scalar(session, "SELECT max(date) FROM daily")
 
 
-def refresh_snapshot(session: Session, progress=None) -> int:
+def refresh_snapshot(session: Session, progress=None, require_build: bool = False) -> int:
     """Build the snapshot and **persist** it to the `screener_snapshot` table (tagged with
     the `daily` as-of date). Idempotent — safe to call after every load. Returns row count.
 
@@ -262,6 +263,8 @@ def refresh_snapshot(session: Session, progress=None) -> int:
     with single_flight(LOCK_SCREENER) as mine:
         if not mine:  # another worker is rebuilding — don't stampede
             say("another process holds the lock — skipped, serving the live table")
+            if require_build:
+                raise RebuildSkipped("screener_snapshot: another process holds the build lock")
             return live_count(_TABLE)
         say("querying sf1/daily/metrics/sf3a…")
         df = build_snapshot(session).copy()

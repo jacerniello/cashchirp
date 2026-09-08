@@ -17,6 +17,7 @@ from core.backend.queries._common import query_df, scalar
 from core.backend.queries._rebuild import (
     LOCK_HOLDERS,
     LOCK_INVESTOR_HOLDINGS,
+    RebuildSkipped,
     NEW,
     live_count,
     single_flight,
@@ -216,7 +217,7 @@ def holder_timeseries_page(
     return query_df(session, _HOLDER_PAGE_LIVE_SQL, {"pt": pt, "lo": lo, "hi": hi})
 
 
-def refresh_holder_timeseries(session: Session, progress=None) -> int:
+def refresh_holder_timeseries(session: Session, progress=None, require_build: bool = False) -> int:
     """Rebuild the `holder_timeseries` table from `sf3` and return its row count.
 
     For every security, ranks each SHR holder by its largest-ever position value
@@ -276,6 +277,8 @@ def refresh_holder_timeseries(session: Session, progress=None) -> int:
             # Worth saying out loud: this returns a row count and looks exactly like a
             # successful build, when in fact nothing was rebuilt here.
             say("another process holds the lock — skipped, serving the live table")
+            if require_build:
+                raise RebuildSkipped("holder_timeseries: another process holds the build lock")
             return live_count(_HOLDER_TABLE)
         # Build off the live table (no lock on holder_timeseries), then swap atomically.
         with engine.begin() as conn:
@@ -425,7 +428,7 @@ def investor_holdings_timeseries_page(
     )
 
 
-def refresh_investor_holdings_timeseries(session: Session, progress=None) -> int:
+def refresh_investor_holdings_timeseries(session: Session, progress=None, require_build: bool = False) -> int:
     """Rebuild the `investor_holdings_timeseries` table from `sf3` and return its row
     count — the per-investor transpose of `refresh_holder_timeseries`.
 
@@ -483,6 +486,9 @@ def refresh_investor_holdings_timeseries(session: Session, progress=None) -> int
     with single_flight(LOCK_INVESTOR_HOLDINGS) as mine:
         if not mine:  # another worker is rebuilding — don't stampede
             say("another process holds the lock — skipped, serving the live table")
+            if require_build:
+                raise RebuildSkipped(
+                    "institutional_holdings_timeseries: another process holds the build lock")
             return live_count(_INST_HOLDINGS_TABLE)
         with engine.begin() as conn:
             conn.execute(text(f"DROP TABLE IF EXISTS {_INST_HOLDINGS_TABLE}{NEW}"))

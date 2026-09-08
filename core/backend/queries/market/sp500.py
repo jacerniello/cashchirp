@@ -37,6 +37,7 @@ from core.backend.db.engine import engine
 from core.backend.queries._common import query_df, scalar
 from core.backend.queries._rebuild import (
     LOCK_SP500_CONCENTRATION,
+    RebuildSkipped,
     NEW,
     live_count,
     single_flight,
@@ -146,7 +147,7 @@ def _build_frames(session: Session, asof) -> tuple[pd.DataFrame, pd.DataFrame]:
     return conc, sectors
 
 
-def refresh_concentration(session: Session, progress=None) -> int:
+def refresh_concentration(session: Session, progress=None, require_build: bool = False) -> int:
     """Rebuild both `sp500_concentration` and `sp500_sector_weights`; return the
     concentration row count. Idempotent — safe after every SP500/DAILY load.
 
@@ -160,6 +161,8 @@ def refresh_concentration(session: Session, progress=None) -> int:
     with single_flight(LOCK_SP500_CONCENTRATION) as mine:
         if not mine:  # another worker is rebuilding — don't stampede
             say("another process holds the lock — skipped, serving the live table")
+            if require_build:
+                raise RebuildSkipped("sp500_concentration: another process holds the build lock")
             return live_count(_CONC_TABLE)
         say("building concentration + sector frames (one bounded daily scan per date)…")
         conc, sectors = _build_frames(session, asof)
