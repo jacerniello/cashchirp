@@ -34,7 +34,6 @@ LOCK_SP500_MEMBER_MONTHS = 911_006
 NEW = "__new"  # suffix for the off-table staging copy (table and its indexes)
 
 
-@contextlib.contextmanager
 class RebuildSkipped(RuntimeError):
     """Raised when an explicitly-requested rebuild could not run because another process
     held the single-flight lock.
@@ -46,6 +45,7 @@ class RebuildSkipped(RuntimeError):
     rebuilt, and it reads as a completed build. This makes that case say so."""
 
 
+@contextlib.contextmanager
 def single_flight(lock_key: int):
     """Yield True iff we acquired the cross-process lock (caller should build); yield
     False if another process is already rebuilding (caller should skip). The lock is
