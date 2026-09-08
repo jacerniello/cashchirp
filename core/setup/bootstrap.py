@@ -678,6 +678,32 @@ def _report_frac(step: Step, msg: str) -> None:
 # that dataset had been started on its own. One place produces the state, whoever ran it.
 
 
+class StepStopped(Exception):
+    """This one step was asked to stop; the run continues with the next."""
+
+
+def _step_stop_requested(key: str) -> bool:
+    """Has someone pressed Stop on THIS dataset's row?
+
+    A build owns many steps, so a per-row Stop must not take the run down with it — which
+    is what signalling the process would do, since every row reports the orchestrator's
+    pid. The API writes `jobs/<slug>.stop`; the step checks it and abandons only itself.
+    """
+    try:
+        from core.backend.jobs import runtime as rt
+        return rt._job_paths(key)[2].exists()
+    except Exception:
+        return False
+
+
+def _clear_step_stop(key: str) -> None:
+    try:
+        from core.backend.jobs import runtime as rt
+        rt._job_paths(key)[2].unlink(missing_ok=True)
+    except Exception:
+        pass
+
+
 def _step_key(step: "Step") -> str | None:
     """The registry key whose per-dataset state this step owns, if any."""
     return step.key if step.key in sources.BY_KEY else None
@@ -748,6 +774,8 @@ def _run_one(step: Step, steps: list[Step], display: Display, started: float,
 
     step.status = "running"
     step.frac, step.frac_known = 0.0, False
+    if key:
+        _clear_step_stop(key)      # a stale sentinel would abort this step instantly
     step_log = _open_step_log(key) if key else None
     display.transition(step)
     write_state(steps, started, step.phase)
@@ -756,6 +784,10 @@ def _run_one(step: Step, steps: list[Step], display: Display, started: float,
     t0 = time.time()
 
     def progress(msg: str) -> None:
+        # Raised from inside the loader, so an in-flight COPY unwinds and its transaction
+        # rolls back — the same clean abandonment a standalone job gets from SIGINT.
+        if key and _step_stop_requested(key):
+            raise StepStopped(f"{key} stopped by request")
         step.detail = str(msg)[:70]
         _report_frac(step, str(msg))
         display.refresh()
@@ -788,6 +820,11 @@ def _run_one(step: Step, steps: list[Step], display: Display, started: float,
             step.note = str(out)[:60]
     except KeyboardInterrupt:
         raise
+    except StepStopped:
+        step.status = "stopped"
+        step.note = "stopped by request — re-run to retry this dataset"
+        if key:
+            _clear_step_stop(key)
     except Exception as exc:
         step.status = "FAIL"
         step.note = f"{type(exc).__name__}: {exc}".split("\n")[0][:70]
@@ -798,7 +835,8 @@ def _run_one(step: Step, steps: list[Step], display: Display, started: float,
         display.transition(step)
         write_state(steps, started, step.phase)
         if key:
-            _write_step_state(key, step, step_log, "done" if step.status == "ok" else "failed")
+            _write_step_state(key, step, step_log,
+                              {"ok": "done", "stopped": "interrupted"}.get(step.status, "failed"))
 
 
 def execute(steps: list[Step], display: Display, resume: bool) -> int:
