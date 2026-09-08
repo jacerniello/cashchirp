@@ -232,6 +232,26 @@ export function useStopBuild() {
   });
 }
 
+export interface ResetResult {
+  before: { objects: number; size: string; database: string };
+  after: { objects: number; size: string; database: string };
+  recreated_tables: string[];
+  cleared_job_files: number;
+}
+
+/** Drop every table and return the database to bare. `confirm` must equal the database
+ *  name — the API rejects anything else, so a mistyped or mis-aimed request fails
+ *  instead of wiping the wrong deployment. */
+export function useResetDatabase() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (confirm: string) =>
+      (await api.post<ResetResult>('/setup/reset', { confirm })).data,
+    // Everything on the page describes a database that no longer exists.
+    onSuccess: () => qc.invalidateQueries(),
+  });
+}
+
 async function fetchSetup(): Promise<SetupStatus> {
   const response = await api.get('/setup/status/');
   return response.data;
