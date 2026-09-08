@@ -15,6 +15,10 @@ import { useResetDatabase, useResetLog, type SetupStatus } from '@/hooks/useSetu
 // and it is the same check the API enforces.
 
 export function ResetDatabase({ data }: { data?: SetupStatus }) {
+  // One-way: opening the confirmation has no Cancel. A reset is not cancellable once it
+  // starts — the schemas are already going — so a button that looks like it could stop one
+  // would be a lie. Backing out is simply not typing the name; nothing happens until the
+  // typed name matches.
   const [open, setOpen] = useState(false);
   const [typed, setTyped] = useState('');
   const reset = useResetDatabase();
@@ -97,13 +101,6 @@ export function ResetDatabase({ data }: { data?: SetupStatus }) {
                          disabled:opacity-40 disabled:cursor-not-allowed"
             >
               {reset.isPending ? 'Resetting…' : 'Reset'}
-            </button>
-            <button
-              type="button"
-              onClick={() => { setOpen(false); setTyped(''); reset.reset(); }}
-              className="px-3 py-1.5 text-sm rounded border border-rule text-ink-muted"
-            >
-              Cancel
             </button>
           </div>
         </div>
