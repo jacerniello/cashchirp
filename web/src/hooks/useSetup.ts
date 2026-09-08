@@ -55,8 +55,6 @@ export interface DatasetStatus {
   endpoint: string;
   mode: string | null;
   note: string;
-  expected_mb: number;
-  expected_size: string;
   tables: DatasetTable[];
   rows: number;
   size: string;
@@ -71,7 +69,6 @@ export interface PhaseStatus {
   count: number;
   loaded: number;
   missing: number;
-  expected_size: string;
 }
 
 /** One step of an in-flight `bootstrap` run, read off the state file it writes. */
@@ -124,7 +121,6 @@ export interface BuildControl {
 export interface WorkSplit {
   datasets: number;
   loaded: number;
-  expected_size: string;
 }
 
 export interface SetupStatus {
@@ -133,8 +129,7 @@ export interface SetupStatus {
     datasets: number;
     loaded: number;
     missing: number;
-    expected_size: string;
-    loaded_size: string;
+      loaded_size: string;
     complete: boolean;
     empty: boolean;
   };

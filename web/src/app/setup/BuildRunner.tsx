@@ -191,9 +191,6 @@ export function BuildRunner({
                 <span className="text-sm text-ink">
                   <strong className="tnum">{loaded}/{measurable}</strong> loaded
                 </span>
-                <span className="text-xs text-ink-muted">
-                  ~{data.work[kind].expected_size}
-                </span>
               </div>
 
               {buildRunning ? (
@@ -322,7 +319,6 @@ export function BuildRunner({
                       <th className="py-2 pr-3 font-medium">From</th>
                       <th className="py-2 pr-3 font-medium">State</th>
                       <th className="py-2 pr-3 font-medium text-right">Rows</th>
-                      <th className="py-2 pr-3 font-medium text-right">Size</th>
                       <th className="py-2 pr-3 font-medium">Last run</th>
                       <th className="py-2 font-medium text-right">Run</th>
                     </tr>
@@ -347,9 +343,6 @@ export function BuildRunner({
                             <td className="py-2 pr-3"><StateLabel d={d} /></td>
                             <td className="py-2 pr-3 text-right tnum text-ink-light">
                               {d.rows ? d.rows.toLocaleString() : '—'}
-                            </td>
-                            <td className="py-2 pr-3 text-right tnum text-ink-muted">
-                              {d.expected_size}
                             </td>
                             <td className="py-2 pr-3 text-xs text-ink-muted whitespace-nowrap">
                               {d.last_run?.at ? (
@@ -402,7 +395,7 @@ export function BuildRunner({
                                   onClick={() => setConfirming({
                                     title: `Re-download ${d.label} from scratch?`,
                                     lines: [
-                                      `About ${d.expected_size} from ${d.source.provider}, `
+                                      `Downloads the full export from ${d.source.provider}, `
                                         + 'pulled again in full rather than just new rows.',
                                       'Runs as its own process — stop it any time.',
                                     ],

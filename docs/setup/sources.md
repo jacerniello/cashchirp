@@ -18,19 +18,17 @@ python -m core.scripts.setup.bootstrap --sources   # the same information, in th
 
 ## At a glance
 
-| Source | Licence | Auth | Datasets | Size |
-|---|---|---|---|---:|
-| [Sharadar (via Nasdaq Data Link)](https://data.nasdaq.com/databases/SFA) | Paid subscription — NOT redistributable | `NASDAQ_DATA_LINK_API_KEY` | 13 | 35.0 GB |
-| [FRED — Federal Reserve Bank of St. Louis](https://fred.stlouisfed.org/) | Free; most series are public domain (some carry provider terms) | `FRED_API_KEY` | 3 | 2.2 GB |
-| [FINRA](https://www.finra.org/finra-data/browse-catalog/short-interest) | Free, public | — | 1 | 785 MB |
-| [SEC EDGAR](https://www.sec.gov/search-filings) | Free, public domain | `SEC_USER_AGENT` | 1 | 5 MB |
-| Computed locally | Yours — produced from the sources above | — | 6 | 8.9 GB |
-| **Total** | | | **24** | **~46.9 GB** |
+| Source | Licence | Auth | Datasets |
+|---|---|---|---|
+| [Sharadar (via Nasdaq Data Link)](https://data.nasdaq.com/databases/SFA) | Paid subscription — NOT redistributable | `NASDAQ_DATA_LINK_API_KEY` | 13 |
+| [FRED — Federal Reserve Bank of St. Louis](https://fred.stlouisfed.org/) | Free; most series are public domain (some carry provider terms) | `FRED_API_KEY` | 3 |
+| [FINRA](https://www.finra.org/finra-data/browse-catalog/short-interest) | Free, public | — | 1 |
+| [SEC EDGAR](https://www.sec.gov/search-filings) | Free, public domain | `SEC_USER_AGENT` | 1 |
+| Computed locally | Yours — produced from the sources above | — | 6 |
+| **Total** | | | **24** |
 
-> Sizes are measured on a fully built instance, not estimated — use them to plan
-> disk. They do NOT drive the progress bar: that reports what the loaders
-> actually say they have ingested, because a predicted size is a guess and a
-> step that turns out to be a no-op would swing an estimated bar for no work.
+> A build reports progress from what the loaders say they have actually ingested,
+> never from a predicted size. A step is done when the script says it is done.
 
 ## Credentials you need
 
@@ -55,25 +53,24 @@ US equity fundamentals, prices, corporate actions, insider transactions and 13F 
 - **Auth:** `NASDAQ_DATA_LINK_API_KEY` in `core/.env`
 - **Home:** <https://data.nasdaq.com/databases/SFA>
 - **Docs:** <https://data.nasdaq.com/databases/SFA/documentation>
-- **Size here:** 35.0 GB across 13 datasets
 
 > ⚠ Your subscription tier decides which tables you can pull; a table outside it returns 403 rather than an empty result.
 
-| Dataset | Pulled from | Writes | Mode | Size |
-|---|---|---|---|---:|
-| tickers (security master) | `SHARADAR/TICKERS` | `tickers` | sync | 24 MB |
-| fundamentals | `SHARADAR/SF1` | `sf1` | sync | 2.9 GB |
-| metrics | `SHARADAR/METRICS` | `metrics` | sync | 22 MB |
-| equity prices (EOD) | `SHARADAR/SEP` | `sep` | sync | 9.5 GB |
-| fund prices (ETF/CEF) | `SHARADAR/SFP` | `sfp` | sync | 2.6 GB |
-| daily valuation (mktcap, P/E, EV) | `SHARADAR/DAILY` | `daily` | sync | 6.8 GB |
-| corporate actions | `SHARADAR/ACTIONS` | `actions` | sync | 153 MB |
-| S&P 500 membership changes | `SHARADAR/SP500` | `sp500` | sync | 10 MB |
-| events | `SHARADAR/EVENTS` | `events` | sync | 311 MB |
-| insider transactions | `SHARADAR/SF2` | `sf2` | sync | 3.3 GB |
-| 13F holdings by investor | `SHARADAR/SF3A` | `sf3a` | sync | 221 MB |
-| 13F holdings by security | `SHARADAR/SF3B` | `sf3b` | sync | 102 MB |
-| 13F holdings detail | `SHARADAR/SF3` | `sf3` | quarters | 9.0 GB |
+| Dataset | Pulled from | Writes | Mode |
+|---|---|---|---|
+| tickers (security master) | `SHARADAR/TICKERS` | `tickers` | sync |
+| fundamentals | `SHARADAR/SF1` | `sf1` | sync |
+| metrics | `SHARADAR/METRICS` | `metrics` | sync |
+| equity prices (EOD) | `SHARADAR/SEP` | `sep` | sync |
+| fund prices (ETF/CEF) | `SHARADAR/SFP` | `sfp` | sync |
+| daily valuation (mktcap, P/E, EV) | `SHARADAR/DAILY` | `daily` | sync |
+| corporate actions | `SHARADAR/ACTIONS` | `actions` | sync |
+| S&P 500 membership changes | `SHARADAR/SP500` | `sp500` | sync |
+| events | `SHARADAR/EVENTS` | `events` | sync |
+| insider transactions | `SHARADAR/SF2` | `sf2` | sync |
+| 13F holdings by investor | `SHARADAR/SF3A` | `sf3a` | sync |
+| 13F holdings by security | `SHARADAR/SF3B` | `sf3b` | sync |
+| 13F holdings detail | `SHARADAR/SF3` | `sf3` | quarters |
 
 - **tickers (security master)** — Load first — builds permaticker_lookup for every other table.
 - **equity prices (EOD)** — The big one. Required for price history and charts.
@@ -93,15 +90,14 @@ Macro, rates and inflation series, plus the FRED-MD / FRED-QD research panels �
 - **Auth:** `FRED_API_KEY` in `core/.env`
 - **Home:** <https://fred.stlouisfed.org/>
 - **Docs:** <https://fred.stlouisfed.org/docs/api/fred/>
-- **Size here:** 2.2 GB across 3 datasets
 
 > ⚠ The MD/QD vintage files are point-in-time snapshots: keeping every vintage is what makes a no-look-ahead macro backtest possible.
 
-| Dataset | Pulled from | Writes | Mode | Size |
-|---|---|---|---|---:|
-| FRED-MD monthly vintages | [www.stlouisfed.org/-/media/project/frbstl/st…](https://www.stlouisfed.org/-/media/project/frbstl/stlouisfed/research/fred-md/monthly) | `fred_observations` | — | 1.1 GB |
-| FRED-QD quarterly vintages | [www.stlouisfed.org/-/media/project/frbstl/st…](https://www.stlouisfed.org/-/media/project/frbstl/stlouisfed/research/fred-md/quarterly) | `fred_observations` | — | 1.1 GB |
-| commodity spot series | `FRED API — COMMODITY_SPOT_SERIES` | `fred_observations` | — | 50 MB |
+| Dataset | Pulled from | Writes | Mode |
+|---|---|---|---|
+| FRED-MD monthly vintages | [www.stlouisfed.org/-/media/project/frbstl/st…](https://www.stlouisfed.org/-/media/project/frbstl/stlouisfed/research/fred-md/monthly) | `fred_observations` | — |
+| FRED-QD quarterly vintages | [www.stlouisfed.org/-/media/project/frbstl/st…](https://www.stlouisfed.org/-/media/project/frbstl/stlouisfed/research/fred-md/quarterly) | `fred_observations` | — |
+| commodity spot series | `FRED API — COMMODITY_SPOT_SERIES` | `fred_observations` | — |
 
 - **FRED-MD monthly vintages** — Every published vintage — point-in-time macro, no look-ahead.
 
@@ -115,11 +111,10 @@ Consolidated short interest per security per settlement date.
 - **Updates:** Twice monthly, per settlement date
 - **Home:** <https://www.finra.org/finra-data/browse-catalog/short-interest>
 - **Docs:** <https://api.finra.org/>
-- **Size here:** 785 MB across 1 dataset
 
-| Dataset | Pulled from | Writes | Mode | Size |
-|---|---|---|---|---:|
-| short interest | [api.finra.org/ (equity short interest)…](https://api.finra.org/ (equity short interest)) | `finra_short_interest` | — | 785 MB |
+| Dataset | Pulled from | Writes | Mode |
+|---|---|---|---|
+| short interest | [api.finra.org/ (equity short interest)…](https://api.finra.org/ (equity short interest)) | `finra_short_interest` | — |
 
 ---
 
@@ -132,13 +127,12 @@ Fund series/class map (CIK → series → share classes), used for the ETF/fund-
 - **Auth:** `SEC_USER_AGENT` in `core/.env`
 - **Home:** <https://www.sec.gov/search-filings>
 - **Docs:** <https://www.sec.gov/search-filings/edgar-application-programming-interfaces>
-- **Size here:** 5 MB across 1 dataset
 
 > ⚠ SEC returns 403 to any request without a descriptive User-Agent carrying a real contact, and rate-limits by that identity — set SEC_USER_AGENT to your own, never someone else's.
 
-| Dataset | Pulled from | Writes | Mode | Size |
-|---|---|---|---|---:|
-| fund class map | [www.sec.gov/files/company_tickers_mf.json…](https://www.sec.gov/files/company_tickers_mf.json) | `sec_fund_class` | — | 5 MB |
+| Dataset | Pulled from | Writes | Mode |
+|---|---|---|---|
+| fund class map | [www.sec.gov/files/company_tickers_mf.json…](https://www.sec.gov/files/company_tickers_mf.json) | `sec_fund_class` | — |
 
 ---
 
@@ -148,18 +142,17 @@ Precomputed tables the app reads directly, so a page load never pays for a multi
 
 - **Licence:** Yours — produced from the sources above
 - **Updates:** Rebuilt after every ingest, once all inputs are fresh
-- **Size here:** 8.9 GB across 6 datasets
 
 > ⚠ Rebuilt LAST on purpose. Building one while its inputs are still loading gives you a snapshot of half-updated data.
 
-| Dataset | Pulled from | Writes | Mode | Size |
-|---|---|---|---|---:|
-| schema (create tables) | `core.backend.db.models` | — | — | 1 MB |
-| screener snapshot | `core.backend.queries.discovery.screener.refresh_snapshot` | `screener_snapshot` | — | 12 MB |
-| holder time-series | `core.backend.queries.ownership.institutional.refresh_holder_timeseries` | `holder_timeseries` | — | 4.2 GB |
-| institutional holdings time-series | `core.backend.queries.ownership.institutional.refresh_investor_holdings_timeseries` | `institutional_holdings_timeseries` | — | 4.6 GB |
-| insider aggregates | `core.backend.queries.ownership.insiders.refresh` | `derived.insider`, `derived.insider_company` | — | 98 MB |
-| S&P 500 concentration | `core.backend.queries.market.sp500.refresh_concentration` | `sp500_concentration`, `sp500_sector_weights` | — | 5 MB |
+| Dataset | Pulled from | Writes | Mode |
+|---|---|---|---|
+| schema (create tables) | `core.backend.db.models` | — | — |
+| screener snapshot | `core.backend.queries.discovery.screener.refresh_snapshot` | `screener_snapshot` | — |
+| holder time-series | `core.backend.queries.ownership.institutional.refresh_holder_timeseries` | `holder_timeseries` | — |
+| institutional holdings time-series | `core.backend.queries.ownership.institutional.refresh_investor_holdings_timeseries` | `institutional_holdings_timeseries` | — |
+| insider aggregates | `core.backend.queries.ownership.insiders.refresh` | `derived.insider`, `derived.insider_company` | — |
+| S&P 500 concentration | `core.backend.queries.market.sp500.refresh_concentration` | `sp500_concentration`, `sp500_sector_weights` | — |
 
 - **schema (create tables)** — Creates the tables SQLAlchemy owns. Safe to re-run.
 - **screener snapshot** — What the screener and every saved screen actually read.
@@ -171,17 +164,17 @@ Precomputed tables the app reads directly, so a page load never pays for a multi
 
 Phases run in this order, and the order is load-bearing.
 
-**schema** — Create the tables SQLAlchemy owns. (1 step, 1 MB)
+**schema** — Create the tables SQLAlchemy owns. (1 step)
 
-**sharadar** — The company layer — the bulk of the data, and the only paid source. (13 steps, 35.0 GB)
+**sharadar** — The company layer — the bulk of the data, and the only paid source. (13 steps)
 
-**fred** — The macro layer. Free, and independent of Sharadar. (3 steps, 2.2 GB)
+**fred** — The macro layer. Free, and independent of Sharadar. (3 steps)
 
-**finra** — Short interest. (1 step, 785 MB)
+**finra** — Short interest. (1 step)
 
-**sec** — Fund series/class reference data. (1 step, 5 MB)
+**sec** — Fund series/class reference data. (1 step)
 
-**derived** — Precomputed tables the app reads. Rebuilt last, once inputs are fresh. (5 steps, 8.9 GB)
+**derived** — Precomputed tables the app reads. Rebuilt last, once inputs are fresh. (5 steps)
 
 Two constraints in particular:
 
