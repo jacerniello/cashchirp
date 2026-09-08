@@ -171,15 +171,27 @@ def _get_watermark(dataset: str, dest: str, sync_col: str = "lastupdated") -> da
     raw = engine.raw_connection()
     try:
         cur = raw.cursor()
+        # The DESTINATION decides whether a watermark means anything — ask it first.
+        #
+        # A watermark is the claim "this table already holds everything up to this date".
+        # If the table is missing or empty the claim is about nothing, and there is no
+        # incremental sync to do: the only correct action is a full backfill. sync_state
+        # outlives the table it describes, so consulting it first let a leftover row for
+        # SF3A route a load into a table that did not exist, where it then failed on a
+        # column the backfill would never have read.
+        cur.execute("SELECT to_regclass(%s);", (dest,))
+        if cur.fetchone()[0] is None:
+            return None
+        cur.execute(f"SELECT EXISTS (SELECT 1 FROM {dest} LIMIT 1);")
+        if not cur.fetchone()[0]:
+            return None
+
         cur.execute(
             "SELECT last_updated_date FROM sync_state WHERE table_name = %s;", (dataset,)
         )
         row = cur.fetchone()
         if row and row[0]:
             return row[0]
-        cur.execute("SELECT to_regclass(%s);", (dest,))
-        if cur.fetchone()[0] is None:
-            return None
         try:
             cur.execute(f'SELECT max("{sync_col}") FROM {dest};')
             return cur.fetchone()[0]
