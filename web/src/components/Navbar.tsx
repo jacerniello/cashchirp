@@ -10,7 +10,8 @@ import { createPortal } from "react-dom";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
-import { links } from "@/nav";
+import { links, SETUP_LINK } from "@/nav";
+import { useSetupEnabled } from "@/hooks/useSetupEnabled";
 
 /** Render children into document.body once mounted (no-op during SSR / first paint).
  *  The nav row is an `overflow-x-auto` + `-webkit-overflow-scrolling: touch` scroll
@@ -33,6 +34,10 @@ export type NavLink = NavLeaf | { label: string; children: NavLeaf[] };
 
 export function Navbar() {
   const pathname = usePathname();
+  // Setup only appears where the API serves it — one setting (SETUP_ENABLED) governs
+  // both the routes and this link, so they cannot disagree.
+  const setupEnabled = useSetupEnabled();
+  const items = setupEnabled ? [...links, SETUP_LINK] : links;
   return (
     <nav className="bg-white border-b border-rule px-8 max-[570px]:px-4 sticky top-0 z-[150]">
       {/* Horizontal swipe when the row is wider than the screen — no chevrons, no buttons,
@@ -64,7 +69,7 @@ export function Navbar() {
         </Link>
 
         <div className="ml-auto flex items-center gap-1 shrink-0">
-          {links.map((item) => {
+          {items.map((item) => {
             // A collapsible group ("Other" ▾ …) renders as a dropdown, not a plain link.
             if ("children" in item) {
               return <NavDropdown key={item.label} item={item} pathname={pathname} />;

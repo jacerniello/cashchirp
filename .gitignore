@@ -21,7 +21,12 @@ core/data/
 web/node_modules/
 web/.next/
 web/tsconfig.tsbuildinfo
-web/.env*
+# Real env files only — NOT web/.env.example, which is the documentation for them.
+# The old rule was `web/.env*`, which silently ignored the example too, so the frontend
+# flags were documented nowhere and a fresh clone had no way to discover them.
+web/.env
+web/.env.local
+web/.env.*.local
 
 .next/
 # Local repo audit (never committed)

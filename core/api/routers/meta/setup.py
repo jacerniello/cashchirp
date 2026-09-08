@@ -270,6 +270,18 @@ def status() -> dict[str, Any]:
     }
 
 
+@router.get("/enabled")
+@router.get("/enabled/")
+def setup_enabled() -> dict[str, bool]:
+    """Is the setup surface available here?
+
+    Deliberately trivial — no database, no filesystem. The answer is carried by whether
+    this route exists at all: main.py mounts the router only when SETUP_ENABLED is on, so
+    a disabled deployment 404s and the UI hides the link. That makes SETUP_ENABLED the
+    single source of truth instead of a value the frontend had to be told separately."""
+    return {"enabled": True}
+
+
 @router.get("/sources")
 @router.get("/sources/")
 def source_registry() -> dict[str, Any]:
