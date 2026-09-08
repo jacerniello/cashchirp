@@ -33,14 +33,15 @@ source: what it is, what it covers, how we access it, and where it lands.
     reads `sep` (by permaticker) directly.
   - **permaticker:** stamped on every table from `TICKERS` (per `(table, ticker)`, never
     derived); the loader stamps it after every ticker-bearing table loads.
-  - **verify:** the verification helpers in `core/backend/verify.py` (`verify_all()`, importable; no CLI) checks each table against its
+  - **verify:** `core/backend/verify.py` (`verify_all()`) checks each table against the zip it was loaded from. Loads delete that zip when they finish, so pass `keep_download=True` to `load_table` when you intend to verify; it checks each table against its
     downloaded file (row count + per-column non-null).
   - **EVENTS codes (special):** load `EVENTS` with the generic loader, then
     `python -m core.setup.bootstrap --dataset sharadar:EVENTS` builds the `event_codes` legend +
     the `events_decoded` view (e.g. `35` = Schedule 13D filing) — the basis for catalyst
     tagging.
   - **Download only (zip, no load):** removed along with the other CLIs.
-    (`--list` for tables); zips land in `core/data/sharadar/<CODE>.zip` (gitignored).
+    (`--list` for tables); a zip lands in `core/data/downloads/sharadar/<CODE>.zip` (gitignored) and is deleted
+    once the rows are committed — nothing reads it afterwards.
   - **load ledger:** every run (download / backfill / sync) is recorded in `load_log`
     with `requested_at` + `completed_at`; `the Runs tab at /setup/runs` shows the
     latest run per dataset (what's loaded + when last requested → selective refresh).

@@ -372,9 +372,20 @@ def load_table(
     zip_path: Path | None = None,
     download: bool = True,
     skip_derived: bool = False,
+    keep_download: bool = False,
     progress=print,
 ) -> dict:
-    """Full backfill from the bulk export. Returns {"rows", "total", "watermark"}."""
+    """Full backfill from the bulk export. Returns {"rows", "total", "watermark"}.
+
+    The downloaded zip is deleted once the rows are in (`keep_download=True` retains it).
+    Nothing needs it afterwards: the routine refresh is `sync_table`, which pulls deltas
+    over the query API and never opens a zip, and a full reload re-downloads anyway
+    (`download` defaults to True). Keeping them meant ~25 GB of files beside a 47 GB
+    database earning nothing.
+
+    It is deliberately kept when the load RAISES, so a failed multi-GB backfill can be
+    retried with `download=False` instead of pulling SEP's 941 MB again. A zip passed in
+    as `zip_path` is never deleted — it belongs to the caller, not to us."""
     dest = dest_table or table_code.lower()
     dataset = f"SHARADAR/{table_code.upper()}"
     requested_at = datetime.now()
@@ -422,6 +433,16 @@ def load_table(
         raw.commit()
     finally:
         raw.close()
+
+    # Only after the rows are committed, and only if we downloaded it ourselves.
+    zf.close()
+    if not keep_download and zip_path is None:
+        try:
+            size = path.stat().st_size
+            path.unlink()
+            _progress(progress, table_code, f"removed {path.name} ({size / 1e6:.0f} MB)")
+        except OSError as exc:
+            _progress(progress, table_code, f"could not remove {path.name}: {exc}")
 
     _progress(progress, table_code, f"DONE — staged {staged:,}; {dest} now {total:,}")
     _enrich_after_load(table_code, dest, header, progress, skip_derived=skip_derived)
