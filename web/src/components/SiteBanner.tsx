@@ -4,6 +4,12 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { BANNER } from '@/config/banner';
 
+// next/link is for routes inside this app. Handing it an off-site URL still renders an
+// anchor, but without `rel="noopener"` and without opening in a new tab — so a reader
+// following the source link loses the page they were looking at. Off-site gets a plain
+// anchor; in-app keeps the client-side navigation.
+const isExternal = (href: string) => /^https?:\/\//.test(href);
+
 // The site-wide banner. Text and behaviour come from src/config/banner.ts.
 //
 // Rendered under the navbar on every route. Dismissal is per-browser and keyed on the
@@ -53,9 +59,20 @@ export function SiteBanner() {
           {BANNER.link && (
             <>
               {' '}
-              <Link href={BANNER.link.href} className="underline hover:no-underline">
-                {BANNER.link.label}
-              </Link>
+              {isExternal(BANNER.link.href) ? (
+                <a
+                  href={BANNER.link.href}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="underline hover:no-underline font-medium"
+                >
+                  {BANNER.link.label}
+                </a>
+              ) : (
+                <Link href={BANNER.link.href} className="underline hover:no-underline">
+                  {BANNER.link.label}
+                </Link>
+              )}
             </>
           )}
         </span>
