@@ -66,6 +66,16 @@ router = APIRouter(prefix="/setup", tags=["setup"])
 STATE_PATH = CORE_DIR / "data" / "bootstrap-state.json"
 
 
+def _human_bytes(n: int) -> str:
+    """pg_size_pretty without asking the server — the size query is catalog-only now."""
+    v = float(n)
+    for unit in ("bytes", "kB", "MB", "GB", "TB"):
+        if v < 1024 or unit == "TB":
+            return f"{v:.0f} {unit}" if unit == "bytes" else f"{v:.1f} {unit}"
+        v /= 1024
+    return f"{v:.1f} TB"
+
+
 def _table_stats() -> dict[str, dict[str, Any]]:
     """Row estimate + on-disk size per table, in one query.
 
@@ -78,20 +88,58 @@ def _table_stats() -> dict[str, dict[str, Any]]:
 
         from core.backend.db.engine import engine
         with engine.connect() as conn:
-            rows = conn.execute(text("""
+            # This endpoint must never WAIT. pg_total_relation_size() opens the
+            # relation (AccessShareLock), so while an ingest holds AccessExclusiveLock on
+            # `sep` — which permaticker enrichment does, via ALTER TABLE … ADD COLUMN —
+            # every call queued behind it. The page polls every 2s during a job, so the
+            # blocked calls stacked up, exhausted the connection and thread pools, and
+            # took the whole API down: /health timed out despite touching no database.
+            #
+            # So: ask for the real sizes, but never wait more than a second for a lock.
+            # If that fails, fall back to the catalog alone (relpages for the table, its
+            # toast and its indexes), which needs no lock on the table itself. The
+            # fallback is an estimate — relpages is only refreshed by VACUUM/ANALYZE, so
+            # a table loaded seconds ago reads as ~0 — which is the right trade for a
+            # status page: a stale number beats a hung API, and the exact one comes back
+            # as soon as the ingest releases its lock.
+            conn.execute(text("SET LOCAL lock_timeout = '400ms'"))
+            conn.execute(text("SET LOCAL statement_timeout = '5s'"))
+            EXACT = """
                 SELECT n.nspname AS schema, c.relname AS name,
                        GREATEST(c.reltuples::bigint, 0) AS rows,
-                       pg_total_relation_size(c.oid) AS bytes,
-                       pg_size_pretty(pg_total_relation_size(c.oid)) AS size
+                       pg_total_relation_size(c.oid) AS bytes
                 FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
                 WHERE c.relkind IN ('r', 'm', 'p')
                   AND n.nspname NOT IN ('pg_catalog', 'information_schema')
-            """)).all()
+            """
+            ESTIMATE = """
+                SELECT n.nspname AS schema, c.relname AS name,
+                       GREATEST(c.reltuples::bigint, 0) AS rows,
+                       (c.relpages
+                        + coalesce(t.relpages, 0)
+                        + coalesce((SELECT sum(i.relpages) FROM pg_index x
+                                    JOIN pg_class i ON i.oid = x.indexrelid
+                                    WHERE x.indrelid = c.oid), 0)
+                       )::bigint * 8192 AS bytes
+                FROM pg_class c
+                JOIN pg_namespace n ON n.oid = c.relnamespace
+                LEFT JOIN pg_class t ON t.oid = c.reltoastrelid
+                WHERE c.relkind IN ('r', 'm', 'p')
+                  AND n.nspname NOT IN ('pg_catalog', 'information_schema')
+            """
+            try:
+                rows = conn.execute(text(EXACT)).all()
+            except Exception:
+                conn.rollback()
+                conn.execute(text("SET LOCAL lock_timeout = '400ms'"))
+                conn.execute(text("SET LOCAL statement_timeout = '5s'"))
+                rows = conn.execute(text(ESTIMATE)).all()
         # Keyed BOTH ways: not every table is in `public` (derived.insider isn't), so a
         # registry entry may name it either bare or schema-qualified and must still match.
         out: dict[str, dict[str, Any]] = {}
         for r in rows:
-            stat = {"rows": int(r.rows), "bytes": int(r.bytes), "size": r.size}
+            stat = {"rows": int(r.rows), "bytes": int(r.bytes),
+                    "size": _human_bytes(int(r.bytes))}
             out[f"{r.schema}.{r.name}"] = stat
             out.setdefault(r.name, stat)
         return out
