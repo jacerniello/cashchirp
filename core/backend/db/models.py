@@ -8,6 +8,7 @@ from datetime import date, datetime
 
 from sqlalchemy import (
     BigInteger,
+    Boolean,
     Date,
     DateTime,
     Float,
@@ -209,3 +210,80 @@ class LoadLog(Base):
         DateTime(timezone=True), server_default=func.now()
     )
     detail: Mapped[str | None] = mapped_column(Text)
+
+
+class JobSchedule(Base):
+    """A standing instruction to run one job on a cadence.
+
+    The job `key` is a registry dataset (`sharadar:SEP`) or a whole build
+    (`build:all` / `build:ingest` / `build:derive`) — the same identifiers the manual
+    controls use, so a schedule can only ask for something you could have clicked.
+
+    Cadence is interval / daily / weekly rather than a cron expression. Cron is more
+    expressive, but it needs a parser and it is famously easy to misread; these three
+    cover "every 6 hours", "overnight", and "Sunday" without anyone having to decode
+    `0 3 * * 0`. Times are local wall-clock, because that is what "run it at 3am" means.
+
+    `next_run_at` is stored rather than recomputed on demand: it is what the scheduler
+    polls on, it survives a restart, and it is the honest answer to "when will this
+    actually happen?" that the UI shows.
+    """
+
+    __tablename__ = "job_schedule"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    key: Mapped[str] = mapped_column(String(64), index=True)
+    mode: Mapped[str] = mapped_column(String(16), default="update")
+
+    cadence: Mapped[str] = mapped_column(String(16))       # interval | daily | weekly
+    interval_minutes: Mapped[int | None] = mapped_column(Integer)
+    at_time: Mapped[str | None] = mapped_column(String(5))  # "HH:MM", local
+    weekday: Mapped[int | None] = mapped_column(Integer)    # 0=Mon .. 6=Sun
+
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    note: Mapped[str | None] = mapped_column(Text)
+
+    last_run_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    next_run_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
+class JobRun(Base):
+    """One execution of a job, however it was started — the run history.
+
+    Distinct from `load_log`, which the loaders write per ingested dataset and which
+    knows nothing about *who asked*. This is the process-level ledger: it records the
+    trigger, so "which of these ran on a schedule?" is answerable, and it covers builds
+    and resets, which `load_log` never sees.
+
+    A run is written the instant the process is spawned, with `status='running'`. Nothing
+    waits for the child — jobs are detached on purpose — so completion is reconciled by
+    checking whether the pid is still alive. That means a row can sit in `running` until
+    the next reconcile pass, which is preferable to blocking a request on a six-hour
+    backfill.
+    """
+
+    __tablename__ = "job_run"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    key: Mapped[str] = mapped_column(String(64), index=True)
+    label: Mapped[str | None] = mapped_column(String(128))
+    kind: Mapped[str] = mapped_column(String(16))          # dataset | build | reset
+    trigger: Mapped[str] = mapped_column(String(16), index=True)  # manual|scheduled|cli
+    schedule_id: Mapped[int | None] = mapped_column(
+        ForeignKey("job_schedule.id", ondelete="SET NULL"), index=True
+    )
+    mode: Mapped[str | None] = mapped_column(String(16))
+
+    status: Mapped[str] = mapped_column(String(16), default="running", index=True)
+    pid: Mapped[int | None] = mapped_column(Integer)
+    log: Mapped[str | None] = mapped_column(String(255))   # log FILE NAME, not a path
+    rows: Mapped[int | None] = mapped_column(BigInteger)
+    detail: Mapped[str | None] = mapped_column(Text)
+
+    started_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), index=True
+    )
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
