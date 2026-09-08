@@ -171,14 +171,13 @@ the Database tab at /setup/database
 
 ```bash
 python -m core.setup.bootstrap --status   # tables, row counts, sizes
-# fidelity check: the verification helpers in `core/backend/verify.py` (`verify_all()`, importable; no CLI)
 the Runs tab at /setup/runs          # latest load per dataset, from load_log
 ```
 
-`verify_sharadar` is the one that matters. `--status` tells you rows *exist*;
-`verify_sharadar` tells you they match what the provider actually sent. Numbers in finance
-look plausible while being wrong, and a silently truncated table is indistinguishable from
-a correct one until it quietly gives you the wrong answer.
+`--status` tells you rows *exist*, not that they are right. Numbers in finance look
+plausible while being wrong, and a silently truncated table is indistinguishable from a
+correct one until it quietly gives you the wrong answer — so treat row counts as a
+liveness check, not a correctness one.
 
 Then serve it:
 

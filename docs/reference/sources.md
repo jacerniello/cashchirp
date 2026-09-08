@@ -33,7 +33,6 @@ source: what it is, what it covers, how we access it, and where it lands.
     reads `sep` (by permaticker) directly.
   - **permaticker:** stamped on every table from `TICKERS` (per `(table, ticker)`, never
     derived); the loader stamps it after every ticker-bearing table loads.
-  - **verify:** `core/backend/verify.py` (`verify_all()`) checks each table against the zip it was loaded from. Loads delete that zip when they finish, so pass `keep_download=True` to `load_table` when you intend to verify; it checks each table against its
     downloaded file (row count + per-column non-null).
   - **EVENTS codes (special):** load `EVENTS` with the generic loader, then
     `python -m core.setup.bootstrap --dataset sharadar:EVENTS` builds the `event_codes` legend +
