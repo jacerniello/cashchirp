@@ -22,7 +22,7 @@ cap — Sharadar carries no float, so this is full-cap weighting, a close but no
 exact proxy for the float-adjusted weights S&P actually uses (documented, not
 faked: see the data-fidelity standard).
 
-Built by ``python -m core.scripts.build.build_sp500_concentration`` (and the
+Built by ``python -m core.setup.bootstrap --dataset derived:sp500_concentration`` (and the
 `update_all` orchestrator). Pure caches — drop and rebuild freely, never hand-edit.
 Nothing rebuilds them at app startup; refresh them through the builder above.
 """

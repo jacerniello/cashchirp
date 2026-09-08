@@ -79,3 +79,40 @@ def swap_in(conn, name: str, index_renames: tuple[tuple[str, str], ...] = ()) ->
     conn.execute(text(f"ALTER TABLE {name}{NEW} RENAME TO {tbl}"))
     for built, final in index_renames:
         conn.execute(text(f"ALTER INDEX {sch}{built} RENAME TO {final}"))
+
+
+@contextlib.contextmanager
+def suppress_app_rebuilds(log=lambda _msg: None):
+    """Hold every derived-rebuild lock for the duration of an ingest, so the web app
+    cannot rebuild a derived table *while its source tables are being mutated*.
+
+    The convoy this prevents: a screener/holder page view sees the as-of date jump the
+    instant DAILY loads, so it fires `refresh_snapshot`, whose multi-minute build holds
+    `AccessShareLock` on daily/sf1/sep for the whole time — right when the next Sharadar
+    step wants `ALTER TABLE … ADD COLUMN permaticker` (`AccessExclusiveLock`). The ALTER
+    queues behind the build, every later reader queues behind the ALTER, and the whole
+    database stalls for minutes.
+
+    Every app rebuild path is `with single_flight(LOCK): if not mine: return <live>`, so
+    once these locks are held the app cheaply serves the existing table instead of
+    building. Best-effort: a lock the app already holds (mid-rebuild) is skipped rather
+    than waited on. Released on exit — before the orchestrator's own derived phase, which
+    needs these same locks.
+
+    `log` takes a message; callers with a progress display pass theirs.
+    """
+    keys = [v for k, v in globals().items() if k.startswith("LOCK_")]
+    conn = engine.connect()
+    got = []
+    for k in keys:
+        if conn.execute(text("SELECT pg_try_advisory_lock(:k)"), {"k": k}).scalar():
+            got.append(k)
+    if len(got) < len(keys):
+        log(f"  (rebuild guard: held {len(got)}/{len(keys)} locks; "
+            f"app may be mid-rebuild on the rest)")
+    try:
+        yield
+    finally:
+        for k in got:
+            conn.execute(text("SELECT pg_advisory_unlock(:k)"), {"k": k})
+        conn.close()

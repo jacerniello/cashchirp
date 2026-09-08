@@ -7,11 +7,11 @@ is refreshed.
 
 Three things read it, which is the whole point — they cannot drift:
 
-- `core.scripts.setup.bootstrap` builds its step list from `DATASETS`, so the from-zero build
+- `core.setup.bootstrap` builds its step list from `DATASETS`, so the from-zero build
   runs exactly what is declared here (and can print provenance per step: `--sources`).
-- `core.scripts.load.update_all` derives `SHARADAR_PLAN` from it, so the routine incremental
+- the Setup UI and its scheduler run those same datasets by key, so a scheduled refresh
   refresh uses the same modes.
-- `core.scripts.ops.gen_setup_docs` renders `docs/setup/sources.md` from it, so the published
+- `docs/setup/sources.md` is written from it by hand now that the generator is gone; the
   table of sources is generated, never hand-maintained.
 
 **Adding a data source is therefore a registry entry plus a loader**, not an edit in four

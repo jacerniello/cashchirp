@@ -172,7 +172,7 @@ def apply_screen(
         if col not in d.columns:
             raise ScreenSpecError(
                 f"Screen '{spec.get('id')}' gates `{col}`, which is not a snapshot column. "
-                "Run `python -m core.scripts.screen.run_screen --columns` to list what's available."
+                "See docs/CONFIGURATION.md for the fields a screen can filter on."
             )
         series = d[col]
         on_null = rule.get("on_null", "drop")
@@ -331,7 +331,7 @@ def save_screen(spec: dict[str, Any], *, overwrite: bool = False) -> Path:
         "#\n"
         "# Saved from the screener UI. This is the SAME format the idea board and the\n"
         "# CLI read, so you can now run:\n"
-        "#   python -m core.scripts.screen.run_screen " + screen_id + "\n"
+        "#   open /screener/ideas/" + screen_id + "\n"
         "# Edit it by hand freely - see docs/CONFIGURATION.md for every option.\n"
     )
     path.write_text(header + yaml.safe_dump(spec, sort_keys=False, allow_unicode=True))

@@ -10,7 +10,7 @@ classes we don't carry as ETFs).
 Reference data, changes slowly, and small enough to reload whole — so this drops and
 recreates the table rather than diffing it.
 
-Driven by `python -m core.scripts.load.load_sec_fund_classes`, and by the `SEC fund-class map`
+Driven by the `SEC fund-class map`
 step in `update_all` / `bootstrap`.
 """
 from __future__ import annotations

@@ -1,7 +1,7 @@
 """Stop everything, then return the database to bare. Runs as its own job, with a log.
 
-    python -m core.scripts.setup.reset_db                 # stop all builds, then reset
-    python -m core.scripts.setup.reset_db --confirm NAME  # refuse unless NAME matches
+    python -m core.setup.reset_db                 # stop all builds, then reset
+    python -m core.setup.reset_db --confirm NAME  # refuse unless NAME matches
 
 A reset takes precedence over any running work. Refusing while a build is in flight would
 be the wrong behaviour: the reason to reset is usually that the database is in a state you

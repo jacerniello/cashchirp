@@ -21,7 +21,7 @@ source: what it is, what it covers, how we access it, and where it lands.
 - **In this repo:** wired into `core/` —
   - **Generic loader (the standard for almost every table):**
     `core/backend/ingest/sharadar/sharadar_generic.py`, CLI
-    `python -m core.scripts.load.sharadar_load_generic <CODE>`. Schema-driven: reads the
+    `python -m core.setup.bootstrap --dataset sharadar:<CODE>`. Schema-driven: reads the
     table's column types + primary key from `SHARADAR/INDICATORS`, creates a matching
     Postgres table (named after the code, lowercased), and upserts the bulk CSV.
     Idempotent (re-run to update), prints stage/MB progress. `--no-download` reuses an
@@ -29,20 +29,20 @@ source: what it is, what it covers, how we access it, and where it lands.
     → NULL, never a failed load).
   - **SEP → flat `sep` mirror** (faithful, incl. `closeunadj`), loaded by the generic
     loader like every other table; daily incremental via
-    `python -m core.scripts.load.sharadar_load_generic SEP --sync`. The app's Company page
+    `python -m core.setup.bootstrap --dataset sharadar:SEP`. The app's Company page
     reads `sep` (by permaticker) directly.
   - **permaticker:** stamped on every table from `TICKERS` (per `(table, ticker)`, never
-    derived); `python -m core.scripts.load.enrich_permaticker` (re)backfills all.
-  - **verify:** `python -m core.scripts.ops.verify_sharadar` checks each table against its
+    derived); the loader stamps it after every ticker-bearing table loads.
+  - **verify:** the verification helpers in `core/backend/verify.py` (`verify_all()`, importable; no CLI) checks each table against its
     downloaded file (row count + per-column non-null).
   - **EVENTS codes (special):** load `EVENTS` with the generic loader, then
-    `python -m core.scripts.load.sharadar_load_event_codes` builds the `event_codes` legend +
+    `python -m core.setup.bootstrap --dataset sharadar:EVENTS` builds the `event_codes` legend +
     the `events_decoded` view (e.g. `35` = Schedule 13D filing) — the basis for catalyst
     tagging.
-  - **Download only (zip, no load):** `python -m core.scripts.load.sharadar_bulk <CODE...>`
+  - **Download only (zip, no load):** removed along with the other CLIs.
     (`--list` for tables); zips land in `core/data/sharadar/<CODE>.zip` (gitignored).
   - **load ledger:** every run (download / backfill / sync) is recorded in `load_log`
-    with `requested_at` + `completed_at`; `python -m core.scripts.ops.load_status` shows the
+    with `requested_at` + `completed_at`; `the Runs tab at /setup/runs` shows the
     latest run per dataset (what's loaded + when last requested → selective refresh).
     `sync_state` holds per-table incremental watermarks (SEP today).
   - schedule: `core/scripts/com.investing.sharadar.plist` (launchd, once/day) runs the
@@ -83,7 +83,7 @@ series (or one map) at a time. Three real bulk paths, in order of usefulness her
    after enumerating series via `/series/search`, `/category/series`, `/release/series`,
    or `/tags/series` (≤1000/call). Rate limit **120 req/min**. Right for a small curated
    list of extras the panels lack. Key: `FRED_API_KEY` in `core/.env`. *Implemented* in
-   `core/backend/ingest/fred/fred_api.py` — `python -m core.scripts.load.fred.load_spot` loads the
+   `core/backend/ingest/fred/fred_api.py` — `python -m core.setup.bootstrap --dataset fred:spot` loads the
    curated **commodity spot** set (WTI `DCOILWTICO`, Brent `DCOILBRENTEU`, Henry Hub gas
    `DHHNGSP` daily; copper `PCOPPUSDM` monthly) into `fred_observations` under dataset
    `FRED-Spot`, backing the Commodities page. These are revision-free **market prices**,
@@ -123,7 +123,7 @@ Macro data is **revised** for months/years after first release. Two forms of FRE
   - tables (`core/backend/db/models.py`): `fred_series` (id, dataset, `tcode`, title) +
     `fred_observations` (series_id, date, value, **`vintage`**); keyed
     (series_id, date, vintage) so every snapshot + the revised `current` coexist.
-  - CLI: `python -m core.scripts.load.fred.load_md` → **point-in-time vintages (default,
+  - CLI: `python -m core.setup.bootstrap --only-phase fred` → **point-in-time vintages (default,
     backtest-grade)** · `--qd` (FRED-QD) · `--limit N` (first N snapshots) ·
     `--revised` (the NOT-point-in-time `current.csv`). Every run logged to `load_log`
     (source=`FRED`).
@@ -174,7 +174,7 @@ Macro data is **revised** for months/years after first release. Two forms of FRE
     short% by the split factor (GME: 61.7M short ÷ 279M split-adj shares = 22% vs. the
     real ~88% on ~70M pre-split shares). Reconcile splits (like `holder_timeseries`'
     `adj_units`) when building the feature.
-  - CLI: `python -m core.scripts.load.finra_load` (incremental sync, default) ·
+  - CLI: `python -m core.setup.bootstrap --dataset finra:short_interest` (incremental sync, default) ·
     `--backfill` (full 2017→present) · `--backfill --start YYYY-MM-DD`. `sync_state`
     holds the settlement-date watermark; every run logged to `load_log` (source=`FINRA`).
 - **Docs:** https://developer.finra.org/docs (Query API) ·
@@ -200,7 +200,7 @@ Macro data is **revised** for months/years after first release. Two forms of FRE
   [docs/CONFIGURATION.md](../../docs/CONFIGURATION.md)). SEC rate-limits by that identity,
   so use your own contact rather than borrowing one.
 - **In this repo:** loaded into `sec_fund_class` (see [docs/reference/schema.md](../../docs/reference/schema.md))
-  by `python -m core.scripts.load.load_sec_fund_classes`; refreshed by the orchestrator
+  by `python -m core.setup.bootstrap --dataset sec:fund_classes`; refreshed by the orchestrator
   (`update_all`, step "SEC fund-class map"). Reference data, changes slowly.
 - **Caveat:** the JSON has **no series/class display names** ("Investor Shares" etc.) —
   we show the symbol + our own fund name (the series name we derive from a carried class).

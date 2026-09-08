@@ -222,7 +222,7 @@ def main() -> int:
 
         conn.commit()
     print("  committed — now rebuild derived tables:")
-    print("    python -m core.scripts.setup.bootstrap --only-phase derived --force")
+    print("    python -m core.setup.bootstrap --only-phase derived --force")
     return 0
 
 

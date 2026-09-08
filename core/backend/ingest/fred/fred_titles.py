@@ -16,7 +16,7 @@ Fidelity rules (CLAUDE.md / the data-fidelity memory) drive the design:
 - **Provenance recorded.** The confirmed code lands in `fred_series.fred_code` so the
   resolution is auditable and the UI can deep-link to that exact FRED series page.
 
-Run via `python -m core.scripts.load.fred.backfill_titles`. Idempotent; needs `FRED_API_KEY`.
+Idempotent; needs `FRED_API_KEY`.
 """
 from __future__ import annotations
 

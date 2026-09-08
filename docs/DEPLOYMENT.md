@@ -41,7 +41,7 @@ Three processes. Only the first is stateful.
 Postgres 16        the dataset                          port 5432, not public
 FastAPI            core.api.main:app                    port 8001, behind the proxy
 Next.js            web/                                 port 3000, behind the proxy
-Nightly job        core.scripts.load.update_all              cron / launchd / systemd timer
+Nightly job        a schedule in Setup -> Schedules           the API's own scheduler
 ```
 
 The API is stateless and the frontend is stateless, so both scale trivially and neither
@@ -61,14 +61,14 @@ over a private network or tunnel. **Do not expose Postgres to the internet.**
 
 ```bash
 cd core && docker compose up -d
-cd .. && python -m core.scripts.setup.init_db
+cd .. && python -m core.setup.bootstrap --only-phase schema
 ```
 
 For production, override the compose defaults — `POSTGRES_PASSWORD=investing` is a
 development convenience and nothing more. Bind the port to localhost only
 (`127.0.0.1:5432:5432`) unless you're deliberately serving another host.
 
-Then build it with `python -m core.scripts.setup.bootstrap --create-db` (see
+Then build it with `python -m core.setup.bootstrap --create-db` (see
 [setup/database.md](setup/database.md) — it is resumable, and `--watch` follows a long run from
 another terminal). Expect several hours for the Research tier and most of a day for Full.
 Run `verify_sharadar` afterwards, always.
@@ -95,7 +95,7 @@ correct **incremental** mode, then FRED and FINRA, then every derived table rebu
 the inputs are fresh. It exits non-zero if any step fails.
 
 ```bash
-python -m core.scripts.load.update_all
+python -m core.setup.bootstrap
 ```
 
 **systemd timer** (Linux):
@@ -105,7 +105,7 @@ python -m core.scripts.load.update_all
 [Service]
 Type=oneshot
 WorkingDirectory=/srv/investing
-ExecStart=/srv/investing/.venv/bin/python -m core.scripts.load.update_all
+ExecStart=/srv/investing/.venv/bin/python -m core.setup.bootstrap
 StandardOutput=append:/var/log/investing-update.log
 StandardError=inherit
 ```
@@ -127,7 +127,7 @@ Schedule it after Sharadar's EOD refresh (typically mid-evening US time). Becaus
 gives you monitoring for free — **and you want it**, because the failure mode of a broken
 nightly job is not an error, it's a dashboard quietly showing last week's numbers.
 
-**If a run hangs, `python -m core.scripts.ops.unjam` first.** A stall is almost always Postgres
+**If a run hangs, `the Database tab at /setup/database` first.** A stall is almost always Postgres
 lock contention — usually the API rebuilding a derived table while the ingest runs.
 
 ---

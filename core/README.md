@@ -45,15 +45,15 @@ cp core/.env.example core/.env        # edit if you like
 cd core && docker compose up -d && cd ..
 
 # 3. create tables
-python -m core.scripts.setup.init_db
+python -m core.setup.bootstrap --only-phase schema
 
 # 4. collect data (see "Loading / updating data" below)
-python -m core.scripts.load.sharadar_load_generic TICKERS   # load this first
-python -m core.scripts.load.sharadar_load_generic SF1       # any Sharadar table, by code
-python -m core.scripts.load.fred.load_md                    # macro panel: FRED-MD vintages
+python -m core.setup.bootstrap --dataset sharadar:TICKERS
+python -m core.setup.bootstrap --dataset sharadar:SF1
+python -m core.setup.bootstrap --only-phase fred                    # macro panel: FRED-MD vintages
 
 # 5. build the screener snapshot
-python -m core.scripts.build.build_screener_snapshot
+python -m core.setup.bootstrap --dataset derived:screener_snapshot
 
 # 6. run the API  ->  http://127.0.0.1:8001/docs
 uvicorn core.api.main:app --reload --port 8001
@@ -67,7 +67,7 @@ Full walkthrough, including which tables are worth loading and how big they are:
 
 ## Loading / updating data
 
-**Refresh everything with one command** — `python -m core.scripts.load.update_all`. It runs every
+**Refresh everything with one command** — `python -m core.setup.bootstrap`. It runs every
 Sharadar table in its correct sync mode (the per-table mapping below), then FRED (MD/QD
 vintages + commodity spot), then FINRA short interest (incremental), then rebuilds the derived
 objects (`screener_snapshot`, `holder_timeseries`, `derived.insider[_company]`) once, after all
@@ -76,13 +76,13 @@ non-zero if any step failed. This is what the daily scheduled job
 (`com.investing.sharadar.plist.example`) runs. Skip stages with `--no-fred` / `--no-finra` / `--no-derived` / `--no-sharadar`.
 
 ```bash
-python -m core.scripts.load.update_all              # all tables + FRED + derived
-python -m core.scripts.load.update_all --dry-run    # print the plan, run nothing
-python -m core.scripts.load.update_all --only SEP SF1   # subset of Sharadar tables
-python -m core.scripts.load.update_all --derived-only   # just rebuild the precomputed objects
+python -m core.setup.bootstrap              # all tables + FRED + derived
+python -m core.setup.bootstrap --dry-run    # print the plan, run nothing
+python -m core.setup.bootstrap --only SEP SF1   # subset of Sharadar tables
+python -m core.setup.bootstrap --derived-only   # just rebuild the precomputed objects
 ```
 
-**If a refresh hangs or stalls, run `python -m core.scripts.ops.unjam` first.** It's the go-to
+**If a refresh hangs or stalls, run `the Database tab at /setup/database` first.** It's the go-to
 first check when data won't refresh. A refresh stalls almost always because something else is
 holding Postgres locks — most often the **app rebuilding a derived table** (`screener_snapshot`,
 `holder_timeseries`) at the same time: a `DROP TABLE … ; rebuild` needs an exclusive lock, an
@@ -92,9 +92,9 @@ terminates the jammed DB backends (idle-in-transaction / blocked / blocking) so 
 clean. It's narrowly scoped — never touches other projects or its own connection.
 
 ```bash
-python -m core.scripts.ops.unjam --dry-run   # show what's running / blocked, change nothing
-python -m core.scripts.ops.unjam             # clear it (asks first)
-python -m core.scripts.ops.unjam --yes       # clear without prompting (for scripts)
+the Database tab at /setup/database
+the Database tab at /setup/database
+the Database tab at /setup/database
 ```
 
 The sections below cover the individual loaders the orchestrator drives.
@@ -106,10 +106,10 @@ the bulk CSV on Sharadar's primary key, and stamps `permaticker` from `TICKERS`.
 prints stage/MB progress, records every run in `load_log`.
 
 ```bash
-python -m core.scripts.load.sharadar_load_generic SEP        # SEP -> table "sep" (prices)
-python -m core.scripts.load.sharadar_load_generic SF1        # SF1, SF2, SF3, SF3A, SF3B, SFP,
-python -m core.scripts.load.sharadar_load_generic TICKERS    # DAILY, METRICS, TICKERS, EVENTS,
-python -m core.scripts.load.sharadar_load_generic ACTIONS    # ACTIONS, SP500 ... any code
+python -m core.setup.bootstrap --dataset sharadar:SEP
+python -m core.setup.bootstrap --dataset sharadar:SF1
+python -m core.setup.bootstrap --dataset sharadar:TICKERS
+python -m core.setup.bootstrap --dataset sharadar:ACTIONS
 #   --sync               incremental: pull rows with <col> >= watermark and upsert
 #   --sync-col <col>     watermark column for --sync (default lastupdated; e.g. date,
 #                        filingdate, calendardate for tables that lack lastupdated)
@@ -123,40 +123,40 @@ Re-run to update in place (upsert on Sharadar's primary key). **Incremental upda
 mode by what change-column the table has (the query API caps ~1M rows/call):
 
 ```bash
-python -m core.scripts.load.sharadar_load_generic SF1 --sync                    # has lastupdated
-python -m core.scripts.load.sharadar_load_generic SEP --sync                    # auto-windows the date range
-python -m core.scripts.load.sharadar_load_generic SF2 --sync --sync-col filingdate   # no lastupdated → date col
-python -m core.scripts.load.sharadar_load_generic SF3 --sync-quarters           # coarse calendardate → quarter+ticker chunks
+python -m core.setup.bootstrap --dataset sharadar:SF1
+python -m core.setup.bootstrap --dataset sharadar:SEP
+python -m core.setup.bootstrap --dataset sharadar:SF2
+python -m core.setup.bootstrap --dataset sharadar:SF3
 ```
 
 `--sync`/`--sync-col` catch new rows (and, with `lastupdated`, edits too); `--sync-quarters`
 re-pulls whole recent quarters so it captures amendments within them. `sfp` restamps a single
 day past the cap → full backfill only. See `docs/reference/schema.md` → Operational notes "Updating" for the
-per-table table. List tables with `python -m core.scripts.load.sharadar_bulk --list`. Every table is
+per-table table. The dataset keys are in `core/backend/sources.py`. Every table is
 a flat 1:1 mirror; the app's Company page reads `sep` (by permaticker) directly.
 
 **Special cases (still on top of the generic loader):**
 
 ```bash
 # EVENTS code legend (event_codes) + the events_decoded view (load EVENTS first):
-python -m core.scripts.load.sharadar_load_event_codes
+python -m core.setup.bootstrap --dataset sharadar:EVENTS
 
 # permaticker is stamped automatically on each load; to (re)backfill all tables at once:
-python -m core.scripts.load.enrich_permaticker
+# permaticker is stamped by the loader after every ticker-bearing table loads
 
 # Macro data (FRED-MD/QD panels):
-python -m core.scripts.load.fred.load_md                 # --qd, --revised, --limit N
+python -m core.setup.bootstrap --only-phase fred                 # --qd, --revised, --limit N
 
 # Verify loaded tables match the downloaded files (row + per-column non-null):
-python -m core.scripts.ops.verify_sharadar
+# fidelity check: the verification helpers in `core/backend/verify.py` (`verify_all()`, importable; no CLI)
 
 # Precompute the Screener snapshot (also auto-runs after a DAILY load):
-python -m core.scripts.build.build_screener_snapshot
+python -m core.setup.bootstrap --dataset derived:screener_snapshot
 ```
 
-**Inspect what's loaded:** `python -m core.scripts.ops.load_status` (latest run per dataset).
+**Inspect what's loaded:** `the Runs tab at /setup/runs` (latest run per dataset).
 Raw zips are downloaded on demand to `core/data/sharadar/` (gitignored);
-`python -m core.scripts.load.sharadar_bulk <CODE...>` downloads without loading.
+The download-only CLI has been removed.
 
 **Scheduling:** copy `core/scripts/com.investing.sharadar.plist.example` (macOS launchd),
 replacing `{{PROJECT_ROOT}}`. For a systemd timer, see
@@ -168,10 +168,7 @@ The screener's saved filters are YAML, not code — `config/screens/*.yaml`, loa
 `backend/screens.py`. `ACTIVE_SCREEN` in `core/.env` picks the default.
 
 ```bash
-python -m core.scripts.screen.run_screen --list          # what's defined
-python -m core.scripts.screen.run_screen --columns       # gateable snapshot columns
-python -m core.scripts.screen.run_screen my-screen       # run it
-python -m core.scripts.screen.run_screen my-screen --asof 2018-06-29   # point-in-time
+# Screens run from the Screener UI now: /screener, and /screener/ideas for saved ones.
 ```
 
 Both the live `/screener/ideas/` endpoint and the backtest harness load the same spec, so a
@@ -180,7 +177,7 @@ backtest provably tests the filter you ship. Schema:
 
 ## Reuse cheatsheet
 
-- **New Sharadar table:** nothing to write — `python -m core.scripts.load.sharadar_load_generic
+- **New Sharadar table:** nothing to write — `python -m core.setup.bootstrap --dataset sharadar:
   <CODE>` (schema-driven from metadata).
 - **New screen:** copy a YAML in `config/screens/`. No Python.
 - **New (non-Sharadar) data source:** subclass `BaseIngestor` (`backend/ingest/`), add
