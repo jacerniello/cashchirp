@@ -594,7 +594,17 @@ def _runner(ds: sources.Dataset) -> Callable[[Callable[[str], None]], object]:
             # minutes of CTAS on tens of millions of rows, and "rebuilding X…" followed by
             # silence is indistinguishable from a hang. Checked rather than assumed so a
             # builder without the parameter still runs instead of raising TypeError.
-            kw = {"progress": progress} if "progress" in inspect.signature(fn).parameters else {}
+            params = inspect.signature(fn).parameters
+            kw = {}
+            if "progress" in params:
+                kw["progress"] = progress
+            # Someone asked for THIS table to be rebuilt. If the lock is held, the build
+            # did not happen, and returning a live row count would report that as success
+            # — a plausible number from a table nobody touched. Only the explicit path
+            # sets this; the app's post-load hooks still skip quietly, which is correct
+            # there because something else is already building the same thing.
+            if "require_build" in params:
+                kw["require_build"] = True
             with session_scope() as session:
                 return fn(session, **kw)
         return run_derived

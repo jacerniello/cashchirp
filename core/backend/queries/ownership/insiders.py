@@ -14,7 +14,8 @@ from sqlalchemy.orm import Session
 
 from core.backend.db.engine import engine
 from core.backend.queries._common import query_df, rows, scalar
-from core.backend.queries._rebuild import LOCK_INSIDERS, NEW, live_count, single_flight, swap_in
+from core.backend.queries._rebuild import (
+    LOCK_INSIDERS, NEW, RebuildSkipped, live_count, single_flight, swap_in)
 
 _COLS = (
     "filingdate, transactiondate, ownername, officertitle, isdirector, isofficer, "
@@ -319,7 +320,7 @@ def owner_id_for(ownername: str) -> str:
     return hashlib.md5(ownername.upper().encode("utf-8")).hexdigest()[:12]
 
 
-def refresh(session: Session, progress=None) -> dict:
+def refresh(session: Session, progress=None, require_build: bool = False) -> dict:
     """(Re)build both derived insider tables. Idempotent; stamped with `asof` = max SF2
     filing date. Returns row counts. See the module note above for the schema.
 
@@ -332,6 +333,8 @@ def refresh(session: Session, progress=None) -> dict:
     with single_flight(LOCK_INSIDERS) as mine:
         if not mine:  # another worker is rebuilding — don't stampede
             say("another process holds the lock — skipped, serving the live tables")
+            if require_build:
+                raise RebuildSkipped("derived.insider: another process holds the build lock")
             return {"insider": live_count(_INSIDER_TABLE),
                     "insider_company": live_count(_INSIDER_CO_TABLE)}
         say("building derived.insider + derived.insider_company from sf2…")
