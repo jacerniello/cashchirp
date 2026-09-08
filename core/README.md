@@ -18,8 +18,7 @@ core/
 ├── api/                   # FastAPI bridge, mounted at /api/v1
 │   ├── main.py            # app factory + router mounting
 │   └── routers/           # one module per resource (screener, company, macro, …)
-└── scripts/               # CLI: init_db, sharadar_load_generic, run_screen,
-                           #      verify_sharadar, load_status, update_all, fred/
+└── ../setup/               # the two entry points: bootstrap, reset_db
 ```
 
 **Data flow:** `scripts`/`ingest` → Postgres → `repositories` → `api/routers` → `web/`.
@@ -148,7 +147,6 @@ python -m core.setup.bootstrap --dataset sharadar:EVENTS
 python -m core.setup.bootstrap --only-phase fred                 # --qd, --revised, --limit N
 
 # Verify loaded tables match the downloaded files (row + per-column non-null):
-# fidelity check: the verification helpers in `core/backend/verify.py` (`verify_all()`, importable; no CLI)
 
 # Precompute the Screener snapshot (also auto-runs after a DAILY load):
 python -m core.setup.bootstrap --dataset derived:screener_snapshot

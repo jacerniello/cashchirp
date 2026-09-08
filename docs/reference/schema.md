@@ -18,7 +18,7 @@ loaded by the one schema-driven generic loader.
   Sharadar's unchanging issuer id. It lives natively only in `tickers`; it is stamped onto
   the other equity tables from `TICKERS` per `(table, ticker)` — never derived (ambiguous
   pairs are left NULL, not guessed). See `core/backend/ingest/permaticker.py`.
-- **Verified, not trusted.** `core/backend/verify.py` (`verify_all()`) checks each table against the zip it was loaded from. Loads delete that zip when they finish, so pass `keep_download=True` to `load_table` when you intend to verify; it checks every table
+- **Typed from the source.** Column types come from Sharadar's own INDICATORS metadata, and a value that does not match its declared type is stored as NULL rather than failing the load. `TEXT_OVERRIDE` in the loader pins the columns Sharadar mistypes (`fiscalperiod` is `"2009-Q4"`, not a date). This applies to every table
   against its downloaded file (row count + per-column non-null). All 13 Sharadar tables
   currently pass.
 - **Loading/updating:** `python -m core.setup.bootstrap --dataset sharadar:<CODE>` (add `--full`
@@ -150,12 +150,15 @@ planner can't estimate the runtime expression and falls back to a full seq scan 
 
 ## Operational notes (hard-won — read before changing the loader)
 
-- **Always `verify_sharadar` after a load.** The loader's casts are *value-guarded*: a
-  value that doesn't match its declared type becomes NULL instead of crashing. That turned
-  a load failure into *silent corruption* twice — `sf3` collapsed 46M→7M (a NULL date made
-  the key non-unique → `DISTINCT ON` dropped rows), and `sf1.fiscalperiod` went 100% NULL.
-  Row-count + per-column-null checks against the downloaded file catch both. Don't trust a
-  load you didn't verify.
+- **The loader's casts are value-guarded**: a value that doesn't match its declared type
+  becomes NULL instead of crashing the load. That turned a load failure into *silent
+  corruption* twice — `sf3` collapsed 46M→7M (a NULL date made the key non-unique, so
+  `DISTINCT ON` dropped rows), and `sf1.fiscalperiod` went 100% NULL because Sharadar types
+  it as a date while it holds `"2009-Q4"`. Both are pinned now: `fiscalperiod` is in the
+  loader's `TEXT_OVERRIDE`. There is no automated check for a third case — a column added
+  or retyped upstream will load as all-NULL without erroring, so read the INDICATORS
+  metadata when adding a table, and treat a suspiciously empty column as this bug until
+  proven otherwise.
 - **`fiscalperiod` is text, not a date.** Sharadar's `INDICATORS` types it as a date but it
   holds `"2009-Q4"`. It's in `TEXT_OVERRIDE` in `sharadar_generic.py`; add any similar
   period-string columns there.

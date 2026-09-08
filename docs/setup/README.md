@@ -87,12 +87,10 @@ downstream conclusion inherits the corruption silently.
 
 ```bash
 python -m core.setup.bootstrap --status   # tables, row counts, sizes on disk
-# fidelity check: the verification helpers in `core/backend/verify.py` (`verify_all()`, importable; no CLI)
 the Runs tab at /setup/runs          # what loaded, and when
 ```
 
 - [ ] `--status` shows the tables you expect, at plausible sizes
-- [ ] `verify_sharadar` reports no mismatches
 
 Once the app is running, **http://localhost:3000/setup** shows the same picture in the
 browser — per-dataset loaded/missing, sizes, sources, and the live progress of a build

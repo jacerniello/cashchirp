@@ -71,7 +71,6 @@ development convenience and nothing more. Bind the port to localhost only
 Then build it with `python -m core.setup.bootstrap --create-db` (see
 [setup/database.md](setup/database.md) — it is resumable, and `--watch` follows a long run from
 another terminal). Expect several hours for the Research tier and most of a day for Full.
-Run `verify_sharadar` afterwards, always.
 
 ### API
 
