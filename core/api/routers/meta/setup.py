@@ -133,7 +133,6 @@ def status() -> dict[str, Any]:
             "source": {"id": d.source, "provider": src.provider, "short": src.short,
                        "licence": src.licence, "url": src.url},
             "endpoint": d.endpoint, "mode": d.mode, "note": d.note,
-            "expected_mb": d.size_mb, "expected_size": d.size_h,
             "tables": tables, "rows": have_rows,
             "size": _human(have_bytes) if have_bytes else "—",
             "state": state,
@@ -149,7 +148,6 @@ def status() -> dict[str, Any]:
             "id": phase, "description": desc, "count": len(ds),
             "loaded": sum(1 for x in ds if x["state"] == "loaded"),
             "missing": sum(1 for x in ds if x["state"] == "missing"),
-            "expected_size": sources.size_h(sources.total_mb((phase,))),
         })
 
     n_loaded = sum(1 for d in datasets if d["state"] == "loaded")
@@ -165,7 +163,6 @@ def status() -> dict[str, Any]:
             "datasets": len(datasets),
             "loaded": n_loaded,
             "missing": n_known - n_loaded,
-            "expected_size": sources.size_h(sources.total_mb()),
             "loaded_size": _human(int(loaded_mb * 1_048_576)),
             "complete": n_known > 0 and n_loaded == n_known,
             "empty": n_loaded == 0,
@@ -181,7 +178,6 @@ def status() -> dict[str, Any]:
                 "datasets": sum(1 for d in datasets if d["phase"] in ph),
                 "loaded": sum(1 for d in datasets
                               if d["phase"] in ph and d["state"] == "loaded"),
-                "expected_size": sources.size_h(sources.total_mb(ph)),
             }
             for kind, ph in (("ingest", sources.INGEST_PHASES),
                              ("derive", sources.DERIVE_PHASES))
@@ -207,9 +203,8 @@ def source_registry() -> dict[str, Any]:
             "auth_env": src.auth_env, "url": src.url, "docs_url": src.docs_url,
             "caveat": src.caveat,
             "datasets": len(ds),
-            "size": sources.size_h(sum(d.size_mb for d in ds)),
         })
-    return {"sources": out, "total_size": sources.size_h(sources.total_mb())}
+    return {"sources": out}
 
 
 def _db_reachable() -> bool:

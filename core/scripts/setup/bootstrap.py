@@ -74,10 +74,6 @@ def clear_stop() -> None:
 # Sizes and destination tables come from the data-source registry (core.backend.sources),
 # the same place the load plan and the published provenance come from.
 #
-# WEIGHT_MB is measured on a fully built instance, not guessed — it is what makes the
-# progress bar track real work rather than step count, where SEP (9.7 GB) would otherwise
-# weigh the same as TICKERS (24 MB). Only the ratios matter.
-WEIGHT_MB: dict[str, int] = sources.weights()
 
 # Destination table per step, used two ways: to report row counts as steps finish, and to
 # decide on a resume whether a step already ran. Steps absent here always re-run.
@@ -91,7 +87,6 @@ class Step:
     phase: str
     run: Callable[[Callable[[str], None]], object]
     table: str | None = None
-    weight: int = 1
     status: str = "pending"  # pending | running | ok | FAIL | skipped
     seconds: float = 0.0
     rows: int | None = None
@@ -634,7 +629,6 @@ def build_steps(only: list[str] | None,
             phase=ds.phase,
             run=_runner(ds),
             table=ds.table,
-            weight=WEIGHT_MB.get(ds.key, 1),
         ))
     return steps
 
@@ -807,7 +801,6 @@ def print_sources() -> int:
         ds = [d for d in sources.DATASETS if d.source == sid]
         if not ds:
             continue
-        mb = sum(d.size_mb for d in ds)
         print(f"{src.provider}")
         print(f"  licence   {src.licence}")
         print(f"  updates   {src.cadence}")
@@ -817,17 +810,14 @@ def print_sources() -> int:
             print(f"  auth      {src.auth_env}  [{have}]")
         if src.url:
             print(f"  url       {src.url}")
-        print(f"  size      {sources.size_h(mb)} across {len(ds)} dataset"
-              f"{'s' if len(ds) != 1 else ''}")
         if src.caveat:
             print(f"  note      {src.caveat}")
         print()
         for d in ds:
             tables = ", ".join(d.tables) or "—"
-            print(f"    {d.endpoint:<62} {d.size_h:>8}")
+            print(f"    {d.endpoint}")
             print(f"      -> {tables:<40} {('mode: ' + d.mode) if d.mode else ''}")
         print()
-    print(f"Total, fully built: ~{sources.size_h(sources.total_mb())}")
     print("Generated table of the same registry: docs/setup/sources.md")
     return 0
 
@@ -951,9 +941,8 @@ def main() -> int:
                 desc = dict(sources.PHASES).get(phase, "")
                 print(f"\n  {phase.upper()}  {desc}")
             src = sources.SOURCES[ds.source].short if ds else ""
-            print(f"  {ds.label[:40]:40} {(ds.mode or ''):9} {src:14} {ds.size_h:>13}")
-        print(f"\n{len(steps)} steps, ~{sources.size_h(sum(st.weight for st in steps))} "
-              f"on disk when built.")
+            print(f"  {ds.label[:40]:40} {(ds.mode or ''):9} {src:14}")
+        print(f"\n{len(steps)} steps.")
         if any(st.phase == "sharadar" for st in steps):
             print("This downloads tens of GB from Sharadar and takes hours. It is resumable.")
         else:

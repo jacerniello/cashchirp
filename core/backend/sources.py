@@ -21,7 +21,6 @@ places — and nothing can quietly ingest from somewhere undocumented.
     sources.DATASETS                 # every dataset, in dependency order
     sources.SOURCES["sharadar"]      # the provider behind it
     sources.sharadar_plan()          # [(TABLE, mode, kwargs)] for the loaders
-    sources.total_mb()               # ~size of a fully built database
 """
 from __future__ import annotations
 
@@ -134,16 +133,11 @@ class Dataset:
                                    # dotted path of the function that builds it. Full, not
                                    # relative: a path assembled from a guessed package
                                    # prefix breaks silently when modules are moved.
-    size_mb: int                   # measured on a fully built instance, not guessed
     tables: tuple[str, ...] = ()   # Postgres tables it writes
     mode: str | None = None        # sharadar loader mode: sync | quarters | full
     kwargs: dict = field(default_factory=dict)
     note: str = ""
 
-    @property
-    def size_h(self) -> str:
-        """Human size, for progress and docs."""
-        return f"{self.size_mb / 1024:.1f} GB" if self.size_mb >= 1024 else f"{self.size_mb} MB"
 
     @property
     def table(self) -> str | None:
@@ -158,101 +152,85 @@ class Dataset:
 DATASETS: list[Dataset] = [
     # -- schema ------------------------------------------------------------------
     Dataset(key="schema", source="derived", label="schema (create tables)",
-            phase="schema", endpoint="core.backend.db.models", size_mb=1,
-            note="Creates the tables SQLAlchemy owns. Safe to re-run."),
+            phase="schema", endpoint="core.backend.db.models", note="Creates the tables SQLAlchemy owns. Safe to re-run."),
 
     # -- Sharadar ----------------------------------------------------------------
     # `mode` is not a style choice: Sharadar tables differ in which change-column they
     # expose, and the query API caps ~1M rows/call. See docs/reference/schema.md -> "Updating".
     Dataset(key="sharadar:TICKERS", source="sharadar", label="tickers (security master)",
-            phase="sharadar", endpoint="SHARADAR/TICKERS", size_mb=24,
-            tables=("tickers",), mode="sync",
+            phase="sharadar", endpoint="SHARADAR/TICKERS", tables=("tickers",), mode="sync",
             note="Load first — builds permaticker_lookup for every other table."),
     Dataset(key="sharadar:SF1", source="sharadar", label="fundamentals",
-            phase="sharadar", endpoint="SHARADAR/SF1", size_mb=2948,
-            tables=("sf1",), mode="sync"),
+            phase="sharadar", endpoint="SHARADAR/SF1", tables=("sf1",), mode="sync"),
     Dataset(key="sharadar:METRICS", source="sharadar", label="metrics",
-            phase="sharadar", endpoint="SHARADAR/METRICS", size_mb=22,
-            tables=("metrics",), mode="sync"),
+            phase="sharadar", endpoint="SHARADAR/METRICS", tables=("metrics",), mode="sync"),
     Dataset(key="sharadar:SEP", source="sharadar", label="equity prices (EOD)",
-            phase="sharadar", endpoint="SHARADAR/SEP", size_mb=9729,
-            tables=("sep",), mode="sync",
+            phase="sharadar", endpoint="SHARADAR/SEP", tables=("sep",), mode="sync",
             note="The big one. Required for price history and charts."),
     Dataset(key="sharadar:SFP", source="sharadar", label="fund prices (ETF/CEF)",
-            phase="sharadar", endpoint="SHARADAR/SFP", size_mb=2708,
-            tables=("sfp",), mode="sync", kwargs={"chunk_key": "ticker"},
+            phase="sharadar", endpoint="SHARADAR/SFP", tables=("sfp",), mode="sync", kwargs={"chunk_key": "ticker"},
             note="Restamps >1M rows/day, so that day is pulled in ticker-chunks."),
     Dataset(key="sharadar:DAILY", source="sharadar", label="daily valuation (mktcap, P/E, EV)",
-            phase="sharadar", endpoint="SHARADAR/DAILY", size_mb=6948,
-            tables=("daily",), mode="sync",
+            phase="sharadar", endpoint="SHARADAR/DAILY", tables=("daily",), mode="sync",
             note="Drives the screener snapshot."),
     Dataset(key="sharadar:ACTIONS", source="sharadar", label="corporate actions",
-            phase="sharadar", endpoint="SHARADAR/ACTIONS", size_mb=153,
-            tables=("actions",), mode="sync", kwargs={"sync_col": "date"}),
+            phase="sharadar", endpoint="SHARADAR/ACTIONS", tables=("actions",), mode="sync", kwargs={"sync_col": "date"}),
     Dataset(key="sharadar:SP500", source="sharadar", label="S&P 500 membership changes",
-            phase="sharadar", endpoint="SHARADAR/SP500", size_mb=10,
-            tables=("sp500",), mode="sync", kwargs={"sync_col": "date"}),
+            phase="sharadar", endpoint="SHARADAR/SP500", tables=("sp500",), mode="sync", kwargs={"sync_col": "date"}),
     Dataset(key="sharadar:EVENTS", source="sharadar", label="events",
-            phase="sharadar", endpoint="SHARADAR/EVENTS", size_mb=311,
-            tables=("events",), mode="sync", kwargs={"sync_col": "date"}),
+            phase="sharadar", endpoint="SHARADAR/EVENTS", tables=("events",), mode="sync", kwargs={"sync_col": "date"}),
     Dataset(key="sharadar:SF2", source="sharadar", label="insider transactions",
-            phase="sharadar", endpoint="SHARADAR/SF2", size_mb=3404,
-            tables=("sf2",), mode="sync", kwargs={"sync_col": "filingdate"},
+            phase="sharadar", endpoint="SHARADAR/SF2", tables=("sf2",), mode="sync", kwargs={"sync_col": "filingdate"},
             note="No lastupdated column — deltas come off filingdate."),
     Dataset(key="sharadar:SF3A", source="sharadar", label="13F holdings by investor",
-            phase="sharadar", endpoint="SHARADAR/SF3A", size_mb=221,
-            tables=("sf3a",), mode="sync", kwargs={"sync_col": "calendardate"}),
+            phase="sharadar", endpoint="SHARADAR/SF3A", tables=("sf3a",), mode="sync", kwargs={"sync_col": "calendardate"}),
     Dataset(key="sharadar:SF3B", source="sharadar", label="13F holdings by security",
-            phase="sharadar", endpoint="SHARADAR/SF3B", size_mb=102,
-            tables=("sf3b",), mode="sync", kwargs={"sync_col": "calendardate"}),
+            phase="sharadar", endpoint="SHARADAR/SF3B", tables=("sf3b",), mode="sync", kwargs={"sync_col": "calendardate"}),
     Dataset(key="sharadar:SF3", source="sharadar", label="13F holdings detail",
-            phase="sharadar", endpoint="SHARADAR/SF3", size_mb=9257,
-            tables=("sf3",), mode="quarters",
+            phase="sharadar", endpoint="SHARADAR/SF3", tables=("sf3",), mode="quarters",
             note="No change column at all — recent quarters are re-pulled in key-chunks."),
 
     # -- FRED --------------------------------------------------------------------
     Dataset(key="fred:FRED-MD", source="fred", label="FRED-MD monthly vintages",
             phase="fred",
             endpoint="https://www.stlouisfed.org/-/media/project/frbstl/stlouisfed/research/fred-md/monthly",
-            size_mb=1100, tables=("fred_observations",),
+            tables=("fred_observations",),
             note="Every published vintage — point-in-time macro, no look-ahead."),
     Dataset(key="fred:FRED-QD", source="fred", label="FRED-QD quarterly vintages",
             phase="fred",
             endpoint="https://www.stlouisfed.org/-/media/project/frbstl/stlouisfed/research/fred-md/quarterly",
-            size_mb=1100, tables=("fred_observations",)),
+            tables=("fred_observations",)),
     Dataset(key="fred:spot", source="fred", label="commodity spot series",
             phase="fred", endpoint="FRED API — COMMODITY_SPOT_SERIES",
-            size_mb=50, tables=("fred_observations",)),
+            tables=("fred_observations",)),
 
     # -- FINRA -------------------------------------------------------------------
     Dataset(key="finra:short_interest", source="finra", label="short interest",
             phase="finra", endpoint="https://api.finra.org/ (equity short interest)",
-            size_mb=785, tables=("finra_short_interest",)),
+            tables=("finra_short_interest",)),
 
     # -- SEC ---------------------------------------------------------------------
     Dataset(key="sec:fund_classes", source="sec", label="fund class map",
             phase="sec", endpoint="https://www.sec.gov/files/company_tickers_mf.json",
-            size_mb=5, tables=("sec_fund_class",)),
+            tables=("sec_fund_class",)),
 
     # -- derived (computed here, from everything above) ---------------------------
     Dataset(key="derived:screener_snapshot", source="derived", label="screener snapshot",
             phase="derived", endpoint="core.backend.queries.discovery.screener.refresh_snapshot",
-            size_mb=12, tables=("screener_snapshot",),
+            tables=("screener_snapshot",),
             note="What the screener and every saved screen actually read."),
     Dataset(key="derived:holder_timeseries", source="derived", label="holder time-series",
             phase="derived", endpoint="core.backend.queries.ownership.institutional.refresh_holder_timeseries",
-            size_mb=4301, tables=("holder_timeseries",)),
+            tables=("holder_timeseries",)),
     Dataset(key="derived:institutional_holdings_timeseries", source="derived",
             label="institutional holdings time-series", phase="derived",
             endpoint="core.backend.queries.ownership.institutional.refresh_investor_holdings_timeseries",
-            size_mb=4683, tables=("institutional_holdings_timeseries",)),
+            tables=("institutional_holdings_timeseries",)),
     Dataset(key="derived:derived.insider", source="derived", label="insider aggregates",
-            phase="derived", endpoint="core.backend.queries.ownership.insiders.refresh", size_mb=98,
-            tables=("derived.insider", "derived.insider_company"),
+            phase="derived", endpoint="core.backend.queries.ownership.insiders.refresh", tables=("derived.insider", "derived.insider_company"),
             note="Lives in the `derived` schema, not `public`."),
     Dataset(key="derived:sp500_concentration", source="derived", label="S&P 500 concentration",
-            phase="derived", endpoint="core.backend.queries.market.sp500.refresh_concentration", size_mb=5,
-            tables=("sp500_concentration", "sp500_sector_weights")),
+            phase="derived", endpoint="core.backend.queries.market.sp500.refresh_concentration", tables=("sp500_concentration", "sp500_sector_weights")),
 ]
 
 BY_KEY: dict[str, Dataset] = {d.key: d for d in DATASETS}
@@ -306,11 +284,6 @@ def sharadar_plan() -> list[tuple[str, str, dict]]:
     ]
 
 
-def weights() -> dict[str, int]:
-    """Step key -> size in MB. Used to weight a progress bar by real work, so SEP
-    (9.7 GB) doesn't advance it the same as TICKERS (24 MB)."""
-    return {d.key: d.size_mb for d in DATASETS}
-
 
 def step_tables() -> dict[str, str]:
     """Step key -> the table that answers "did this already run?" on a resume."""
@@ -321,13 +294,6 @@ def by_phase(phase: str) -> list[Dataset]:
     return [d for d in DATASETS if d.phase == phase]
 
 
-def total_mb(phases: tuple[str, ...] | None = None) -> int:
-    """Approximate size of a fully built database, or of the given phases."""
-    return sum(d.size_mb for d in DATASETS if phases is None or d.phase in phases)
-
-
-def size_h(mb: int) -> str:
-    return f"{mb / 1024:.1f} GB" if mb >= 1024 else f"{mb} MB"
 
 
 def required_env() -> list[tuple[str, list[str]]]:

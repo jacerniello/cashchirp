@@ -176,7 +176,7 @@ export default function SetupPage() {
                       <code className="font-mono text-[0.9em]">{data.database.name}</code>{' '}
                       at {data.database.host} · {data.database.tables} tables ·{' '}
                       {data.summary.loaded}/{data.summary.datasets} datasets ·{' '}
-                      {data.summary.loaded_size} of ~{data.summary.expected_size}
+                      {data.summary.loaded_size}
                     </p>
                   </div>
                   <div className="text-right shrink-0">
@@ -413,9 +413,6 @@ export default function SetupPage() {
                         <span className="text-xs text-ink-muted tnum w-16 text-right">
                           {p.loaded}/{p.count}
                         </span>
-                        <span className="text-xs text-ink-faint tnum w-16 text-right">
-                          {p.expected_size}
-                        </span>
                       </div>
                     );
                   })}
@@ -502,9 +499,6 @@ export default function SetupPage() {
                             </td>
                             <td className="py-2 pr-3 text-right tnum text-ink-light">
                               {d.size}
-                            </td>
-                            <td className="py-2 text-right tnum text-ink-muted">
-                              {d.expected_size}
                             </td>
                           </tr>
                         ))}

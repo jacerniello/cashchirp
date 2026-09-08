@@ -47,25 +47,21 @@ def render() -> str:
         "",
         "## At a glance",
         "",
-        "| Source | Licence | Auth | Datasets | Size |",
-        "|---|---|---|---|---:|",
+        "| Source | Licence | Auth | Datasets |",
+        "|---|---|---|---|",
     ]
     for sid, src in sources.SOURCES.items():
         ds = [d for d in sources.DATASETS if d.source == sid]
         if not ds:
             continue
-        mb = sum(d.size_mb for d in ds)
         auth = f"`{src.auth_env}`" if src.auth_env else "—"
         name = f"[{src.provider}]({src.url})" if src.url else src.provider
-        L.append(f"| {name} | {src.licence} | {auth} | {len(ds)} | {sources.size_h(mb)} |")
+        L.append(f"| {name} | {src.licence} | {auth} | {len(ds)} |")
     L += [
-        f"| **Total** | | | **{len(sources.DATASETS)}** | "
-        f"**~{sources.size_h(sources.total_mb())}** |",
+        f"| **Total** | | | **{len(sources.DATASETS)}** |",
         "",
-        "> Sizes are measured on a fully built instance, not estimated — use them to plan\n"
-        "> disk. They do NOT drive the progress bar: that reports what the loaders\n"
-        "> actually say they have ingested, because a predicted size is a guess and a\n"
-        "> step that turns out to be a no-op would swing an estimated bar for no work.",
+        "> A build reports progress from what the loaders say they have actually ingested,\n"
+        "> never from a predicted size. A step is done when the script says it is done.",
         "",
     ]
 
@@ -101,17 +97,15 @@ def render() -> str:
             L.append(f"- **Home:** <{src.url}>")
         if src.docs_url:
             L.append(f"- **Docs:** <{src.docs_url}>")
-        L.append(f"- **Size here:** {sources.size_h(sum(d.size_mb for d in ds))}"
-                 f" across {len(ds)} dataset{'s' if len(ds) != 1 else ''}")
         if src.caveat:
             L += ["", f"> ⚠ {src.caveat}"]
-        L += ["", "| Dataset | Pulled from | Writes | Mode | Size |",
-              "|---|---|---|---|---:|"]
+        L += ["", "| Dataset | Pulled from | Writes | Mode |",
+              "|---|---|---|---|"]
         for d in ds:
             ep = d.endpoint
             ep = f"[{ep.split('//')[-1][:44]}…]({ep})" if ep.startswith("http") else f"`{ep}`"
             tables = ", ".join(f"`{t}`" for t in d.tables) or "—"
-            L.append(f"| {d.label} | {ep} | {tables} | {d.mode or '—'} | {d.size_h} |")
+            L.append(f"| {d.label} | {ep} | {tables} | {d.mode or '—'} |")
         L.append("")
         notes = [d for d in ds if d.note]
         if notes:
@@ -128,8 +122,7 @@ def render() -> str:
         if not ds:
             continue
         L.append(f"{len(L) and ''}**{phase}** — {desc} "
-                 f"({len(ds)} step{'s' if len(ds) != 1 else ''}, "
-                 f"{sources.size_h(sources.total_mb((phase,)))})")
+                 f"({len(ds)} step{'s' if len(ds) != 1 else ''})")
         L.append("")
     L += [
         "Two constraints in particular:",
@@ -170,7 +163,7 @@ def main() -> int:
     OUT.parent.mkdir(parents=True, exist_ok=True)
     OUT.write_text(doc)
     print(f"Wrote {OUT} — {len(sources.DATASETS)} datasets, "
-          f"{len(sources.SOURCES)} sources, ~{sources.size_h(sources.total_mb())}")
+          f"{len(sources.SOURCES)} sources")
     return 0
 
 
