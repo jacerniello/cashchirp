@@ -147,6 +147,7 @@ def _mark_starting(state_path: Path, pid: int, log: Path) -> None:
             "database": settings.postgres_db,
             "host": f"{settings.postgres_host}:{settings.postgres_port}",
             "phase": "starting",
+            "marker": str(state_path),
             "pid": pid,
             "started_at": datetime.now().isoformat(timespec="seconds"),
             "updated_at": datetime.now().isoformat(timespec="seconds"),
@@ -168,7 +169,13 @@ def _job_state(key: str) -> dict[str, Any]:
         except (json.JSONDecodeError, OSError):
             st = {}
     pid = st.get("pid")
-    running = (_alive(pid, str(state_p))
+    # Which string proves this pid is the job's own? A standalone job carries
+    # `--state-file <path>` in its argv, so it records that path. A whole-build run does
+    # NOT — it writes these files while running one shared command — so it records the
+    # module name instead. With no marker at all (a file from an older run) fall through
+    # to None, which still requires the pid to be one of THIS project's bootstrap
+    # processes: that is what stops a recycled pid reporting a job that ended days ago.
+    running = (_alive(pid, st.get("marker"))
                and st.get("phase") not in ("done", "failed", "interrupted"))
     step = (st.get("steps") or [{}])[0]
     return {
