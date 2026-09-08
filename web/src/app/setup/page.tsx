@@ -5,6 +5,7 @@ import { useSetup, type DatasetStatus, type BuildStep } from '@/hooks/useSetup';
 import { Card } from '@/components/Card';
 import Link from 'next/link';
 import { SetupAreaNav } from './SetupAreaNav';
+import { ResetDatabase } from './ResetDatabase';
 
 // Setup — what this database contains, what's missing, and where each piece comes from.
 //
@@ -534,6 +535,8 @@ export default function SetupPage() {
             </Card>
           </>
         )}
+        <ResetDatabase data={data} />
+
       </div>
     </div>
   );
