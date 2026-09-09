@@ -196,14 +196,29 @@ def enrich_all(progress=print) -> dict:
 _PRICE_EXPR = "value / NULLIF(units, 0) * 1000"
 
 
-def denormalise_sf3(only_null: bool = True) -> tuple[int, int]:
+def denormalise_sf3(only_null: bool = True, progress=None) -> tuple[int, int]:
     """Put `investorname` and `price` back on sf3. Returns (total_rows, rows_named).
 
-    Reads the investorid -> investorname map from sf3b, which the registry loads first.
-    Raises if that map is missing or empty: stamping 46M NULLs and reporting success
-    would leave every institution page silently blank, which is far worse than a load
-    that stops and says why.
+    Two paths, because the two cases are not the same size of problem.
+
+    **First build** (no `investorname` column yet): every one of ~81M rows needs the value,
+    and `UPDATE` is the wrong tool for that. Postgres rewrites each row it touches, so the
+    UPDATE writes 81M new versions and leaves 81M dead ones, and the `ALTER ADD price …
+    STORED` that follows then rewrites the whole table a second time. Measured: 75 minutes
+    and still going, bottlenecked on WAL fsync, with the second rewrite not yet started.
+
+    So the first build writes ONE new table instead: create it empty with both columns
+    already declared (instant — a generated column on an empty table costs nothing), fill
+    it in a single INSERT…SELECT, then swap. One pass instead of two, and because the new
+    table is written fresh it also drops whatever bloat the old one carried.
+
+    **Incremental** (column exists): only the newly-inserted rows are NULL, so the UPDATE
+    is small and is exactly right.
+
+    Raises if sf3b — the investorid -> investorname map — is missing or empty. Stamping
+    81M NULLs and reporting success would leave every institution page blank.
     """
+    say = progress or (lambda _m: None)
     raw = engine.raw_connection()
     try:
         cur = raw.cursor()
@@ -214,31 +229,69 @@ def denormalise_sf3(only_null: bool = True) -> tuple[int, int]:
                 "Load it first: --dataset sharadar:SF3B"
             )
         cur.execute("SELECT count(DISTINCT investorid) FROM sf3b;")
-        n_map = cur.fetchone()[0]
-        if not n_map:
+        if not cur.fetchone()[0]:
             raise RuntimeError("sf3b holds no investors — cannot name sf3 rows.")
 
         cur.execute("SET maintenance_work_mem = '1GB';")
-        cur.execute("ALTER TABLE sf3 ADD COLUMN IF NOT EXISTS investorname text;")
-        where_null = " AND s.investorname IS NULL" if only_null else ""
         cur.execute(
-            f"UPDATE sf3 s SET investorname = b.investorname "
-            f"FROM (SELECT DISTINCT investorid, investorname FROM sf3b) b "
-            f"WHERE s.investorid = b.investorid{where_null};"
-        )
-        # Generated, so it cannot drift from value/units and needs no backfill pass.
-        cur.execute(
-            f"ALTER TABLE sf3 ADD COLUMN IF NOT EXISTS price double precision "
-            f"GENERATED ALWAYS AS ({_PRICE_EXPR}) STORED;"
-        )
-        cur.execute(
-            "CREATE INDEX IF NOT EXISTS ix_sf3_investorname_date "
-            "ON sf3 (investorname, date);"
-        )
+            "SELECT count(*) FROM information_schema.columns "
+            "WHERE table_name = 'sf3' AND column_name = 'investorname';")
+        has_col = bool(cur.fetchone()[0])
+
+        if has_col:
+            say("stamping newly-loaded rows…")
+            where_null = " AND s.investorname IS NULL" if only_null else ""
+            cur.execute(
+                f"UPDATE sf3 s SET investorname = b.investorname "
+                f"FROM (SELECT DISTINCT investorid, investorname FROM sf3b) b "
+                f"WHERE s.investorid = b.investorid{where_null};")
+        else:
+            # Columns Sharadar ships, in order — copied explicitly so the INSERT column
+            # list never includes the generated one (Postgres rejects that).
+            cur.execute(
+                "SELECT column_name FROM information_schema.columns "
+                "WHERE table_name = 'sf3' ORDER BY ordinal_position;")
+            cols = [r[0] for r in cur.fetchall()]
+            collist = ", ".join(f'"{c}"' for c in cols)
+
+            say("creating the new table (empty, both columns declared)…")
+            cur.execute("DROP TABLE IF EXISTS sf3__denorm;")
+            cur.execute("CREATE TABLE sf3__denorm (LIKE sf3 INCLUDING DEFAULTS INCLUDING STORAGE);")
+            cur.execute("ALTER TABLE sf3__denorm ADD COLUMN investorname text;")
+            cur.execute(
+                "ALTER TABLE sf3__denorm ADD COLUMN price double precision "
+                "GENERATED ALWAYS AS (value / NULLIF(units, 0) * 1000) STORED;")
+
+            say("filling it in one pass (81M rows; this is the long step)…")
+            cur.execute(
+                f"INSERT INTO sf3__denorm ({collist}, investorname) "
+                f"SELECT {', '.join('s.\"' + c + '\"' for c in cols)}, b.investorname "
+                f"FROM sf3 s "
+                f"LEFT JOIN (SELECT DISTINCT investorid, investorname FROM sf3b) b "
+                f"  ON b.investorid = s.investorid;")
+
+            say("indexing…")
+            cur.execute("CREATE INDEX ix_sf3__denorm_investorname_date "
+                        "ON sf3__denorm (investorname, date);")
+            cur.execute("CREATE INDEX ix_sf3__denorm_permaticker ON sf3__denorm (permaticker);")
+            cur.execute("CREATE INDEX ix_sf3__denorm_date ON sf3__denorm (date);")
+
+            say("swapping in…")
+            cur.execute("DROP TABLE sf3;")
+            cur.execute("ALTER TABLE sf3__denorm RENAME TO sf3;")
+            for old, newname in (
+                ("ix_sf3__denorm_investorname_date", "ix_sf3_investorname_date"),
+                ("ix_sf3__denorm_permaticker", "ix_sf3_permaticker"),
+                ("ix_sf3__denorm_date", "ix_sf3_date"),
+            ):
+                cur.execute(f"ALTER INDEX {old} RENAME TO {newname};")
+
         cur.execute("SELECT count(*), count(investorname) FROM sf3;")
         total, named = cur.fetchone()
         raw.commit()
+        say(f"done — {named:,}/{total:,} rows named")
         return total, named
     finally:
         raw.close()
+
 
