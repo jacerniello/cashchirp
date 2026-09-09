@@ -254,37 +254,69 @@ def denormalise_sf3(only_null: bool = True, progress=None) -> tuple[int, int]:
             cols = [r[0] for r in cur.fetchall()]
             collist = ", ".join(f'"{c}"' for c in cols)
 
-            say("creating the new table (empty, both columns declared)…")
-            cur.execute("DROP TABLE IF EXISTS sf3__denorm;")
-            cur.execute("CREATE TABLE sf3__denorm (LIKE sf3 INCLUDING DEFAULTS INCLUDING STORAGE);")
-            cur.execute("ALTER TABLE sf3__denorm ADD COLUMN investorname text;")
-            cur.execute(
-                "ALTER TABLE sf3__denorm ADD COLUMN price double precision "
-                "GENERATED ALWAYS AS (value / NULLIF(units, 0) * 1000) STORED;")
+            # A previous run may have committed the filled table and failed at the swap.
+            # Refilling 81M rows to redo a five-second rename would be wasteful, so if a
+            # complete one is already there, go straight to the swap.
+            cur.execute("SELECT to_regclass('sf3__denorm');")
+            resume = False
+            if cur.fetchone()[0] is not None:
+                cur.execute("SELECT count(*) FROM sf3__denorm;")
+                have = cur.fetchone()[0]
+                cur.execute("SELECT count(*) FROM sf3;")
+                want = cur.fetchone()[0]
+                if have == want:
+                    say(f"found a complete sf3__denorm ({have:,} rows) — skipping the fill")
+                    resume = True
+                else:
+                    say(f"discarding a partial sf3__denorm ({have:,} of {want:,})")
+                    cur.execute("DROP TABLE sf3__denorm;")
 
-            say("filling it in one pass (81M rows; this is the long step)…")
-            cur.execute(
-                f"INSERT INTO sf3__denorm ({collist}, investorname) "
-                f"SELECT {', '.join('s.\"' + c + '\"' for c in cols)}, b.investorname "
-                f"FROM sf3 s "
-                f"LEFT JOIN (SELECT DISTINCT investorid, investorname FROM sf3b) b "
-                f"  ON b.investorid = s.investorid;")
+            if not resume:
+                say("creating the new table (empty, both columns declared)…")
+                cur.execute("DROP TABLE IF EXISTS sf3__denorm;")
+                # NOT `INCLUDING DEFAULTS`: that copies id's nextval('sf3_id_seq')
+                # default, so the new table would depend on a sequence OWNED BY the table
+                # we are about to drop, and the drop fails. Reattached after the swap.
+                cur.execute("CREATE TABLE sf3__denorm (LIKE sf3 INCLUDING STORAGE);")
+                cur.execute("ALTER TABLE sf3__denorm ADD COLUMN investorname text;")
+                cur.execute(
+                    "ALTER TABLE sf3__denorm ADD COLUMN price double precision "
+                    "GENERATED ALWAYS AS (value / NULLIF(units, 0) * 1000) STORED;")
 
-            say("indexing…")
-            cur.execute("CREATE INDEX ix_sf3__denorm_investorname_date "
-                        "ON sf3__denorm (investorname, date);")
-            cur.execute("CREATE INDEX ix_sf3__denorm_permaticker ON sf3__denorm (permaticker);")
-            cur.execute("CREATE INDEX ix_sf3__denorm_date ON sf3__denorm (date);")
+                say("filling it in one pass (81M rows; this is the long step)…")
+                cur.execute(
+                    f"INSERT INTO sf3__denorm ({collist}, investorname) "
+                    f"SELECT {', '.join('s.\"' + c + '\"' for c in cols)}, b.investorname "
+                    f"FROM sf3 s "
+                    f"LEFT JOIN (SELECT DISTINCT investorid, investorname FROM sf3b) b "
+                    f"  ON b.investorid = s.investorid;")
 
-            say("swapping in…")
+                say("indexing…")
+                cur.execute("CREATE INDEX ix_sf3__denorm_investorname_date "
+                            "ON sf3__denorm (investorname, date);")
+                cur.execute("CREATE INDEX ix_sf3__denorm_permaticker ON sf3__denorm (permaticker);")
+                cur.execute("CREATE INDEX ix_sf3__denorm_date ON sf3__denorm (date);")
+
+                # COMMIT THE EXPENSIVE PART FIRST. The fill and the indexes above are ~26
+                # minutes of work; the swap below is seconds. Holding both in one transaction
+                # means any error in the cheap half discards the expensive half — which is
+                # exactly what happened when the DROP hit the sequence dependency.
+                raw.commit()
+            say("filled table committed; swapping in…")
+
+            # The sequence is owned by sf3, so DROP TABLE would take it with them and
+            # leave the new table's id default dangling. Detach, drop, reattach.
+            cur.execute("ALTER SEQUENCE sf3_id_seq OWNED BY NONE;")
             cur.execute("DROP TABLE sf3;")
             cur.execute("ALTER TABLE sf3__denorm RENAME TO sf3;")
-            for old, newname in (
+            cur.execute("ALTER TABLE sf3 ALTER COLUMN id SET DEFAULT nextval('sf3_id_seq');")
+            cur.execute("ALTER SEQUENCE sf3_id_seq OWNED BY sf3.id;")
+            for oldix, newname in (
                 ("ix_sf3__denorm_investorname_date", "ix_sf3_investorname_date"),
                 ("ix_sf3__denorm_permaticker", "ix_sf3_permaticker"),
                 ("ix_sf3__denorm_date", "ix_sf3_date"),
             ):
-                cur.execute(f"ALTER INDEX {old} RENAME TO {newname};")
+                cur.execute(f"ALTER INDEX {oldix} RENAME TO {newname};")
 
         cur.execute("SELECT count(*), count(investorname) FROM sf3;")
         total, named = cur.fetchone()
