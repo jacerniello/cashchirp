@@ -42,7 +42,7 @@ Everything else on this page is a variation on that.
 python -m core.setup.bootstrap --check
 ```
 
-Checks the five things that actually go wrong, and prints the fix for any that fail:
+Checks the things that commonly fail, and prints the fix for any that do:
 
 ```
 Preflight
@@ -57,7 +57,8 @@ Blocked:
       re-run with --create-db (or: createdb investing)
 ```
 
-A missing database is the one failure it can fix itself, with `--create-db`.
+A missing database is the one failure it can fix itself, with `--create-db`. The rest
+need a change on your side.
 
 ## 2 · See the work before committing to it
 
@@ -111,9 +112,9 @@ Building investing  127.0.0.1:5432   elapsed 2:14:07
  ████████░░░░░░░░░░░░░░░░░░░░   28.4%   4/25 steps
 ```
 
-**A failed step does not stop the run.** It's recorded and the rest continues, so one
-flaky download doesn't cost you the other twenty-four steps. The exit code is non-zero if
-anything failed, and the summary lists exactly what.
+**A failed step does not stop the run.** It is recorded and the rest continues, so one
+flaky download does not cost the other steps. The exit code is non-zero if anything
+failed, and the summary lists what.
 
 ## 4 · Watching a long run
 
@@ -124,8 +125,8 @@ second during one. From any other terminal:
 python -m core.setup.bootstrap --watch
 ```
 
-That file is why you can close the laptop lid on a six-hour backfill and still find out
-what happened. Over SSH, run the build under `tmux`/`nohup` and `--watch` from wherever.
+That file survives the terminal, so a long backfill can be checked on later. Over SSH,
+run the build under `tmux`/`nohup` and `--watch` from wherever.
 Piping to a file or a CI log switches automatically to one line per event (force with
 `--plain`).
 
