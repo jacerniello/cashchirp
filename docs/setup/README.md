@@ -9,7 +9,7 @@ downloading**.
 | **This page** | The checklist. Start here. |
 | **`/setup` in the app** | The same status, live — what's loaded, what's missing, and a running build's progress. |
 | [database.md](database.md) | The database on its own — build, resume, watch, verify, repair. |
-| [sources.md](sources.md) | Where every byte comes from. *Generated from the registry.* |
+| [sources.md](sources.md) | Where every byte comes from. Kept in step with the registry by hand. |
 | [../CONFIGURATION.md](../CONFIGURATION.md) | Every setting, and the screen-spec schema. |
 | [../DEPLOYMENT.md](../DEPLOYMENT.md) | Running it somewhere other than your laptop. |
 
@@ -87,7 +87,6 @@ downstream conclusion inherits the corruption silently.
 
 ```bash
 python -m core.setup.bootstrap --status   # tables, row counts, sizes on disk
-the Runs tab at /setup/runs          # what loaded, and when
 ```
 
 - [ ] `--status` shows the tables you expect, at plausible sizes
@@ -144,7 +143,7 @@ python -m core.setup.bootstrap --create-db --only-phase schema fred
 ```
 
 You get the `/macro` endpoints. The screener, company, insider and institutional pages
-return empty — and `run_screen` will tell you the gated columns are unpopulated rather
+return empty — and the screener reports that its gated columns are unpopulated rather
 than pretending to have screened anything.
 
 ## Smaller builds
@@ -168,8 +167,8 @@ tables — the derived rebuilds add ~9 GB on a full build.
 | `relation "daily" does not exist` | That table isn't loaded — `bootstrap --status` |
 | SEC calls return `403` | `SEC_USER_AGENT` unset, or not a real contact |
 | API `403`/`429` mid-build | Key wrong, or your Sharadar plan doesn't cover that table |
-| A load hangs for many minutes | Lock contention — `the Database tab at /setup/database` |
-| `No screen 'x' in config/screens` | `ACTIVE_SCREEN` names a missing file — `run_screen --list` |
+| A load hangs for many minutes | Lock contention — see the Database tab at `/setup/database` |
+| `No screen 'x' in config/screens` | `ACTIVE_SCREEN` names a file that isn't in `config/screens/` |
 | `operator does not exist: text = integer` | Joining `tickers.permaticker` (TEXT) to an equity table's (bigint). Cast: `tickers.permaticker::bigint` |
 | `syntax error at or near "table"` | `table` is reserved *and* a real column in `tickers`. Quote it: `"table"` |
 

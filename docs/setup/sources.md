@@ -1,15 +1,16 @@
-<!-- Was generated from core/backend/sources.py; the generator has been removed, so this
-     file is now maintained by hand and can drift from the registry.
-     Change core/backend/sources.py and re-run. -->
+<!-- Was generated from core/backend/sources.py. The generator has been removed, so this
+     file is maintained by hand and can drift from the registry. When you change a
+     Dataset entry, change this file too, and check it with `bootstrap --sources`. -->
 
 # Data sources
 
 Every dataset this project ingests, where it comes from, what it costs, and what
 it is allowed to be used for.
 
-This page is **generated from [`core/backend/sources.py`](../../core/backend/sources.py)** — the same registry that drives what
-`bootstrap` actually downloads and what `update_all` refreshes. If a source is
-listed here, the build pulls it; if the build pulls it, it is listed here.
+This page mirrors [`core/backend/sources.py`](../../core/backend/sources.py) — the registry
+that drives what `bootstrap` downloads and what the Setup UI schedules. The registry is
+the authority; this page is a hand-kept copy of it, so if the two disagree, believe the
+registry:
 
 ```bash
 python -m core.setup.bootstrap --sources   # the same information, in the terminal

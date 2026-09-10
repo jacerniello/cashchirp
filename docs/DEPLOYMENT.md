@@ -125,13 +125,14 @@ must run on a box where the app itself is not kept up.
 
 Whichever you pick, use one: two schedulers pointed at the same database will overlap.
 
-Schedule it after Sharadar's EOD refresh (typically mid-evening US time). Because
-`update_all` exits non-zero on failure, wrapping it in anything that alerts on non-zero
-gives you monitoring for free — **and you want it**, because the failure mode of a broken
-nightly job is not an error, it's a dashboard quietly showing last week's numbers.
+Schedule it after Sharadar's EOD refresh (typically mid-evening US time). `bootstrap`
+exits non-zero on failure, so wrapping it in anything that alerts on non-zero gives you
+monitoring. Worth doing: a broken nightly job does not raise an error, it serves last
+week's numbers.
 
-**If a run hangs, `the Database tab at /setup/database` first.** A stall is almost always Postgres
-lock contention — usually the API rebuilding a derived table while the ingest runs.
+**If a run hangs, check the Database tab at `/setup/database` first.** A stall is almost
+always Postgres lock contention — usually the API rebuilding a derived table while the
+ingest runs.
 
 ---
 

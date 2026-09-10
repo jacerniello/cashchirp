@@ -1,9 +1,7 @@
 # Deep value
 #
-# Saved from the screener UI. This is the SAME format the idea board and the
-# point-in-time backtest read, so you can now run:
-#   python -m core.scripts.screen.run_screen deep-value
-#   python -m core.scripts.screen.screen_portfolio_backtest deep-value
+# Saved from the screener UI. This is the SAME format the idea board reads, so it
+# runs unchanged at /screener/ideas/deep-value.
 # Edit it by hand freely - see docs/CONFIGURATION.md for every option.
 id: deep-value
 title: Deep value

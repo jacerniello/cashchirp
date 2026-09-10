@@ -18,6 +18,9 @@ Two documents live outside this directory on purpose:
   and the database gotchas worth reading before writing a query.
 - [`../core/README.md`](../core/README.md) — orientation for the `core/` package itself.
   It documents the directory it sits in, so it stays with the code.
+- [`reference/sources.md`](reference/sources.md) — the long-form notes on each provider:
+  access patterns, coverage, caveats. `setup/sources.md` is the short provenance table;
+  this is the reading behind it.
 
 ## Setup vs reference
 
@@ -27,13 +30,10 @@ why the names now say which is which.
 
 ## Generated documents
 
-`setup/sources.md` is generated from `core/backend/sources.py` — the same registry that
-drives what `bootstrap` actually ingests, so the published provenance cannot claim a
+`setup/sources.md` was generated from `core/backend/sources.py` — the registry that
+drives what `bootstrap` ingests — so that the published provenance could not claim a
 source the build does not use.
 
-```bash
-# docs/setup/sources.md was generated from core/backend/sources.py; the generator has
-# been removed, so keep it in step with the registry by hand.
-```
-
-Do not hand-edit it; change the registry and re-run.
+The generator has since been removed, so the file is now maintained by hand and *can*
+drift. Change the registry first, then update the page to match, and check it against
+`python -m core.setup.bootstrap --sources`, which reads the registry directly.

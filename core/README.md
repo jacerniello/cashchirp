@@ -82,20 +82,16 @@ python -m core.setup.bootstrap --only SEP SF1       # subset of Sharadar tables
 python -m core.setup.bootstrap --only-phase derived # just rebuild the precomputed objects
 ```
 
-**If a refresh hangs or stalls, run `the Database tab at /setup/database` first.** It's the go-to
-first check when data won't refresh. A refresh stalls almost always because something else is
-holding Postgres locks — most often the **app rebuilding a derived table** (`screener_snapshot`,
-`holder_timeseries`) at the same time: a `DROP TABLE … ; rebuild` needs an exclusive lock, an
-`idle in transaction` connection holds a read lock in front of it, and every reader piles up
-behind. `unjam` stops this project's running jobs (`update_all`, `sharadar_*`, the app) and
-terminates the jammed DB backends (idle-in-transaction / blocked / blocking) so you can start
-clean. It's narrowly scoped — never touches other projects or its own connection.
+**If a refresh hangs or stalls, open the Database tab at `/setup/database` first.** It's the
+go-to first check when data won't refresh. A refresh stalls almost always because something
+else is holding Postgres locks — most often the **app rebuilding a derived table**
+(`screener_snapshot`, `holder_timeseries`) at the same time: a `DROP TABLE … ; rebuild` needs
+an exclusive lock, an `idle in transaction` connection holds a read lock in front of it, and
+every reader piles up behind.
 
-```bash
-the Database tab at /setup/database
-the Database tab at /setup/database
-the Database tab at /setup/database
-```
+That tab lists the current backends and offers **Unjam**, which stops this project's running
+jobs and terminates the jammed backends (idle-in-transaction / blocked / blocking) so you can
+start clean. It's narrowly scoped — never touches other projects or its own connection.
 
 The sections below cover the individual loaders the orchestrator drives.
 
@@ -141,23 +137,20 @@ a flat 1:1 mirror; the app's Company page reads `sep` (by permaticker) directly.
 # EVENTS code legend (event_codes) + the events_decoded view (load EVENTS first):
 python -m core.setup.bootstrap --dataset sharadar:EVENTS
 
-# permaticker is stamped automatically on each load; to (re)backfill all tables at once:
-# permaticker is stamped by the loader after every ticker-bearing table loads
+# permaticker needs no command: the loader stamps it after every ticker-bearing table.
 
 # Macro data (FRED-MD/QD panels):
 python -m core.setup.bootstrap --only-phase fred                 # MD + QD vintages + spot
-
-# Verify loaded tables match the downloaded files (row + per-column non-null):
 
 # Precompute the Screener snapshot (also auto-runs after a DAILY load):
 python -m core.setup.bootstrap --dataset derived:screener_snapshot
 ```
 
-**Inspect what's loaded:** `the Runs tab at /setup/runs` (latest run per dataset).
+**Inspect what's loaded:** the Runs tab at `/setup/runs` (latest run per dataset).
 Raw zips are downloaded on demand to `core/data/downloads/sharadar/` (gitignored) and
 deleted once the load commits — the routine refresh syncs deltas over the query API and
-never opens one. A load that RAISES keeps its zip so a retry can pass `download=False`;
-The download-only CLI has been removed.
+never opens one. A load that raises keeps its zip so a retry can reuse it; there is no
+download-only command.
 
 **Scheduling:** the API runs its own scheduler, so a cadence is set in the UI at
 `/setup/schedules` and stored in Postgres rather than in a crontab. To drive it from
@@ -168,12 +161,9 @@ outside the app instead, see [../docs/DEPLOYMENT.md](../docs/DEPLOYMENT.md#night
 The screener's saved filters are YAML, not code — `config/screens/*.yaml`, loaded by
 `backend/screens.py`. `ACTIVE_SCREEN` in `core/.env` picks the default.
 
-```bash
-# Screens run from the Screener UI now: /screener, and /screener/ideas for saved ones.
-```
-
-Both the live `/screener/ideas/` endpoint and the backtest harness load the same spec, so a
-backtest provably tests the filter you ship. Schema:
+Screens run from the UI: `/screener` to build one, `/screener/ideas` for every saved
+screen. There is no CLI runner and no backtest harness — a screen produces a list of
+candidates, not evidence that the filter has an edge. Schema:
 [../docs/CONFIGURATION.md](../docs/CONFIGURATION.md).
 
 ## Reuse cheatsheet

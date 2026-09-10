@@ -2,8 +2,8 @@
 #
 # This is a WORKED EXAMPLE, not a recommendation. Copy it, change the numbers, and point
 # ACTIVE_SCREEN (core/.env) at your own file. Every gate below is documented in
-# docs/CONFIGURATION.md; the columns you may gate on are the snapshot columns listed by
-#   python -m core.scripts.screen.run_screen --columns
+# docs/CONFIGURATION.md; the columns you may gate on are the columns of
+# screener_snapshot, listed in docs/reference/schema.md.
 id: quality-value
 title: Small/mid quality compounders on sale
 description: >
