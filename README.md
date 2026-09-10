@@ -5,9 +5,6 @@ Postgres copy of the data, kept current, with a screener and a web frontend over
 longer-term aim is to model how stocks behave and explain the outliers; what exists today
 is the data layer and the screener.
 
-You supply the Sharadar subscription and the machine. Nothing here is a service, and no
-data ships with the repo.
-
 ## What Sharadar is
 
 Sharadar is a vendor of US equity market data, sold through
@@ -31,7 +28,7 @@ the date they were filed, so you can ask what was actually knowable on a given d
 it is **survivorship-complete**: delisted companies stay in the data, so a backward-looking
 screen isn't quietly restricted to the firms that made it.
 
-It is a **paid subscription**, and it is the only paid thing here. The macro layer (FRED),
+It is a **paid subscription**. The macro layer (FRED),
 short interest (FINRA) and the fund reference data (SEC EDGAR) are all free. See
 [docs/reference/sources.md](docs/reference/sources.md) for what each provider covers.
 
@@ -42,11 +39,10 @@ fine for delivery and useless for research: the questions worth asking are cross
 and historical, and over an API each one is thousands of paginated calls and minutes of
 waiting.
 
-So the build pulls the tables down once and mirrors them into Postgres — one flat table
+The build (setup phase) pulls the tables down once and mirrors them into Postgres — one flat table
 per Sharadar product, same rows, same values, the vendor's own primary key — after which
 every question is a SQL query against local disk. Refreshes are incremental: each table
-syncs only what changed since its watermark. Nothing in the app talks to Nasdaq at read
-time.
+syncs only what changed.
 
 How the API works and how the loader uses it:
 [docs/reference/nasdaq-data-link.md](docs/reference/nasdaq-data-link.md). How the build
