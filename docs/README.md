@@ -8,6 +8,7 @@ Where things are, and which question each document answers.
 | [setup/database.md](setup/database.md) | Building the database: preflight, the build, watching a long run, resuming when a step fails. |
 | [setup/sources.md](setup/sources.md) | Where every dataset comes from, and its licence. **Generated** — see below. |
 | [reference/schema.md](reference/schema.md) | What is *in* the database: tables, keys, indexes, the fidelity conventions. |
+| [reference/nasdaq-data-link.md](reference/nasdaq-data-link.md) | How the Nasdaq Data Link API works — auth, bulk export vs the query API, the row cap, and how the loader uses each. |
 | [CONFIGURATION.md](CONFIGURATION.md) | Every setting, and the screen-spec schema. |
 | [DEPLOYMENT.md](DEPLOYMENT.md) | Sizing tiers, topology, the nightly job, backups. |
 

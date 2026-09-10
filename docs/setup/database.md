@@ -24,7 +24,7 @@ Everything else on this page is a variation on that.
 | Command | What it does |
 |---|---|
 | `--check` | Preflight only. Touches nothing. |
-| `--plan` | The step list: what runs, from which source, how big, what share of the work. |
+| `--plan` | The step list: what runs, in which mode, from which source. |
 | `--sources` | Provenance: provider, licence, credential, endpoint, size. |
 | `--create-db` | Create the database if missing, then build. |
 | `--only SEP SF1` | Only these Sharadar tables. |
@@ -66,13 +66,14 @@ need a change on your side.
 python -m core.setup.bootstrap --plan
 ```
 
-Steps are grouped by phase, with the size each lands on disk so you can plan the disk.
+Steps are grouped by phase, each with its sync mode and its source.
 
-**The size column is not the progress bar.** While a build runs, completion is whatever
-the loaders *report* — bytes copied against the bulk export's own size, or an explicit
-`8,400,000/41,000,000 rows` — never a prediction. A step that reports no denominator shows
-no percentage at all rather than a fabricated one, and a step skipped on resume counts as
-done without pretending gigabytes moved.
+**It does not predict sizes or durations, deliberately.** While a build runs, completion
+is whatever the loaders *report* — bytes copied against the bulk export's own size, or an
+explicit `8,400,000/41,000,000 rows` — never an estimate. A step that reports no
+denominator shows no percentage at all rather than a fabricated one, and a step skipped on
+resume counts as done without pretending gigabytes moved. For sizes, build it and run
+`--status`.
 
 ```bash
 python -m core.setup.bootstrap --sources
@@ -220,6 +221,9 @@ loader — not an edit in four places.
 `bootstrap` and the Setup UI both build their step lists from the registry, so a new entry
 runs everywhere without further edits. Only the published table needs a hand now.
 
-## Schema reference
+## Reference
 
-Tables, keys, and the faithful-mirror conventions: [`docs/reference/schema.md`](../reference/schema.md).
+- Tables, keys, and the faithful-mirror conventions:
+  [`reference/schema.md`](../reference/schema.md).
+- How the Nasdaq Data Link API works, and why the loader has a bulk path and a sync path:
+  [`reference/nasdaq-data-link.md`](../reference/nasdaq-data-link.md).

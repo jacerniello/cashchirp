@@ -30,7 +30,9 @@ Most Sharadar tables need no per-table code — the generic loader is schema-dri
 [../docs/CONFIGURATION.md](../docs/CONFIGURATION.md).
 
 **Database structure** (tables, keys, the faithful-mirror design): see
-[docs/reference/schema.md](../docs/reference/schema.md).
+[docs/reference/schema.md](../docs/reference/schema.md). **The upstream API** the Sharadar
+loaders talk to (bulk export, the query API, the row cap, `INDICATORS`): see
+[docs/reference/nasdaq-data-link.md](../docs/reference/nasdaq-data-link.md).
 
 ## Setup
 

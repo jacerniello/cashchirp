@@ -1,35 +1,31 @@
 # Deployment
 
-How to run this somewhere other than your laptop. The whole document turns on one number:
-**the full dataset is ~47 GB**, and that single fact decides your architecture.
+How to run this somewhere other than your laptop.
 
 ---
 
-## Sizing — decide this first
+## Decide what to build first
 
-The database dominates everything. Pick a tier before you pick a host.
+The database dominates the hosting decision, so settle its scope before picking a host.
+You do not have to load everything:
 
-Sizes below are summed from the data-source registry, whose per-dataset figures are
-measured on a fully built instance — a full build measures 47 GB against the registry's
-46.9 GB, so treat them as accurate rather than indicative.
+| Build | What works |
+|---|---|
+| `--only-phase schema fred` | `/macro` only. No equities, and nothing paid. |
+| `--only TICKERS SF1 DAILY` | Screener, idea board, company fundamentals. No price history or charts. |
+| `+ SEP` | The above plus prices: charts and historical analysis. |
+| everything | Adds insider, institutional/13F and ETF pages. |
 
-| Tier | Build | DB size | Host | What works |
-|---|---|---:|---|---|
-| **Macro only** | `--only-phase schema fred` | ~2.2 GB | any 2 GB VPS | `/macro`. No equities. |
-| **Screener** | `--only TICKERS SF1 DAILY` | ~9.7 GB | small VPS, 4 GB RAM | Screener, idea board, company fundamentals. **No price history or charts.** |
-| **Research** | `+ SEP` | ~19.2 GB | 8 GB RAM, SSD | Everything above **plus** prices: charts and any historical analysis. **The recommended tier.** |
-| **Full** | everything | ~46.9 GB | 16 GB RAM, home server or large VPS | Insider, institutional/13F, and ETF pages. Sharadar is 35 GB of it; the derived rebuilds add 8.9 GB. |
+The tables are incremental and independent, so you can start narrow and add `SEP` or the
+13F tables later without rebuilding.
 
-You can start at Screener and add `SEP` later — the loaders are incremental and
-independent, and `bootstrap --only <TABLE>` / `--only-phase <PHASE>` builds a subset.
-Per-dataset sizes and provenance: [setup/sources.md](setup/sources.md).
-
-> **The 47 GB is the real constraint, and it is easy to under-plan.** A cheap VPS with a
-> 25 GB disk cannot hold this dataset, and you will discover that four hours into a `SEP`
-> load. Size the disk for **2× your tier** — Postgres needs headroom for index builds,
-> vacuum, and the derived-table rebuilds, which write a full second copy before swapping it
-> in. Fastest sane answer for the Full tier is usually a machine you already own with a
-> large SSD, not rented cloud storage.
+> **Size the disk generously, and measure rather than trust a number.** A full build runs
+> to tens of GB, dominated by `SEP` and the 13F tables, and Postgres needs substantial
+> headroom on top: index builds, vacuum, and the derived-table rebuilds, which write a
+> full second copy before swapping it in. Run `bootstrap --status` on a build to see what
+> your tables actually occupy — that reads `pg_total_relation_size`, so it is the only
+> figure here that is measured rather than estimated. Running out of disk mid-`SEP` is the
+> common way to lose an afternoon.
 
 ---
 
@@ -38,10 +34,10 @@ Per-dataset sizes and provenance: [setup/sources.md](setup/sources.md).
 Three processes. Only the first is stateful.
 
 ```
-Postgres 16        the dataset                          port 5432, not public
-FastAPI            core.api.main:app                    port 8001, behind the proxy
-Next.js            web/                                 port 3000, behind the proxy
-Nightly job        a schedule in Setup -> Schedules           the API's own scheduler
+Postgres 16        the dataset                    port 5432, not public
+FastAPI            core.api.main:app              port 8001, behind the proxy
+Next.js            web/ (npm start)               port 3010, behind the proxy
+Nightly refresh    a schedule in Setup            the API's own scheduler
 ```
 
 The API is stateless and the frontend is stateless, so both scale trivially and neither
@@ -82,10 +78,112 @@ uvicorn core.api.main:app --host 0.0.0.0 --port 8001 --workers 4
 Behind nginx/Caddy on `/api/v1`. It is read-only over the database and holds an in-process
 snapshot cache, so workers are independent and restarting is free.
 
+Leave `SETUP_ENABLED` unset here. It mounts the endpoints that start and stop ingests, and
+[CONFIGURATION.md](CONFIGURATION.md#setup_enabled--the-build-control-surface) explains why
+the default is off.
+
 ### Frontend
 
-The Next.js app in `web/` reads the API. See the root [README](../README.md) for its build
-and run commands, and point it at the API's URL.
+The Next.js app in `web/` reads the API. Production is a build step and a long-running
+server, not `npm run dev`:
+
+```bash
+npm --prefix web ci --no-audit --no-fund   # NOT --omit=dev, see below
+npm --prefix web run build
+API_URL=http://127.0.0.1:8001 PORT=3010 npm --prefix web start
+```
+
+`API_URL` is read at runtime and points the app at the API. `PORT` picks the port the
+server listens on — 3010 in the units below, to keep it clear of a dev server on 3000.
+
+> **Do not `npm ci --omit=dev`.** `typescript`, `tailwindcss` and `@tailwindcss/postcss`
+> are devDependencies and the build needs all three. Omitting them breaks `next build` and
+> leaves `next.config.ts` unreadable at startup — a failure that looks like a code problem
+> and isn't.
+
+### Services
+
+Two units, both running as an unprivileged user that owns the checkout:
+
+```ini
+# /etc/systemd/system/cashchirp-api.service
+[Unit]
+Description=cashchirp API
+After=network.target postgresql.service
+
+[Service]
+User=cashchirp
+WorkingDirectory=/opt/cashchirp
+ExecStart=/opt/cashchirp/.venv/bin/uvicorn core.api.main:app --host 127.0.0.1 --port 8001
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
+```
+```ini
+# /etc/systemd/system/cashchirp-web.service
+[Unit]
+Description=cashchirp web
+After=network.target cashchirp-api.service
+
+[Service]
+User=cashchirp
+WorkingDirectory=/opt/cashchirp/web
+Environment=API_URL=http://127.0.0.1:8001
+Environment=PORT=3010
+ExecStart=/usr/bin/npm start
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Both bind to localhost; the reverse proxy is what faces the internet. Enable with
+`systemctl enable --now cashchirp-api cashchirp-web`.
+
+### Deploying updates
+
+`deploy.sh` is the update path once the above is running. From the checkout on the server:
+
+```bash
+sudo ./deploy.sh             # pull, rebuild what the diff touched, restart, verify
+sudo ./deploy.sh --force     # rebuild and restart everything, even with no new commits
+sudo ./deploy.sh --dry-run   # say what would happen, change nothing
+```
+
+It pulls, then decides what to rebuild from **what the diff actually touched** — pip only
+if `core/requirements*` changed, `npm ci` only if the lockfile moved, a frontend build only
+for changes under `web/`, and a restart only of the service whose tree changed. Builds all
+happen before any restart, so a build that fails leaves the previous version serving rather
+than a half-updated site.
+
+Then it verifies: it polls `/health` on the API and `/` on the web server for up to 30
+seconds each, and on failure prints the last 25 journal lines from both units and exits
+non-zero. Override the URLs with `API_HEALTH_URL` / `WEB_HEALTH_URL`, and the unit names
+with `API_SERVICE` / `WEB_SERVICE`, if your names differ from the ones above.
+
+Two refusals are deliberate. It **will not deploy over a dirty working tree** — a server
+checkout should never have local edits, and if it does, someone edited in production and
+should be told rather than overwritten. And if the pull changes `deploy.sh` itself, it
+re-executes the new version rather than continuing: bash reads a script incrementally from
+a byte offset, so carrying on would run a mix of the old and new file.
+
+### Serving generated data instead
+
+The public demo runs the same checkout against a small synthetic database — no licensed
+data on a public host. `demo/generate_demo_data.py` writes a few hundred MB of seeded,
+obviously-fake issuers, prices and fundamentals into an empty database, covering only the
+tables the UI reads:
+
+```bash
+python demo/generate_demo_data.py --dsn postgresql://user:pw@host/demo --tickers 300
+```
+
+The site-wide banner in `web/src/config/banner.ts` says the figures are generated, and it
+is **opt-out**: a deployment that sets nothing still shows it. Hide it on a machine serving
+the real mirror with `NEXT_PUBLIC_BANNER_DISABLED=true` in `web/.env.local`. That direction
+is deliberate — a demo silently presenting generated figures as real is the failure worth
+guarding against; a redundant banner on your own box is not.
 
 ### Nightly refresh
 
