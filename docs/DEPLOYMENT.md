@@ -19,13 +19,12 @@ You do not have to load everything:
 The tables are incremental and independent, so you can start narrow and add `SEP` or the
 13F tables later without rebuilding.
 
-> **Size the disk generously, and measure rather than trust a number.** A full build runs
-> to tens of GB, dominated by `SEP` and the 13F tables, and Postgres needs substantial
-> headroom on top: index builds, vacuum, and the derived-table rebuilds, which write a
-> full second copy before swapping it in. Run `bootstrap --status` on a build to see what
-> your tables actually occupy — that reads `pg_total_relation_size`, so it is the only
-> figure here that is measured rather than estimated. Running out of disk mid-`SEP` is the
-> common way to lose an afternoon.
+> **Size the disk from a measurement, not an estimate.** A full build runs to tens of GB,
+> dominated by `SEP` and the 13F tables, and Postgres needs headroom on top for index
+> builds, vacuum, and the derived-table rebuilds, which write a second copy before
+> swapping it in. `bootstrap --status` reports what the tables actually occupy via
+> `pg_total_relation_size`; it is the only measured figure available. Running out of disk
+> part-way through `SEP` means restarting that step.
 
 ---
 
@@ -40,14 +39,14 @@ Next.js            web/ (npm start)               port 3010, behind the proxy
 Nightly refresh    a schedule in Setup            the API's own scheduler
 ```
 
-The API is stateless and the frontend is stateless, so both scale trivially and neither
-holds anything you'd be sad to lose. **All the value is in Postgres and in git** — the
-the screens and the docs are tracked; the downloaded
-Sharadar files under `core/data/` are gitignored and regenerable.
+The API and the frontend are both stateless, so they scale independently and hold nothing
+that needs backing up. The state is in Postgres and in git: the screens and the docs are
+tracked, and the downloaded Sharadar files under `core/data/` are gitignored and can be
+re-fetched.
 
-A common and good split: put Postgres and the nightly job on a machine with the disk (a
-home server works well), and run the API and frontend wherever is convenient, pointed at it
-over a private network or tunnel. **Do not expose Postgres to the internet.**
+One workable split is to put Postgres and the refresh job on a machine with the disk (a
+home server does fine) and run the API and frontend wherever is convenient, pointed at it
+over a private network or tunnel. Do not expose Postgres to the internet.
 
 ---
 
@@ -151,22 +150,22 @@ sudo ./deploy.sh --force     # rebuild and restart everything, even with no new 
 sudo ./deploy.sh --dry-run   # say what would happen, change nothing
 ```
 
-It pulls, then decides what to rebuild from **what the diff actually touched** — pip only
-if `core/requirements*` changed, `npm ci` only if the lockfile moved, a frontend build only
-for changes under `web/`, and a restart only of the service whose tree changed. Builds all
-happen before any restart, so a build that fails leaves the previous version serving rather
-than a half-updated site.
+It pulls, then decides what to rebuild from what the diff touched: pip only if
+`core/requirements*` changed, `npm ci` only if the lockfile moved, a frontend build only
+for changes under `web/`, and a restart only of the service whose tree changed. Builds run
+before any restart, so a failed build leaves the previous version serving rather than a
+half-updated site.
 
 Then it verifies: it polls `/health` on the API and `/` on the web server for up to 30
 seconds each, and on failure prints the last 25 journal lines from both units and exits
 non-zero. Override the URLs with `API_HEALTH_URL` / `WEB_HEALTH_URL`, and the unit names
 with `API_SERVICE` / `WEB_SERVICE`, if your names differ from the ones above.
 
-Two refusals are deliberate. It **will not deploy over a dirty working tree** — a server
-checkout should never have local edits, and if it does, someone edited in production and
-should be told rather than overwritten. And if the pull changes `deploy.sh` itself, it
-re-executes the new version rather than continuing: bash reads a script incrementally from
-a byte offset, so carrying on would run a mix of the old and new file.
+Two refusals are intentional. It will not deploy over a dirty working tree: a server
+checkout should have no local edits, and if it does, someone changed something in
+production and should be told rather than overwritten. And if the pull changes `deploy.sh`
+itself, it re-executes the new version rather than continuing — bash reads a script
+incrementally from a byte offset, so carrying on would run a mix of the old and new file.
 
 ### Serving generated data instead
 
@@ -179,11 +178,11 @@ tables the UI reads:
 python demo/generate_demo_data.py --dsn postgresql://user:pw@host/demo --tickers 300
 ```
 
-The site-wide banner in `web/src/config/banner.ts` says the figures are generated, and it
-is **opt-out**: a deployment that sets nothing still shows it. Hide it on a machine serving
-the real mirror with `NEXT_PUBLIC_BANNER_DISABLED=true` in `web/.env.local`. That direction
-is deliberate — a demo silently presenting generated figures as real is the failure worth
-guarding against; a redundant banner on your own box is not.
+The site-wide banner in `web/src/config/banner.ts` says the figures are generated. It is
+opt-out: a deployment that sets nothing still shows it. Hide it on a machine serving the
+real mirror with `NEXT_PUBLIC_BANNER_DISABLED=true` in `web/.env.local`. The default runs
+that way round because a demo presenting generated figures as real is the more damaging
+error; a redundant banner on your own machine is not.
 
 ### Nightly refresh
 
@@ -242,12 +241,11 @@ Back up **Postgres** and **git**. Nothing else.
 pg_dump -Fc investing > investing-$(date +%F).dump
 ```
 
-A full dump of the Full tier is large and slow. The pragmatic position: the Sharadar data
-is **re-downloadable** — your subscription is the backup. What is genuinely irreplaceable is
-the small stuff, and it is all in git: `config/screens/`, `docs/`, and your `.env`
-values (stored wherever you keep secrets, *not* in git). If you're choosing where to spend
-backup effort, spend it there. Consider dumping only `derived.*` and the derived tables if
-rebuilding them from scratch is slower than restoring them.
+A full dump is large and slow. The Sharadar data is re-downloadable, so the subscription
+is effectively its backup. What cannot be re-fetched is small and mostly in git:
+`config/screens/`, `docs/`, and your `.env` values (kept wherever you store secrets, not in
+git). If rebuilding the derived tables takes longer than restoring them, dump those
+selectively.
 
 ---
 
@@ -255,24 +253,21 @@ rebuilding them from scratch is slower than restoring them.
 
 **A page must degrade, not hang, when its data is absent.**
 
-This is the design rule the deployment split has always been governed by, and it is worth
-keeping whatever your topology. If a page calls an API that is unreachable — because that
-tier isn't deployed, because the DB is mid-rebuild, because a load failed — the page must
-say so. What you must never ship is **a spinner that never resolves**: a screen that hangs
-is indistinguishable from a screen that's broken, and you will debug production for ten
-minutes before remembering the data was never there.
+This matters more once the deployment is split, because a page can now be missing its data
+for reasons that are not bugs: that tier was not deployed, the database is mid-rebuild, a
+load failed. In each case the page should say so. A spinner that never resolves is
+indistinguishable from a broken deploy, which makes it expensive to diagnose.
 
-So when adding a page, the question is **not** "does this touch the API?" but:
+The test when adding a page is: if every API call on it fails, is the page still worth
+landing on?
 
-> **If every API call on this page fails, is the page still worth landing on?**
+If yes, ship it with an explicit, non-retrying error branch — a line such as "Price history
+unavailable right now" — otherwise the hanging spinner returns by another route.
 
-*Yes* → ship it, but make the failure **explicit and non-retrying** (an error branch that
-renders a line like *"Price history unavailable right now"*), or you get the hanging
-spinner by another route.
-*No* → don't ship it in a tier that lacks its data. Gate the route and say which data is
-missing, and name the route the visitor asked for — hiding the link from the nav is a
-courtesy, not a mechanism, because a bookmark or a typed URL never goes through your navbar.
+If no, don't ship it in a tier that lacks its data. Gate the route, name the route the
+visitor asked for, and say which data is missing. Hiding the link from the nav is not
+sufficient: a bookmark or a typed URL never passes through the navbar.
 
-The general form, which applies well beyond this project:
+The general form:
 
-> **Never let a true state (an empty page) imply a false one (a broken deploy).**
+> Never let a true state (an empty page) imply a false one (a broken deploy).

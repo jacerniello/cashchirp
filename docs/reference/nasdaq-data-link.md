@@ -1,16 +1,16 @@
 # The Nasdaq Data Link API
 
-Sharadar is delivered through Nasdaq Data Link, so every byte of the company layer
-arrives over this one API. This page explains how that API works, what it will and will
-not let you do, and which parts of it this repo uses where.
+Sharadar is delivered through Nasdaq Data Link, so the whole company layer arrives over
+this one API. This page covers how it works, its limits, and which parts of it the loader
+uses where.
 
-If you only want to build the database, [setup/database.md](../setup/database.md) is the
-guide. Read this when you want to know why the loader is shaped the way it is, or when
-you want to pull something it doesn't.
+To build the database, follow [setup/database.md](../setup/database.md) instead. This page
+is background: why the loader is shaped the way it is, and what you need to know to pull
+something it doesn't.
 
 ---
 
-## The shape of it
+## Addressing
 
 Nasdaq Data Link serves *datatables*: named, flat, columnar tables addressed by a vendor
 code and a table code. Sharadar's vendor code is `SHARADAR`, so the equity price table is
@@ -37,11 +37,10 @@ import nasdaqdatalink as ndl
 ndl.ApiConfig.api_key = settings.nasdaq_data_link_api_key
 ```
 
-**Your key encodes your subscription, and that is the part that surprises people.** The
-key authenticates you for every table on the platform; what you are *entitled* to is
-decided per table. Request a Sharadar table your plan doesn't cover and you get a `403`,
-not an empty result — which is a good failure, because an empty result would look like a
-quiet day in the market.
+The key authenticates you for every table on the platform, but entitlement is decided per
+table. Request a Sharadar table your plan doesn't cover and you get a `403` rather than an
+empty result, which is the more useful failure: an empty result would be indistinguishable
+from a quiet day in the market.
 
 The Sharadar Core US Equities bundle covers the thirteen tables this project loads. A
 narrower Sharadar subscription will 403 on the ones it excludes, and the build records
@@ -49,7 +48,8 @@ those steps as failed and carries on with the rest.
 
 ## Two ways to get data out
 
-This is the central fact about the API, and the reason the loader has two code paths.
+The API offers two access paths with different limits, which is why the loader has two
+code paths.
 
 | | Bulk export | Tables query API |
 |---|---|---|
@@ -60,12 +60,12 @@ This is the central fact about the API, and the reason the loader has two code p
 | Latency | minutes; the server generates the file | seconds |
 | Right for | the first backfill, or a repair | the daily delta |
 
-Neither is a substitute for the other. Exporting `SEP` every night to pick up one day of
-prices means moving ~941 MB compressed to get a few hundred thousand rows; filtering
-`SEP` for its whole history means blowing the row cap on the first call.
+Neither covers both cases. Exporting `SEP` nightly to pick up one day of prices moves
+~941 MB compressed for a few hundred thousand rows; filtering `SEP` across its full
+history exceeds the row cap on the first call.
 
-So: **backfill with the export, refresh with the query API.** That split is the whole
-design of `core/backend/ingest/sharadar/sharadar_generic.py`.
+So the loader backfills with the export and refreshes with the query API. That split is
+the structure of `core/backend/ingest/sharadar/sharadar_generic.py`.
 
 ### Bulk export
 
@@ -77,14 +77,14 @@ The server builds the file, the SDK polls until it is ready (printing *"We are g
 the zip file now, please wait…"* on a long one), then downloads it. Inside the zip is a
 single CSV with a header row.
 
-Two things worth knowing when you handle the zip yourself:
+Two notes if you handle the zip yourself:
 
-- **The uncompressed size is in the zip's central directory**, so you can know exactly how
-  many bytes you are about to stream before writing one. The loader reports progress
-  against that. The compressed size is not a usable stand-in — `SF1` is 661 MB zipped and
-  2,415 MB on the wire, and a progress bar measured against the wrong one runs off the end.
-- **The export reflects the table at generation time.** There is no `asof` parameter; you
-  get current state, not a point-in-time snapshot.
+- The uncompressed size is recorded in the zip's central directory, so the byte count is
+  known before streaming starts. The loader reports progress against it. The compressed
+  size is not a usable substitute: `SF1` is 661 MB zipped and 2,415 MB on the wire, so a
+  progress bar measured against the wrong one runs off the end.
+- The export reflects the table at generation time. There is no `asof` parameter — you get
+  current state, not a point-in-time snapshot.
 
 ### Tables query API
 
@@ -97,25 +97,23 @@ Filters are `column={"op": value}` with `gte` / `lte` / `gt` / `lt`, or a bare
 `column=value` for equality. They map onto query parameters
 (`lastupdated.gte=2026-09-01`) and are applied server-side.
 
-**Pagination is cursor-based.** Each response carries a `next_cursor_id`; the SDK follows
-it when you pass `paginate=True` and stops otherwise, warning that you have seen only the
-first page. This is a real trap in ad-hoc scripts: without `paginate=True` a query over a
-million rows returns ten thousand and a `UserWarning`, and nothing about the resulting
-DataFrame says it is truncated.
+Pagination is cursor-based. Each response carries a `next_cursor_id`, which the SDK
+follows when passed `paginate=True` and otherwise ignores, warning that only the first
+page was read. Without `paginate=True` a query over a million rows returns ten thousand
+and a `UserWarning`; nothing about the resulting DataFrame indicates it is truncated.
 
-**There is a hard cap, and it is client-side.** The SDK stops after
-`ApiConfig.page_limit` cursor pages — 100 by default — and raises `LimitExceededError`.
-At the API's 10,000-row page that lands at roughly **one million rows per call**. You can
-raise `page_limit`, but the ceiling exists for a reason: past that volume the export is
-the right tool, and the error message says so.
+The row cap is client-side. The SDK stops after `ApiConfig.page_limit` cursor pages — 100
+by default — and raises `LimitExceededError`. At the API's 10,000-row page that is roughly
+one million rows per call. Raising `page_limit` is possible, but above that volume the
+export is the appropriate path, and the error message says so.
 
-**Retries are built in.** The SDK retries `429` and `5xx` five times with exponential
-backoff, capped at 8 seconds between attempts. You do not need to write that loop, and
-you should not add a second one on top.
+Retries are handled by the SDK: `429` and `5xx` are retried five times with exponential
+backoff, capped at 8 seconds between attempts. Adding a second retry loop on top is
+redundant.
 
 ## `SHARADAR/INDICATORS` — the table that describes the tables
 
-This is the one that makes a schema-driven loader possible, and it is easy to miss.
+This is what makes the schema-driven loader possible.
 
 `SHARADAR/INDICATORS` is a normal datatable whose *rows are column definitions* for every
 other Sharadar table. Each row carries:
@@ -126,9 +124,9 @@ other Sharadar table. Each row carries:
 | `indicator` | the column name |
 | `unittype` | its type — `currency`, `ratio`, `date`, `text`, `USD millions`, … |
 | `isprimarykey` | `Y` on the columns forming that table's primary key |
-| `title` / `description` | human documentation, if you want to surface it |
+| `title` / `description` | human-readable documentation for the column |
 
-So you can ask the vendor for a table's schema instead of hand-writing it:
+So a table's schema can be read from the vendor rather than hand-written:
 
 ```python
 ind = ndl.get_table("SHARADAR/INDICATORS", paginate=True)
@@ -137,79 +135,75 @@ types = {r.indicator: r.unittype for r in sf1.itertuples()}
 pk    = sf1[sf1["isprimarykey"] == "Y"]["indicator"].tolist()
 ```
 
-That is exactly what `fetch_schema()` does, and it is why adding a new Sharadar table to
-this project needs no per-table code: the loader reads the types, maps `unittype` to a
-Postgres type, creates the table, and upserts on the vendor's own declared primary key
-rather than a key someone guessed.
+That is what `fetch_schema()` does, and it is why adding a Sharadar table needs no
+per-table code: the loader reads the types, maps `unittype` to a Postgres type, creates
+the table, and upserts on the vendor's declared primary key rather than a guessed one.
 
-**Trust it, but guard it.** The metadata is occasionally wrong — `SF1.fiscalperiod` is
-typed as a date and holds `"2009-Q4"` — so the loader keeps a `TEXT_OVERRIDE` set for
-columns the vendor mistypes, and every cast is value-guarded: a value that doesn't match
-its declared type lands as `NULL` rather than failing the load. See the operational notes
-in [schema.md](schema.md) for why that safety net has its own failure mode.
+The metadata is occasionally wrong — `SF1.fiscalperiod` is typed as a date and holds
+`"2009-Q4"` — so the loader keeps a `TEXT_OVERRIDE` set for columns the vendor mistypes,
+and every cast is value-guarded: a value that doesn't match its declared type lands as
+`NULL` rather than failing the load. That safety net has its own failure mode; see the
+operational notes in [schema.md](schema.md).
 
 ## How this repo uses it
 
 The first load of any table goes through the export. Every load after that goes through
 the query API, keyed on a watermark stored in `sync_state`.
 
-Which watermark depends on what change-column the table has, and the three cases below
-are the reason the registry carries a `mode` per dataset:
+Which watermark depends on the table's change-column. These three cases are why the
+registry carries a `mode` per dataset:
 
 1. **Has `lastupdated`** (`SF1`, `DAILY`, `METRICS`, `TICKERS`). Filter
-   `lastupdated >= watermark`. This catches new rows *and edits to old ones*, because
-   Sharadar restamps `lastupdated` on revision. It is the mode you want wherever it works.
+   `lastupdated >= watermark`. This catches new rows and edits to existing ones, since
+   Sharadar restamps `lastupdated` on revision. Preferred wherever it is available.
 
 2. **Has `lastupdated`, but restamps heavily** (`SEP`, `SFP`). Price adjustments restamp
    `lastupdated` across years of history, so a multi-day window can exceed a million rows.
    The loader splits the date range and halves it again on `LimitExceededError` until each
-   call fits. `SFP` restamps so hard that a *single day* is over the cap and cannot be
-   split by date — that one is sub-chunked by ticker instead, over string-ordered key
-   ranges that tile the space with no gaps.
+   call fits. For `SFP` a single day exceeds the cap and cannot be split by date, so it is
+   sub-chunked by ticker over string-ordered key ranges that tile the space with no gaps.
 
-3. **No `lastupdated` at all.** The append-only tables (`ACTIONS`, `SP500`, `EVENTS` on
-   `date`, `SF2` on `filingdate`, `SF3A`/`SF3B` on `date`) key on a plain date column
-   instead — which catches new rows but *not* retroactive edits, an acceptable trade for
-   filings that do not change. `SF3` has no usable change column at all: its only date is
-   a quarter-end shared by ~2.4M rows, so the loader re-pulls whole recent quarters in
-   key-chunks and upserts them, which picks up amendments within those quarters.
+3. **No `lastupdated`.** The append-only tables (`ACTIONS`, `SP500`, `EVENTS` on `date`,
+   `SF2` on `filingdate`, `SF3A`/`SF3B` on `date`) key on a plain date column instead.
+   That catches new rows but not retroactive edits — an acceptable trade for filings that
+   do not change. `SF3` has no usable change column at all: its only date is a quarter-end
+   shared by ~2.4M rows, so the loader re-pulls recent quarters in key-chunks and upserts
+   them, picking up amendments within those quarters.
 
-Every one of those modes ends in the same upsert on the vendor's primary key, so a table
-can be re-synced any number of times without duplicating a row.
+All three modes end in the same upsert on the vendor's primary key, so a table can be
+re-synced repeatedly without duplicating a row.
 
-## Why a local database at all
+## Why a local database
 
-The API is a delivery mechanism, not a research tool, and the caps above are why.
+The caps above are the reason. The API is built for delivery, not for analysis.
 
-Research questions are cross-sectional and historical: *every* company's margin trend
-against *every* sector over *twenty* years. Asked over the query API that is thousands of
-paginated calls, minutes of latency, and a million-row ceiling you will hit constantly.
-Asked over a local Postgres mirror with the right indexes, it is one SQL statement that
-returns while you are still reading it.
+Research questions tend to be cross-sectional and historical — every company's margin
+trend against every sector over twenty years. Over the query API that is thousands of
+paginated calls, minutes of latency, and repeated collisions with the million-row cap.
+Over a local Postgres mirror with the right indexes it is a single SQL statement.
 
-So the mirror is not a cache in front of the API. It is the thing you actually work
-against, and the API is how you fill and refresh it. Everything downstream — the
-screener, the derived tables, the pages — reads Postgres and never touches Nasdaq.
+The mirror is therefore not a cache in front of the API; it is what the app reads, and the
+API is how it gets filled and refreshed. The screener, the derived tables and the pages
+all read Postgres and never contact Nasdaq.
 
-That is also why the mirror is deliberately *faithful*: one flat table per Sharadar
-product, same rows, same values, vendor's own primary key. A mirror that quietly reshapes
-the vendor's data is one you cannot reconcile against the source when a number looks
-wrong — and in financial data, reconciling against the source is the only way you ever
-find out that it is.
+It is also why the mirror stays faithful to the source: one flat table per Sharadar
+product, same rows, same values, the vendor's own primary key. A mirror that reshapes the
+vendor's data cannot be reconciled against it when a number looks wrong, and reconciling
+against the source is how such errors get found.
 
-How the build actually runs: [setup/database.md](../setup/database.md). What the tables
-hold once built: [schema.md](schema.md).
+How the build runs: [setup/database.md](../setup/database.md). What the tables hold once
+built: [schema.md](schema.md).
 
-## What bites people
+## Common failures
 
 | Symptom | Cause |
 |---|---|
 | `403` on one table, others fine | that table is outside your Sharadar subscription tier |
-| A query returns exactly 10,000 rows | you forgot `paginate=True`; check for the `UserWarning` |
+| A query returns exactly 10,000 rows | `paginate=True` was omitted; check for the `UserWarning` |
 | `LimitExceededError` | over ~1M rows in one call — narrow the filter or use the export |
-| A column is entirely `NULL` after a load | `unittype` in `INDICATORS` disagrees with the actual values, and the value-guarded cast nulled every one. Treat a suspiciously empty column as this until proven otherwise |
-| The export "hangs" | it is generated server-side on request; a large table genuinely takes minutes before the download starts |
-| Nightly sync pulls far more than a day of rows | the table restamps `lastupdated` on adjustment (`SEP`, `SFP`) — expected, and why windowing exists |
+| A column is entirely `NULL` after a load | `unittype` in `INDICATORS` disagrees with the actual values, so the value-guarded cast nulled every one. A suspiciously empty column is usually this |
+| The export appears to hang | it is generated server-side on request; a large table takes minutes before the download starts |
+| Nightly sync pulls far more than a day of rows | the table restamps `lastupdated` on adjustment (`SEP`, `SFP`) — expected, and the reason windowing exists |
 
 ## Reference
 
