@@ -1,8 +1,7 @@
 # Setup
 
-Everything needed to go from a fresh clone to a working system, as a checklist you can
-tick off. Roughly **30 minutes of your attention**, then **several hours of unattended
-downloading**.
+A checklist for going from a fresh clone to a working system. Around 30 minutes of
+setup, then several hours of unattended downloading.
 
 | | |
 |---|---|
@@ -13,8 +12,8 @@ downloading**.
 | [../CONFIGURATION.md](../CONFIGURATION.md) | Every setting, and the screen-spec schema. |
 | [../DEPLOYMENT.md](../DEPLOYMENT.md) | Running it somewhere other than your laptop. |
 
-> **Nobody ships you the database.** It is a local mirror of data *you* license, rebuilt
-> from source with your own keys. Step 4 is where that happens, and it is the long one.
+> There is no database to download. It is a local mirror of data you license, rebuilt
+> from source with your own keys. Step 4 does that, and it is the long step.
 
 ---
 
@@ -25,12 +24,12 @@ downloading**.
 - [ ] **Python 3.13+** — `python3 --version`
 - [ ] **Postgres 16** — Docker (`cd core && docker compose up -d`) or your own instance
 - [ ] **Node 20+** — only if you want the web frontend
-- [ ] **Disk: 2× your target size.** A full build lands at **~47 GB** of tables, but
-      Postgres needs headroom for index builds, vacuum, and the derived rebuilds, which
-      write a full second copy before swapping it in. Check with `df -h`.
-- [ ] **A Nasdaq Data Link account with a Sharadar Core US Equities subscription** — this
-      one is paid, and it is 35 of those 47 GB. Everything else is free. You can skip it
-      and still run the macro layer; see [Without Sharadar](#without-sharadar).
+- [ ] **Disk: 2× your target size.** A full build is about 47 GB of tables, and Postgres
+      needs headroom on top for index builds, vacuum, and the derived rebuilds, which
+      write a second copy before swapping it in. Check with `df -h`.
+- [ ] **A Nasdaq Data Link account with a Sharadar Core US Equities subscription** — the
+      paid one, and 35 of those 47 GB. Everything else is free. You can skip it and run
+      only the macro layer; see [Without Sharadar](#without-sharadar).
 
 ### 2 · Install
 
@@ -66,7 +65,7 @@ The full list of what each credential unlocks: [sources.md](sources.md#credentia
 This is the long step, and it has its own guide: **[database.md](database.md)**.
 
 ```bash
-python -m core.setup.bootstrap --check       # preflight — catches the 5 things that go wrong
+python -m core.setup.bootstrap --check       # preflight: env file, keys, Postgres, database
 python -m core.setup.bootstrap --plan        # what will run, from where, how big
 python -m core.setup.bootstrap --sources     # where every byte comes from
 python -m core.setup.bootstrap --create-db   # go
@@ -76,14 +75,13 @@ python -m core.setup.bootstrap --create-db   # go
 - [ ] You've looked at `--plan` and accepted the size
 - [ ] Build finished, or you know which steps failed
 
-It is **resumable** — re-run the same command and finished steps are skipped, so a
-failure or a Ctrl-C costs only the step it happened in. `--watch` from a second terminal
-follows a long run. You can close the laptop lid on it.
+Re-running the same command skips finished steps, so a failure or a Ctrl-C costs only
+the step it happened in. `--watch` from a second terminal follows a run in progress.
 
-### 5 · Verify — before trusting a single number
+### 5 · Check the build
 
-Don't skip this. Financial data looks entirely plausible while being wrong, and every
-downstream conclusion inherits the corruption silently.
+Worth doing before relying on any number: financial data looks plausible while being
+wrong, and anything downstream inherits the error without complaint.
 
 ```bash
 python -m core.setup.bootstrap --status   # tables, row counts, sizes on disk
@@ -107,12 +105,12 @@ open http://localhost:3000
 - [ ] http://127.0.0.1:8001/health returns `{"status":"ok"}`
 - [ ] `/screener/ideas` shows a basket
 
-That last one is the real end-to-end test: it exercises the database, the derived
-snapshot, and your screen spec in one go.
+The last of those covers the whole path at once — database, derived snapshot, and your
+screen spec.
 
 ### 7 · Make it yours
 
-Nothing so far is personal. Two things are:
+Nothing so far is specific to you. This is:
 
 - [ ] **`config/screens/*.yaml`** — what you're looking for. Copy `quality-value.yaml`,
       change the numbers, point `ACTIVE_SCREEN` at yours.
@@ -128,9 +126,9 @@ python -m core.setup.bootstrap
 
 - [ ] Scheduled nightly (optional) — see [../DEPLOYMENT.md](../DEPLOYMENT.md#nightly-refresh)
 
-It exits non-zero if any step fails, so anything that alerts on non-zero gives you
-monitoring for free. You want that: a broken nightly job doesn't error at you, it just
-quietly serves last week's numbers.
+It exits non-zero if any step fails, so anything that alerts on a non-zero exit gives
+you monitoring. A broken nightly job otherwise gives no signal at all — it just keeps
+serving last week's numbers.
 
 ---
 
