@@ -1,9 +1,7 @@
-# investing
+# cashchirp
 
-Tools for building your own research setup on top of the Sharadar dataset: a local
-Postgres copy of the data, kept current, with a screener and a web frontend over it. The
-longer-term aim is to model how stocks behave and explain the outliers; what exists today
-is the data layer and the screener.
+This repo is an open-source tool for building your own investing research setup on top of a high-quality dataset: a local
+Postgres copy of the Sharadar dataset, kept current, with a screener and a web frontend over it.
 
 ## What Sharadar is
 
@@ -34,10 +32,8 @@ short interest (FINRA) and the fund reference data (SEC EDGAR) are all free. See
 
 ## Why a local database
 
-Sharadar arrives over an HTTP API with a cap of about a million rows per call. That is
-fine for delivery and useless for research: the questions worth asking are cross-sectional
-and historical, and over an API each one is thousands of paginated calls and minutes of
-waiting.
+The project is meant to be easily modifiable, and queries that may be difficult to make on 
+subscription-based websites suddenly become feasible, once the database is set up.
 
 The build (setup phase) pulls the tables down once and mirrors them into Postgres — one flat table
 per Sharadar product, same rows, same values, the vendor's own primary key — after which
