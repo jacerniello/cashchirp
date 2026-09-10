@@ -69,7 +69,7 @@ generated from the same registry; this page is the reading behind it.
 - **Provider:** Federal Reserve Bank of St. Louis.
 - **What:** Macroeconomic & financial time series — rates, yields, inflation (CPI/PCE),
   employment, GDP, money supply, spreads, sentiment, etc. (800k+ series).
-- **Why:** Supplies the **macro regime / broad-market context** layer (step 1 of the
+- **Why:** Supplies the macro-regime / broad-market context layer (step 1 of the
   research arc — the "fundamental schematic of economic activity") that company-level
   Sharadar data gets measured against.
 - **Coverage / history:** Series-dependent; many run for decades.
@@ -77,22 +77,21 @@ generated from the same registry; this page is the reading behind it.
 
 ### How to pull data in bulk
 
-FRED has **no single "whole-database dump"** — the public website only downloads one
+FRED has no single whole-database dump — the public website only downloads one
 series (or one map) at a time. Three real bulk paths, in order of usefulness here:
 
-1. **FRED-MD / FRED-QD curated panels (what we use).** Wide CSVs of ~127 monthly
+1. **FRED-MD / FRED-QD curated panels (what this repo uses).** Wide CSVs of ~127 monthly
    (FRED-MD) / ~245 quarterly (FRED-QD) U.S. macro series, no key required. Each file's
    leading `Transform:` row gives McCracken's recommended stationarity transform per
-   series. *This is the macro-regime backbone for step 1.* Comes in two forms — see the
-   **⚠ Backtesting** box below, this distinction matters.
+   series. Comes in two forms; see the backtesting section below for the distinction.
 2. **FRED web API, series by series.** `/series/observations?series_id=…` (≤100k obs/call)
    after enumerating series via `/series/search`, `/category/series`, `/release/series`,
    or `/tags/series` (≤1000/call). Rate limit **120 req/min**. Right for a small curated
    list of extras the panels lack. Key: `FRED_API_KEY` in `core/.env`. *Implemented* in
    `core/backend/ingest/fred/fred_api.py` — `python -m core.setup.bootstrap --dataset fred:spot` loads the
-   curated **commodity spot** set (WTI `DCOILWTICO`, Brent `DCOILBRENTEU`, Henry Hub gas
+   curated commodity-spot set (WTI `DCOILWTICO`, Brent `DCOILBRENTEU`, Henry Hub gas
    `DHHNGSP` daily; copper `PCOPPUSDM` monthly) into `fred_observations` under dataset
-   `FRED-Spot`, backing the Commodities page. These are revision-free **market prices**,
+   `FRED-Spot`, backing the Commodities page. These are revision-free market prices,
    so the published series *is* point-in-time (tagged `vintage="current"`, safe to
    backtest) — unlike the revised macro stats in the box below. FRED has no free
    gold/silver spot (the LBMA London fixing was withdrawn over ICE licensing); GLD/SLV
@@ -100,31 +99,31 @@ series (or one map) at a time. Three real bulk paths, in order of usefulness her
 3. **FRED API v2 bulk-by-release** (announced 2025-11-04): all observations for an entire
    release in one call. Not yet reachable on the standard endpoint/key — track for later.
 
-### ⚠ Backtesting with FRED — revised vs. point-in-time (READ THIS)
+### Backtesting with FRED — revised vs. point-in-time
 
-Macro data is **revised** for months/years after first release. Two forms of FRED-MD:
+Macro data is revised for months or years after first release. Two forms of FRED-MD:
 
 | Form | What it is | Backtest? |
 |------|-----------|-----------|
-| **`current.csv`** (revised) | Latest values, full history to **1959**. Every number reflects *all later revisions*. | **NO** — injects look-ahead. Exploratory/descriptive only. |
+| `current.csv` (revised) | Latest values, full history to 1959. Every number reflects all later revisions. | No — injects look-ahead. Exploratory use only. |
 | **Vintages** (`YYYY-MM`) | Monthly real-time snapshots; each holds only what was *known that month* (e.g. the 2015-01 snapshot stops at the Dec-2014 obs — publication lag included). | **YES** — genuine point-in-time. |
 
-- **Verdict: FRED is fine for backtesting *iff* you use vintages.** FRED-MD/QD vintages
-  are ALFRED-derived real-time data, built for exactly this (McCracken's real-time
-  forecasting research). The revised `current.csv` is **not** backtest-safe.
+- **FRED is suitable for backtesting only if you use vintages.** FRED-MD/QD vintages are
+  ALFRED-derived real-time data, built for this purpose (McCracken's real-time forecasting
+  research). The revised `current.csv` is not backtest-safe.
 - **Floor:** real-time vintages start **2015-01** (FRED-MD) / **2018-05** (FRED-QD).
-  There is **no point-in-time FRED-MD before 2015** — pre-2015 is revised-only.
+  There is no point-in-time FRED-MD before 2015; earlier data is revised-only.
 - **Where vintages come from:** a bundled zip per dataset
   (`historical-vintages-of-fred-md-2015-01-to-2024-12.zip`, ~120 monthly files).
-  *Note:* bare `…/monthly/YYYY-MM.csv` URLs do **not** work — they need a per-file
+  Note: bare `…/monthly/YYYY-MM.csv` URLs do not work — they need a per-file
   `?hash=` and the naming drifts (`-md` suffix from 2025-04); use the zip.
 - **In this repo this is the default, and the only mode:** the loader ingests the
   **vintage history**. To reconstruct macro state as of date *D*, query the
   `fred_observations` rows whose `vintage` ≤ *D*'s month.
 
-- **In this repo:** **FRED-MD/QD ingestion built.**
+- **In this repo:** FRED-MD/QD ingestion is implemented.
   - ingestor (BaseIngestor): `core/backend/ingest/fred/fred_md.py` — fetch CSV (or vintage
-    zip) → melt wide→long → upsert. Stores values **raw**; the transform code is
+    zip) → melt wide→long → upsert. Stores values raw; the transform code is
     metadata applied at analysis time (`TCODE_LABELS`).
   - tables (`core/backend/db/models.py`): `fred_series` (id, dataset, `tcode`, title) +
     `fred_observations` (series_id, date, value, **`vintage`**); keyed
@@ -145,39 +144,38 @@ Macro data is **revised** for months/years after first release. Two forms of FRE
 ## FINRA Consolidated Equity Short Interest
 
 - **Provider:** FINRA (Financial Industry Regulatory Authority). Query API.
-- **What:** Consolidated short-interest positions across **all** U.S. markets
+- **What:** Consolidated short-interest positions across all U.S. markets
   (NYSE/Nasdaq/ARCA/AMEX/Cboe/OTC) — current & previous short shares, change, average
   daily volume, days-to-cover — one row per security per settlement date.
-- **Why:** The **squeeze signal** the Sharadar bundle lacks and that DFV weighted heavily
-  (the GME thesis hinged on ~140%-of-float short interest). Fills the biggest data gap
-  identified by deep-value screens. Includes GME's full Jan-2021
-  squeeze (71M short on 2020-12-31 → 21M by 2021-01-29).
+- **Why:** short interest is not in the Sharadar bundle, and it is the input for
+  squeeze-related screens. Coverage includes the Jan-2021 GME episode (71M shares short on
+  2020-12-31, 21M by 2021-01-29), which is a useful reference case for checking the
+  split-adjustment caveat below.
 - **Coverage / history:** **2017-12-29 → present** (verified by probe), **bi-monthly**
   (mid-month + end-of-month settlement, ~24 dates/yr), ~19k symbols/date, ~3.8M rows.
-- **Status:** **Free, fully public — no API key, no OAuth** (verified). No `core/.env`
-  entry needed.
+- **Status:** free and public — no API key or OAuth, and no `core/.env` entry needed.
 - **Access:** `POST https://api.finra.org/data/group/otcMarket/name/consolidatedShortInterest`
   with `Accept: application/json` (defaults to CSV otherwise). Pagination via `limit`
   (≤5000/page), `offset`, and the `Record-Total` response header. **`settlementDate` is
   the partition key** — sort/page only *within* a date pinned by an EQUAL `compareFilter`,
   so we load date-by-date.
-- **In this repo:** **ingestion built.**
+- **In this repo:**
   - ingestor: `core/backend/ingest/finra/finra_short_interest.py` — discover settlement-date
     calendar (from data), fetch each date paged, upsert. **Mirror is byte-faithful:** only
     FINRA's own fields are stored (no CUSIP/permaticker/float in the feed).
   - table (`core/backend/db/models.py`): `finra_short_interest`, keyed
     `(symbol, settlementdate, market)`.
-  - **permaticker is NOT stored** — resolved at **read time** by the
+  - **permaticker is not stored.** It is resolved at read time by the
     `finra_short_interest_resolved` view via a *point-in-time* join (the issuer that held
     the symbol on the settlement date, `tickers.[firstpricedate, lastpricedate]`),
     exposed only when unambiguous (recycled-ticker collisions → NULL, zero false
-    positives). Market is **not** a join key (FINRA's `marketClassCode` doesn't map to
+    positives). Market is not a join key (FINRA's `marketClassCode` doesn't map to
     Sharadar exchanges). Exchange-listed names resolve 63–94%; OTC barely resolves (~2%)
     as Sharadar's bundle doesn't cover pink-sheet names — an honest universe gap.
   - **% of float / days-to-cover are computed at read time** against `sf1`/`daily`, never
-    stored. ⚠ **Split caveat:** FINRA `current_short` is **as-filed**; `sf1.sharesbas` is
-    **split-adjusted backward** — divide as-filed-by-split-adjusted and you understate
-    short% by the split factor (GME: 61.7M short ÷ 279M split-adj shares = 22% vs. the
+    stored. **Split caveat:** FINRA `current_short` is as-filed, while `sf1.sharesbas` is
+    split-adjusted backward. Dividing as-filed by split-adjusted understates short% by the
+    split factor (GME: 61.7M short ÷ 279M split-adj shares = 22% vs. the
     real ~88% on ~70M pre-split shares). Reconcile splits (like `holder_timeseries`'
     `adj_units`) when building the feature.
   - CLI: `python -m core.setup.bootstrap --dataset finra:short_interest` — an incremental
@@ -190,9 +188,9 @@ Macro data is **revised** for months/years after first release. Two forms of FRE
 ## SEC EDGAR — Mutual-fund ticker / series / class map
 
 - **Provider:** U.S. SEC (EDGAR). Free, no key.
-- **What:** `company_tickers_mf.json` — one row per registered fund **share class**:
+- **What:** `company_tickers_mf.json` — one row per registered fund share class:
   `(cik, seriesId, classId, symbol)`. This is the structure behind EDGAR's "Series for
-  CIK = …" page: a filer **CIK** owns many **Series** (funds), each with several
+  CIK = …" page: a filer CIK owns many Series (funds), each with several
   **Class/Contract** share classes, some carrying a ticker (e.g. Vanguard Index Funds
   CIK `0000036405` → Series `S000002839` *Vanguard 500 Index Fund* → classes VFINX /
   VFIAX / **VOO** (ETF) / VFFSX).
@@ -209,7 +207,7 @@ Macro data is **revised** for months/years after first release. Two forms of FRE
 - **In this repo:** loaded into `sec_fund_class` (see [schema.md](schema.md)) by
   `python -m core.setup.bootstrap --dataset sec:fund_classes`, and refreshed by the `sec`
   phase of a full `bootstrap` run. Reference data, changes slowly.
-- **Caveat:** the JSON has **no series/class display names** ("Investor Shares" etc.) —
+- **Caveat:** the JSON has no series/class display names ("Investor Shares" etc.) —
   we show the symbol + our own fund name (the series name we derive from a carried class).
   Class-level names would require scraping the EDGAR HTML page.
 - **Docs:** https://www.sec.gov/search-filings/edgar-application-programming-interfaces ·

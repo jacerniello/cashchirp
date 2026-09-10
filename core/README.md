@@ -1,7 +1,7 @@
 # core/
 
-The data engine: a Python **backend** over a **Postgres** database, plus a thin **FastAPI**
-bridge that exposes it as JSON. The frontend is `web/`.
+The data engine: a Python backend over a Postgres database, plus a FastAPI bridge that
+exposes it as JSON. The frontend is `web/`.
 
 ## Layout
 
@@ -25,8 +25,8 @@ core/
 **Data flow:** `ingest` → Postgres → `queries` → `api/routers` → `web/`.
 Most Sharadar tables need no per-table code — the generic loader is schema-driven.
 
-**Personalisation lives outside this folder** on purpose: what to look for is
-`config/screens/*.yaml`, and `core/` runs whatever those say. See
+Personalisation lives outside this folder: what to look for is `config/screens/*.yaml`,
+and `core/` runs whatever those say. See
 [../docs/CONFIGURATION.md](../docs/CONFIGURATION.md).
 
 **Database structure** (tables, keys, the faithful-mirror design): see
@@ -69,7 +69,7 @@ Full walkthrough, including which tables are worth loading and how big they are:
 
 ## Loading / updating data
 
-**Refresh everything with one command** — `python -m core.setup.bootstrap`. It runs every
+**Refresh everything:** `python -m core.setup.bootstrap`. It runs every
 Sharadar table in its correct sync mode (the per-table mapping below), then FRED (MD/QD
 vintages + commodity spot), then FINRA short interest (incremental), then rebuilds the derived
 objects (`screener_snapshot`, `holder_timeseries`, `derived.insider[_company]`) once, after all
@@ -97,7 +97,7 @@ start clean. It's narrowly scoped — never touches other projects or its own co
 
 The sections below cover the individual loaders the orchestrator drives.
 
-**One loader for every Sharadar table** — the schema-driven generic loader. It reads the
+**One loader for every Sharadar table.** The schema-driven generic loader reads the
 table's column types and primary key from Sharadar's own `INDICATORS` metadata, creates a
 matching Postgres table (a faithful flat mirror, named after the code, lowercased), upserts
 the bulk CSV on Sharadar's primary key, and stamps `permaticker` from `TICKERS`. Idempotent,
@@ -177,5 +177,5 @@ candidates, not evidence that the filter has an edge. Schema:
   query functions in `backend/queries/`, and declare it in `backend/sources.py` (FRED is
   the worked example).
 - **New endpoint:** add a module in `api/routers/` and register it in `api/main.py`. Query
-  through `backend/queries/` — don't put SQL in a route. Identify securities by **permaticker**,
-  not ticker.
+  through `backend/queries/` — don't put SQL in a route. Identify securities by
+  `permaticker`, not ticker.

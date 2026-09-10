@@ -25,15 +25,13 @@ Copy from `core/.env.example`. Gitignored — secrets never leave your machine.
 
 ## Screen specs — `config/screens/*.yaml`
 
-A **screen** is the project's unit of personalisation: which universe to consider, and
-which gates a company must clear to be worth your attention.
+A screen defines which universe to consider and which gates a company must clear.
 
-It is deliberately **data, not code**. Two reasons, and the second matters more than it
-looks:
+Screens are data, not code, for two reasons:
 
 1. You can define your own filter without touching Python.
-2. The screener page and the idea board load the **same file**, so what you look at in
-   the browser is the filter as written — no second definition to drift.
+2. The screener page and the idea board load the same file, so what you see in the browser
+   is the filter as written. There is no second definition to drift from it.
 
 Screens are defined in `config/screens/` and run from the UI: `/screener` builds one,
 `/screener/ideas` runs every saved screen. There is no command-line runner.
@@ -41,20 +39,21 @@ Screens are defined in `config/screens/` and run from the UI: `/screener` builds
 Copy `quality-value.yaml`, change the numbers, point `ACTIVE_SCREEN` at yours. Files
 beginning with `_` are ignored, so a half-finished draft can sit in the folder safely.
 
-`quality-value.yaml` is **an example, not a recommendation** — it is there so the format
-has a worked reference and a fresh clone has something to run. Replace it with your own.
+`quality-value.yaml` is an example, not a recommendation. It exists so the format has a
+worked reference and a fresh clone has something to run. Replace it with your own.
 
 ### Saving a filter from the UI
 
-The `/screener` page can write one for you: set your filters, open **Saved screens**, name
-it, save. It lands in `config/screens/<id>.yaml` in exactly this format — so a filter you
-built by dragging sliders is immediately runnable at `/screener/ideas/my-filter`, not
-trapped in a URL.
+The `/screener` page can write one for you: set your filters, open Saved screens, name it,
+save. It lands in `config/screens/<id>.yaml` in this format and runs at
+`/screener/ideas/<id>`.
 
-**Watch the "Not captured" list.** Some screener controls have no gate equivalent — the
-market-cap *band* buttons are labels (`mid`), not numbers, so they are reported rather
-than saved. The screen still saves; the point is that you find out, because a filter that
-silently dropped a constraint would not be the screen you were looking at. Re-express those as explicit `marketcap_min` / `marketcap_max` values.
+Check the "Not captured" list when you save. Some screener controls have no gate
+equivalent — the market-cap band buttons are labels (`mid`), not numbers — so they are
+reported rather than saved. The screen still saves, and the list tells you which
+constraints did not carry over, since a screen that silently dropped one would not be the
+filter you were looking at. Re-express those as explicit `marketcap_min` / `marketcap_max`
+values.
 
 ### Shape
 
@@ -99,8 +98,8 @@ One entry per snapshot column — the columns of `screener_snapshot`, listed in
 | `gt` / `lt` | Exclusive bounds (`>`, `<`). |
 | `on_null` | What a **blank** does. `drop` (default), `keep`, or a number to substitute. |
 
-**`on_null` is the setting people get wrong, and it produces silent false negatives.**
-A blank is not automatically a failure — it depends on *why* it's blank:
+`on_null` is the setting most likely to produce silent false negatives. A blank is not
+automatically a failure; it depends on why the value is blank:
 
 - `on_null: drop` — the blank is a genuine data absence you're happy to skip. A company
   with no reported ROIC is one you can't assess.
@@ -110,19 +109,18 @@ A blank is not automatically a failure — it depends on *why* it's blank:
   were never required to report.
 - `on_null: 0` — a blank genuinely *means* zero. No reported debt is no leverage.
 
-Get this wrong in the `drop` direction and your screen quietly returns a smaller, biased
-basket while looking like it worked perfectly.
+Set this wrong in the `drop` direction and the screen returns a smaller, biased basket
+with no indication anything was excluded.
 
-> **YAML number gotcha:** write large numbers plainly (`300000000`) or with a **signed**
-> exponent (`3.0e+8`). Bare `3.0e8` parses as a *string* in YAML 1.1. The loader rejects
-> it with an explicit error rather than comparing numbers against text.
+> **YAML numbers:** write large numbers plainly (`300000000`) or with a signed exponent
+> (`3.0e+8`). Bare `3.0e8` parses as a string under YAML 1.1. The loader rejects it with an
+> explicit error rather than comparing numbers against text.
 
 ### `growth`
 
-Multi-year growth gates get their own section because a naive CAGR filter has a specific,
-expensive bug: a company that went from a **loss** to a profit has a mathematically
-undefined CAGR (`NaN`), so a plain `min: 0.03` gate **drops every turnaround** — exactly
-the names a value screen exists to find.
+Multi-year growth gates get their own section because a plain CAGR filter has a specific
+bug: a company that went from a loss to a profit has an undefined CAGR (`NaN`), so a bare
+`min: 0.03` gate drops every turnaround — the names a value screen is often looking for.
 
 Each rule passes if the CAGR clears `min_cagr` **or** the company recovered from a
 non-positive base:
@@ -135,15 +133,15 @@ growth:
 ### Validation
 
 Specs are validated at load. A misspelled gate, a string where a number belongs, or a
-column that doesn't exist **fails loudly** rather than being ignored — a screen that
-silently skips a gate returns a plausible basket that isn't the filter you wrote, which is
-the worst possible failure mode for research you intend to act on.
+column that doesn't exist raises an error rather than being ignored. A screen that
+silently skipped a gate would return a plausible basket that is not the filter you
+wrote — which is worth failing loudly over, since the output looks correct either way.
 
 ---
 
 ## `SETUP_ENABLED` — the build-control surface
 
-Off by default, and it should stay off anywhere the app is reachable from the internet.
+Off by default. Leave it off anywhere the app is reachable from the internet.
 
 | | |
 |---|---|
@@ -159,9 +157,8 @@ routes are served (`/setup/enabled`) and shows the link only if they are, so one
 governs both. An earlier `NEXT_PUBLIC_SETUP_ENABLED` duplicated it and could disagree —
 a link to a route that 404s, or a working surface with no way in.
 
-Leave it unset in production. The router is gated at **mount** time, so with the flag off the
-paths 404 exactly like any unknown URL — a disabled deployment does not advertise that a
-setup surface exists at all.
+Leave it unset in production. The router is gated at mount time, so with the flag off
+those paths 404 like any unknown URL: a disabled deployment gives no indication that a
+setup surface exists.
 
-The default is `false` deliberately: a deploy that forgets this flag exposes nothing,
-rather than exposing everything. That is the direction you want the mistake to fall.
+The default is `false` so that forgetting the flag exposes nothing rather than everything.
