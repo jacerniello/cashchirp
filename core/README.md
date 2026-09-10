@@ -13,15 +13,16 @@ core/
 ├── backend/               # UI-agnostic data engine (reusable everywhere)
 │   ├── db/                # engine, session, ORM models (schema)
 │   ├── ingest/            # BaseIngestor pattern + Sharadar / FRED ingestors
-│   ├── repositories/      # the query API — call these, don't write SQL in routes
+│   ├── queries/           # the query API — call these, don't write SQL in routes
 │   └── screens.py         # screen specs: config/screens/*.yaml -> a DataFrame filter
 ├── api/                   # FastAPI bridge, mounted at /api/v1
 │   ├── main.py            # app factory + router mounting
 │   └── routers/           # one module per resource (screener, company, macro, …)
-└── ../setup/               # the two entry points: bootstrap, reset_db
+├── setup/                 # the two entry points: bootstrap, reset_db
+└── data/                  # downloads + run state (gitignored)
 ```
 
-**Data flow:** `scripts`/`ingest` → Postgres → `repositories` → `api/routers` → `web/`.
+**Data flow:** `ingest` → Postgres → `queries` → `api/routers` → `web/`.
 Most Sharadar tables need no per-table code — the generic loader is schema-driven.
 
 **Personalisation lives outside this folder** on purpose: what to look for is
@@ -71,14 +72,14 @@ Sharadar table in its correct sync mode (the per-table mapping below), then FRED
 vintages + commodity spot), then FINRA short interest (incremental), then rebuilds the derived
 objects (`screener_snapshot`, `holder_timeseries`, `derived.insider[_company]`) once, after all
 inputs are fresh. Each step is isolated (a failure is logged and the run continues); it exits
-non-zero if any step failed. This is what the daily scheduled job
-(`com.investing.sharadar.plist.example`) runs. Skip stages with `--no-fred` / `--no-finra` / `--no-derived` / `--no-sharadar`.
+non-zero if any step failed. This is what a schedule in Setup -> Schedules runs.
+Narrow the run with `--only-phase`; there are no per-stage skip flags.
 
 ```bash
-python -m core.setup.bootstrap              # all tables + FRED + derived
-python -m core.setup.bootstrap --dry-run    # print the plan, run nothing
-python -m core.setup.bootstrap --only SEP SF1   # subset of Sharadar tables
-python -m core.setup.bootstrap --derived-only   # just rebuild the precomputed objects
+python -m core.setup.bootstrap                      # all tables + FRED + derived
+python -m core.setup.bootstrap --plan               # print the step list, run nothing
+python -m core.setup.bootstrap --only SEP SF1       # subset of Sharadar tables
+python -m core.setup.bootstrap --only-phase derived # just rebuild the precomputed objects
 ```
 
 **If a refresh hangs or stalls, run `the Database tab at /setup/database` first.** It's the go-to
@@ -109,14 +110,14 @@ python -m core.setup.bootstrap --dataset sharadar:SEP
 python -m core.setup.bootstrap --dataset sharadar:SF1
 python -m core.setup.bootstrap --dataset sharadar:TICKERS
 python -m core.setup.bootstrap --dataset sharadar:ACTIONS
-#   --sync               incremental: pull rows with <col> >= watermark and upsert
-#   --sync-col <col>     watermark column for --sync (default lastupdated; e.g. date,
-#                        filingdate, calendardate for tables that lack lastupdated)
-#   --sync-quarters      re-pull recent quarters in key-chunks (tables with no change
-#                        column at all, e.g. SF3); --quarters N / --chunk-key <col>
-#   --no-download        reuse an existing core/data/downloads/sharadar/<CODE>.zip
-#   --dest <name>        override the destination table name
+#   --force   re-run a step whose table already holds rows (still an incremental sync)
+#   --full    re-download the bulk export from scratch and upsert the lot (hours)
 ```
+
+Each table's sync mode and its watermark column are declared in the registry
+(`core/backend/sources.py`), not passed on the command line: `mode="sync"` with an
+optional `sync_col`, or `mode="quarters"` for the tables with no change column at all.
+Changing how a table syncs means editing its `Dataset` entry.
 
 Re-run to update in place (upsert on Sharadar's primary key). **Incremental updates** pick a
 mode by what change-column the table has (the query API caps ~1M rows/call):
@@ -128,9 +129,9 @@ python -m core.setup.bootstrap --dataset sharadar:SF2
 python -m core.setup.bootstrap --dataset sharadar:SF3
 ```
 
-`--sync`/`--sync-col` catch new rows (and, with `lastupdated`, edits too); `--sync-quarters`
-re-pulls whole recent quarters so it captures amendments within them. `sfp` restamps a single
-day past the cap → full backfill only. See `docs/reference/schema.md` → Operational notes "Updating" for the
+A `sync` table catches new rows (and, where it has `lastupdated`, edits too); a `quarters`
+table re-pulls whole recent quarters so it captures amendments within them. `sfp` restamps a
+single day past the cap, so it needs `--full`. See `docs/reference/schema.md` → Operational notes "Updating" for the
 per-table table. The dataset keys are in `core/backend/sources.py`. Every table is
 a flat 1:1 mirror; the app's Company page reads `sep` (by permaticker) directly.
 
@@ -144,7 +145,7 @@ python -m core.setup.bootstrap --dataset sharadar:EVENTS
 # permaticker is stamped by the loader after every ticker-bearing table loads
 
 # Macro data (FRED-MD/QD panels):
-python -m core.setup.bootstrap --only-phase fred                 # --qd, --revised, --limit N
+python -m core.setup.bootstrap --only-phase fred                 # MD + QD vintages + spot
 
 # Verify loaded tables match the downloaded files (row + per-column non-null):
 
@@ -158,9 +159,9 @@ deleted once the load commits — the routine refresh syncs deltas over the quer
 never opens one. A load that RAISES keeps its zip so a retry can pass `download=False`;
 The download-only CLI has been removed.
 
-**Scheduling:** copy `core/scripts/com.investing.sharadar.plist.example` (macOS launchd),
-replacing `{{PROJECT_ROOT}}`. For a systemd timer, see
-[../docs/DEPLOYMENT.md](../docs/DEPLOYMENT.md#nightly-refresh).
+**Scheduling:** the API runs its own scheduler, so a cadence is set in the UI at
+`/setup/schedules` and stored in Postgres rather than in a crontab. To drive it from
+outside the app instead, see [../docs/DEPLOYMENT.md](../docs/DEPLOYMENT.md#nightly-refresh).
 
 ## Screens
 
@@ -181,7 +182,8 @@ backtest provably tests the filter you ship. Schema:
   <CODE>` (schema-driven from metadata).
 - **New screen:** copy a YAML in `config/screens/`. No Python.
 - **New (non-Sharadar) data source:** subclass `BaseIngestor` (`backend/ingest/`), add
-  repository functions, expose a `scripts/` CLI (FRED is the worked example).
+  query functions in `backend/queries/`, and declare it in `backend/sources.py` (FRED is
+  the worked example).
 - **New endpoint:** add a module in `api/routers/` and register it in `api/main.py`. Query
-  through a repository — don't put SQL in a route. Identify securities by **permaticker**,
+  through `backend/queries/` — don't put SQL in a route. Identify securities by **permaticker**,
   not ticker.

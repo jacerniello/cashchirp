@@ -13,7 +13,7 @@ Three parts:
   [docs/reference/schema.md](docs/reference/schema.md) (schema, keys, fidelity).
 - **`web/`** — the app. A **Next.js + React + Tailwind** frontend (screener, company pages,
   macro/commodities) that reads `core/api`. Routes are `web/src/app`, shared
-  components `web/src/investing`.
+  components `web/src/components`.
 - **`config/screens/`** — the **screens**: declarative YAML filters that define what you're
   looking for. This is the main personalisation knob, and the live idea board and the
   CLI run the identical file.

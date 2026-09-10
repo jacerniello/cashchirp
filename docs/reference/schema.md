@@ -21,8 +21,9 @@ loaded by the one schema-driven generic loader.
 - **Typed from the source.** Column types come from Sharadar's own INDICATORS metadata, and a value that does not match its declared type is stored as NULL rather than failing the load. `TEXT_OVERRIDE` in the loader pins the columns Sharadar mistypes (`fiscalperiod` is `"2009-Q4"`, not a date). This applies to every table
   against its downloaded file (row count + per-column non-null). All 13 Sharadar tables
   currently pass.
-- **Loading/updating:** `python -m core.setup.bootstrap --dataset sharadar:<CODE>` (add `--full`
-  for incremental). See `core/README.md` → "Loading / updating data".
+- **Loading/updating:** `python -m core.setup.bootstrap --dataset sharadar:<CODE>`. A re-run
+  is incremental by default, in whatever mode the table's registry entry declares; `--full`
+  re-downloads the bulk export from scratch. See `core/README.md` → "Loading / updating data".
 
 ## Sharadar mirror tables
 
@@ -53,7 +54,7 @@ Row counts are the verified file counts. `permaticker` is stamped on equity tabl
 | `events_decoded` | view | expands `events.eventcodes` (`"22\|71\|91"`) into ordered labels |
 | `permaticker_lookup` | table | `(product, ticker) → permaticker` map built from `tickers` (ambiguous pairs excluded) |
 | `sec_fund_class` | table | SEC mutual-fund map `(cik, series_id, class_id, symbol)` — every registered fund **share class** under its parent filer CIK. Powers the fund page's "Fund family" navigation: a fund's CIK (parsed from its `tickers.secfilings` EDGAR link) groups all its sibling series/classes; classes we carry are linked by permaticker. Loaded from the SEC's `company_tickers_mf.json` by **`python -m core.setup.bootstrap --dataset sec:fund_classes`** (a full reload of one ~1 MB JSON; the SEC needs a descriptive `User-Agent` with a contact e-mail). Refreshed by the orchestrator (`update_all`, the `SEC fund-class map` step). Reference data — drop and reload freely. |
-| `screener_snapshot` | table | one precomputed row per security for the app's Screener: latest valuation + trailing SF1 fundamentals, margins, returns, ratios, growth, net cash (cash−debt) % of cap, **Altman Z-score** (bankruptcy-distance survivability gate, computed in `repositories/health.py` from ART/TTM `sf1` — calibrated for non-financials), company age (from `tickers.firstpricedate`), 52-week-low/high proximity (from `metrics`), 13F holder count — tagged with an `asof` date. Built by `python -m core.setup.bootstrap --dataset derived:screener_snapshot`; auto-refreshed after a DAILY load. Nothing warms it at app startup. Rebuild from `sf1`/`daily`/`sf3a`/`metrics`/`tickers` — never hand-edit. |
+| `screener_snapshot` | table | one precomputed row per security for the app's Screener: latest valuation + trailing SF1 fundamentals, margins, returns, ratios, growth, net cash (cash−debt) % of cap, **Altman Z-score** (bankruptcy-distance survivability gate, computed in `queries/securities/health.py` from ART/TTM `sf1` — calibrated for non-financials), company age (from `tickers.firstpricedate`), 52-week-low/high proximity (from `metrics`), 13F holder count — tagged with an `asof` date. Built by `python -m core.setup.bootstrap --dataset derived:screener_snapshot`; auto-refreshed after a DAILY load. Nothing warms it at app startup. Rebuild from `sf1`/`daily`/`sf3a`/`metrics`/`tickers` — never hand-edit. |
 | `holder_timeseries` | table | every SHR 13F holder's quarterly positions for every security — `(permaticker, investorname, rank, calendardate, value, units, adj_units, price, asof)`, ~33M rows / ~3.8 GB. Each holder carries a per-security `rank` (1 = largest by max position value over all time), so the Company page's holdings-over-time bubble chart can **paginate all holders** as a `(permaticker, rank)` range scan (~1ms) instead of a 46M-row `sf3` self-join. `units` is as-filed; `adj_units` is split-adjusted (× the product of splits *after* each quarter, from `actions`) so the shares-over-time view is continuous across splits. `asof` = max 13F `calendardate` at build time. Built by `python -m core.setup.bootstrap --dataset derived:holder_timeseries`; auto-refreshed after an SF3 load. Nothing warms it at app startup. Rebuild from `sf3`+`actions` — never hand-edit. |
 | `sp500_concentration` | table | one row per S&P 500 **snapshot date** (every `sp500` *historical* quarter-end 1998→present, plus the latest *current* snapshot) with the index's concentration measures: cap-weight of the top 1/3/5/10/25/50 constituents, the **HHI** (Herfindahl points), and the **effective number of constituents** (1/Σwᵢ²), plus `n_constituents`, `total_mktcap`, and the top-1 name/ticker. **Point-in-time:** membership is the `sp500` log as it stood at each date, each constituent's cap is its `daily.marketcap` as of that date (latest close in a 10-day lookback). **Full-cap** weighting (Sharadar has no float — a documented proxy for S&P's float-adjusted weights, not faked). ~111 rows. Built by `python -m core.setup.bootstrap --dataset derived:sp500_concentration`; auto-refreshed after an SP500 load and by the orchestrator. Rebuild from `sp500`+`daily`+`tickers` — never hand-edit. |
 | `sp500_sector_weights` | table | the sector cut of the same build: one row per `(date, sector)` with that GICS-style sector's index cap-`weight` (%), constituent count `n`, and `mktcap`, so the `/sp500` page shows the index's sector mix rotating over time. Same build/provenance as `sp500_concentration`; indexed on `date`. ~1.2k rows. |
@@ -63,7 +64,7 @@ Row counts are the verified file counts. `permaticker` is stamped on equity tabl
 API `GET /api/v1/etf/{permaticker}`) serves profile from `tickers` (`category = 'ETF'`)
 and price-derived headline stats (last close, nominal 52w range, 90d avg volume,
 total-return windows via `closeadj`, inception) computed **on the fly** by
-`repositories/prices.py::etf_metrics` straight off `sfp` — `sfp` is permaticker-indexed
+`queries/securities/prices.py::etf_metrics` straight off `sfp` — `sfp` is permaticker-indexed
 so one fund is a few ms. The price chart reuses `/prices` (which already falls back to
 `sfp`) and the fund's 13F holders reuse `/institutional/top-holders`. The equity company
 page redirects to `/etf` when `category == 'ETF'` (funds have no SF1 fundamentals,
@@ -99,7 +100,6 @@ freely, never hand-edit.
 |---|---|
 | `load_log` | append ledger of every ingestion (source, dataset, op, rows, `requested_at`/`completed_at`) — `load_status` reads it |
 | `sync_state` | per-table incremental watermark (max sync-column value ingested — `lastupdated`, or the `--sync-col`/quarter date for tables without it) for `--sync`/`--sync-quarters` |
-| `report` | saved lab configurations — `(id, name, tool, spec jsonb, created_at, updated_at)`. Read-write **app state** (not a derived cache): a *report* is a named, tool-tagged JSON spec (security + `transforms` list + analysis params) so a lab setup (e.g. "SPY, real, +4%") survives a reload and can be reopened. Created lazily (`CREATE TABLE IF NOT EXISTS`) by `repositories/reports.py` — no migration step; backs every lab via the `tool` tag. |
 
 ## FRED (macro)
 
@@ -155,7 +155,7 @@ Surface-specific helper indexes added for the React app's entity pages (idempote
 When filtering by a date *window* relative to `max(date)`, resolve `max(date)` in the app
 and pass a **concrete date literal**, not `date >= (SELECT max(date) …) - INTERVAL`: the
 planner can't estimate the runtime expression and falls back to a full seq scan (turned a
-0.1s screener into 27s). See `repositories/valuation.py::screener`.
+0.1s screener into 27s). See `queries/securities/valuation.py::screener`.
 
 ## Operational notes (hard-won — read before changing the loader)
 

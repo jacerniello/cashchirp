@@ -117,9 +117,13 @@ Persistent=true
 WantedBy=timers.target
 ```
 
-**macOS launchd:** `core/scripts/com.investing.sharadar.plist.example` — replace
-`{{PROJECT_ROOT}}` and install as documented in the file's header. launchd does not expand
-`~` or relative paths, and a wrong path fails *silently*: the job simply never runs.
+**Or use the app's own scheduler.** The API runs a daemon thread that fires schedules
+stored in Postgres, editable at `/setup/schedules`. It needs no root and survives a
+restart, but nothing fires while the API is stopped — which is the right trade for a tool
+whose only control surface is that same API. Use a systemd timer instead when the ingest
+must run on a box where the app itself is not kept up.
+
+Whichever you pick, use one: two schedulers pointed at the same database will overlap.
 
 Schedule it after Sharadar's EOD refresh (typically mid-evening US time). Because
 `update_all` exits non-zero on failure, wrapping it in anything that alerts on non-zero

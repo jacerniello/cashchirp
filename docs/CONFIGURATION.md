@@ -153,16 +153,18 @@ Off by default, and it should stay off anywhere the app is reachable from the in
 | | |
 |---|---|
 | `SETUP_ENABLED` | API. Mounts `/api/v1/setup/*` — status, sources, build log, and the endpoints that **start and stop ingests**. |
-| `NEXT_PUBLIC_SETUP_ENABLED` | Frontend. Renders the Setup nav link. Cosmetic; the API flag is the real gate. |
 
 ```bash
 # core/.env      — local development
 SETUP_ENABLED=true
-# web/.env.local — local development
-NEXT_PUBLIC_SETUP_ENABLED=true
 ```
 
-Set neither in production. The router is gated at **mount** time, so with the flag off the
+There is no frontend counterpart. The navbar asks the API at runtime whether the setup
+routes are served (`/setup/enabled`) and shows the link only if they are, so one setting
+governs both. An earlier `NEXT_PUBLIC_SETUP_ENABLED` duplicated it and could disagree —
+a link to a route that 404s, or a working surface with no way in.
+
+Leave it unset in production. The router is gated at **mount** time, so with the flag off the
 paths 404 exactly like any unknown URL — a disabled deployment does not advertise that a
 setup surface exists at all.
 

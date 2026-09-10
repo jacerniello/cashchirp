@@ -195,7 +195,7 @@ is incremental:
 
 ```bash
 python -m core.setup.bootstrap           # only what changed
-python -m core.setup.bootstrap --dry-run
+python -m core.setup.bootstrap --plan    # the step list, without running it
 ```
 
 No table does a full re-download on a routine run. `update_all` derives its plan from the
@@ -211,7 +211,7 @@ loader — not an edit in four places.
    [`core/backend/sources.py`](../../core/backend/sources.py) — provider, endpoint,
    licence, credential, size, and the tables it writes.
 2. Give it a runner in `_runner()` in
-   [`core/scripts/setup/bootstrap.py`](../../core/scripts/setup/bootstrap.py), or reuse a phase that
+   [`core/setup/bootstrap.py`](../../core/setup/bootstrap.py), or reuse a phase that
    already has one (a new Sharadar table needs no code at all — the loader is
    schema-driven).
 3. Regenerate the docs:
