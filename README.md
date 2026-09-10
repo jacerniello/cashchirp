@@ -1,8 +1,56 @@
 # investing
 
-Builds a local copy of US equity and macro data, and screens it. The longer-term aim is
-to model how stocks behave and explain the outliers; what exists today is the data layer
-and the screener.
+Tools for building your own research setup on top of the Sharadar dataset: a local
+Postgres copy of the data, kept current, with a screener and a web frontend over it. The
+longer-term aim is to model how stocks behave and explain the outliers; what exists today
+is the data layer and the screener.
+
+You supply the Sharadar subscription and the machine. Nothing here is a service, and no
+data ships with the repo.
+
+## What Sharadar is
+
+Sharadar is a vendor of US equity market data, sold through
+[Nasdaq Data Link](https://data.nasdaq.com/databases/SFA). The Core US Equities bundle
+this project targets covers roughly 21,000 companies, 7,000 funds and 10,000 institutional
+investors, with history back to **1998**, delivered as a handful of flat tables:
+
+| Table | What's in it |
+|---|---|
+| `SF1` | Core fundamentals — income statement, balance sheet, cash flow, per period and dimension |
+| `SEP` / `SFP` | End-of-day prices for equities and for funds, adjusted and unadjusted |
+| `DAILY` | Daily valuation — market cap, P/E, EV and friends |
+| `SF2` | Insider transactions, from Forms 3, 4 and 5 |
+| `SF3` / `SF3A` / `SF3B` | 13F institutional holdings — by position, by security, by investor |
+| `TICKERS` | The security master, including `permaticker`, the issuer id that survives ticker recycling |
+| `ACTIONS`, `EVENTS`, `SP500`, `METRICS` | Corporate actions, 8-K events, index membership, derived daily metrics |
+
+Two things make it a reasonable base for research rather than just a price feed. It is
+**point-in-time aware** where it matters — fundamentals carry both the report period and
+the date they were filed, so you can ask what was actually knowable on a given day — and
+it is **survivorship-complete**: delisted companies stay in the data, so a backward-looking
+screen isn't quietly restricted to the firms that made it.
+
+It is a **paid subscription**, and it is the only paid thing here. The macro layer (FRED),
+short interest (FINRA) and the fund reference data (SEC EDGAR) are all free. See
+[docs/reference/sources.md](docs/reference/sources.md) for what each provider covers.
+
+## Why a local database
+
+Sharadar arrives over an HTTP API with a cap of about a million rows per call. That is
+fine for delivery and useless for research: the questions worth asking are cross-sectional
+and historical, and over an API each one is thousands of paginated calls and minutes of
+waiting.
+
+So the build pulls the tables down once and mirrors them into Postgres — one flat table
+per Sharadar product, same rows, same values, the vendor's own primary key — after which
+every question is a SQL query against local disk. Refreshes are incremental: each table
+syncs only what changed since its watermark. Nothing in the app talks to Nasdaq at read
+time.
+
+How the API works and how the loader uses it:
+[docs/reference/nasdaq-data-link.md](docs/reference/nasdaq-data-link.md). How the build
+runs: [docs/setup/database.md](docs/setup/database.md).
 
 Three parts:
 
@@ -25,6 +73,7 @@ Three parts:
 | [docs/setup/database.md](docs/setup/database.md) | The database on its own: build, resume, watch, repair. |
 | [docs/setup/sources.md](docs/setup/sources.md) | Where each dataset comes from, and its licence. |
 | [docs/reference/schema.md](docs/reference/schema.md) | Tables, keys, indexes, and the mirroring conventions. |
+| [docs/reference/nasdaq-data-link.md](docs/reference/nasdaq-data-link.md) | How the Nasdaq Data Link API works, and how the loader uses it. |
 | [docs/reference/sources.md](docs/reference/sources.md) | Long-form notes on each provider: coverage, access, caveats. |
 
 ## Running the app
@@ -41,8 +90,9 @@ python -m core.setup.bootstrap --check    # preflight, then:
 python -m core.setup.bootstrap --create-db
 ```
 
-The full build takes several hours and produces about 47 GB. It can be stopped and
-resumed. See [docs/setup/](docs/setup/README.md), which also covers the smaller builds.
+The full build takes several hours and runs to tens of GB. It can be stopped and
+resumed. See [docs/setup/](docs/setup/README.md), which also covers smaller builds that
+still run the screener.
 
 Then start both servers:
 

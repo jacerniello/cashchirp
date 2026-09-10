@@ -19,6 +19,9 @@ generated from the same registry; this page is the reading behind it.
 - **Access:** Nasdaq Data Link Tables API + bulk export.
   - Python pkg: `nasdaq-data-link` (`import nasdaqdatalink`).
   - API key: `NASDAQ_DATA_LINK_API_KEY` in `core/.env`.
+- **How the API works:** [nasdaq-data-link.md](nasdaq-data-link.md) — auth and
+  subscription tiers, bulk export vs the tables query API, cursor pagination and the
+  ~1M-row cap, and the `INDICATORS` metadata table the loader is driven by.
 - **In this repo:** wired into `core/` —
   - **Generic loader (the standard for almost every table):**
     `core/backend/ingest/sharadar/sharadar_generic.py`, CLI

@@ -24,12 +24,13 @@ setup, then several hours of unattended downloading.
 - [ ] **Python 3.13+** — `python3 --version`
 - [ ] **Postgres 16** — Docker (`cd core && docker compose up -d`) or your own instance
 - [ ] **Node 20+** — only if you want the web frontend
-- [ ] **Disk: 2× your target size.** A full build is about 47 GB of tables, and Postgres
-      needs headroom on top for index builds, vacuum, and the derived rebuilds, which
-      write a second copy before swapping it in. Check with `df -h`.
+- [ ] **Disk: plenty, and more than the tables alone.** A full build runs to tens of GB,
+      and Postgres needs headroom on top for index builds, vacuum, and the derived
+      rebuilds, which write a second copy before swapping it in. Check with `df -h`, and
+      see [Smaller builds](#smaller-builds) if that is a problem.
 - [ ] **A Nasdaq Data Link account with a Sharadar Core US Equities subscription** — the
-      paid one, and 35 of those 47 GB. Everything else is free. You can skip it and run
-      only the macro layer; see [Without Sharadar](#without-sharadar).
+      paid one, and the bulk of the data. Everything else is free. You can skip it and
+      run only the macro layer; see [Without Sharadar](#without-sharadar).
 
 ### 2 · Install
 
@@ -59,6 +60,8 @@ Fill in three values. `core/.env` is gitignored, so nothing leaves your machine.
 > blocked. There is deliberately no default.
 
 The full list of what each credential unlocks: [sources.md](sources.md#credentials-you-need).
+What the Nasdaq key actually gets you, and why a table outside your subscription returns
+`403` rather than nothing: [../reference/nasdaq-data-link.md](../reference/nasdaq-data-link.md).
 
 ### 4 · Build the database
 
@@ -146,16 +149,17 @@ than pretending to have screened anything.
 
 ## Smaller builds
 
-You do not need all 47 GB. `--only` takes Sharadar tables:
+You do not need every table. `--only` takes Sharadar table codes:
 
-| You want | Build | Size |
-|---|---|---:|
-| Screener, ideas, company fundamentals | `--only TICKERS SF1 DAILY` | ~10 GB |
-| **+ price history and charts** | `--only TICKERS SF1 DAILY SEP` | ~20 GB |
-| + insider / 13F / ETF pages | everything | ~47 GB |
+| You want | Build |
+|---|---|
+| Screener, ideas, company fundamentals | `--only TICKERS SF1 DAILY` |
+| + price history and charts | `--only TICKERS SF1 DAILY SEP` |
+| + insider / 13F / ETF pages | everything |
 
-Add tables later; the loaders are incremental and independent. Sizes above are the raw
-tables — the derived rebuilds add ~9 GB on a full build.
+`SEP` and the 13F tables are what make a build large; the rest are comparatively small.
+Add tables later — the loaders are incremental and independent — and use
+`bootstrap --status` to see what yours actually occupies on disk.
 
 ## When something goes wrong
 

@@ -967,7 +967,7 @@ def main() -> int:
     p.add_argument("--check", action="store_true", help="Run preflight only and exit.")
     p.add_argument("--plan", action="store_true", help="Print the step list and exit.")
     p.add_argument("--sources", action="store_true",
-                   help="Show where every dataset comes from (provider, licence, size).")
+                   help="Show where every dataset comes from (provider, licence, endpoint).")
     p.add_argument("--status", action="store_true",
                    help="Show what the database currently holds and exit.")
     p.add_argument("--watch", action="store_true",
@@ -1070,8 +1070,8 @@ def main() -> int:
         return 1
 
     if args.plan:
-        print(f"{'step':42} {'mode':9} {'from':14} {'size on disk':>13}")
-        print("-" * 88)
+        print(f"{'step':42} {'mode':9} {'from':14}")
+        print("-" * 68)
         phase = None
         for st in steps:
             ds = sources.BY_KEY.get(st.key)
