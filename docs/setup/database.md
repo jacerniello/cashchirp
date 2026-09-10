@@ -8,7 +8,8 @@ Nasdaq Data Link), FRED, FINRA and SEC. Nobody ships you a copy. You rebuild it 
 sources with your own keys, and `core.setup.bootstrap` is the thing that does it.
 
 Where each dataset comes from, what it costs and what it's licensed for:
-**[sources.md](sources.md)** (generated) or `bootstrap --sources`.
+**[sources.md](sources.md)**, or `bootstrap --sources` for the same from the registry
+itself.
 
 ---
 
@@ -153,26 +154,23 @@ python -m core.setup.bootstrap --only-phase derived   # just rebuild the derived
 | API `403` / `429` | key wrong, or your subscription lacks that table | check the key; confirm your Sharadar plan covers it |
 | a single table exceeds the query-API cap | Sharadar restamped a huge day | `--only <TABLE>` re-runs just it |
 | `connection refused` | Postgres not running | `cd core && docker compose up -d` |
-| a step hangs for many minutes | lock contention | `the Database tab at /setup/database` |
+| a step hangs for many minutes | lock contention | the Database tab at `/setup/database` |
 | out of disk mid-build | the 2× headroom rule | free space, then re-run — it resumes |
 
 **`unjam` is the first thing to try on a stall.** A hang is almost always Postgres lock
 contention: the app rebuilding a derived table needs an exclusive lock, an
 `idle in transaction` connection holds a read lock in front of it, and every reader queues
-behind. `unjam` stops this project's jobs and terminates the jammed backends — narrowly
+behind. The Database tab at `/setup/database` lists the current backends and offers
+**Unjam**, which stops this project's jobs and terminates the jammed ones — narrowly
 scoped, never touching other projects or its own connection.
-
-```bash
-the Database tab at /setup/database
-the Database tab at /setup/database
-```
 
 ## 6 · Confirm it worked
 
 ```bash
 python -m core.setup.bootstrap --status   # tables, row counts, sizes
-the Runs tab at /setup/runs          # latest load per dataset, from load_log
 ```
+
+The Runs tab at `/setup/runs` shows the same from `load_log` — the latest load per dataset.
 
 `--status` tells you rows *exist*, not that they are right. Numbers in finance look
 plausible while being wrong, and a silently truncated table is indistinguishable from a
@@ -198,8 +196,9 @@ python -m core.setup.bootstrap           # only what changed
 python -m core.setup.bootstrap --plan    # the step list, without running it
 ```
 
-No table does a full re-download on a routine run. `update_all` derives its plan from the
-same registry `bootstrap` builds from, so the two can't drift apart. Scheduling it:
+No table does a full re-download on a routine run. The routine refresh and the from-zero
+build are the same command reading the same registry, so there is no second plan to drift.
+Scheduling it:
 [../DEPLOYMENT.md](../DEPLOYMENT.md#nightly-refresh).
 
 ## Adding a data source
@@ -214,15 +213,11 @@ loader — not an edit in four places.
    [`core/setup/bootstrap.py`](../../core/setup/bootstrap.py), or reuse a phase that
    already has one (a new Sharadar table needs no code at all — the loader is
    schema-driven).
-3. Regenerate the docs:
+3. Update [sources.md](sources.md) to match. It used to be generated from the registry;
+   the generator is gone, so this step is manual and is the one that rots.
 
-```bash
-# docs/setup/sources.md was generated from the registry; the generator has been removed.
-```
-
-`bootstrap`, `update_all` and [sources.md](sources.md) all pick it up automatically. That
-is the point of the registry: nothing can ingest from somewhere undocumented, and the
-documentation can't describe something that doesn't run.
+`bootstrap` and the Setup UI both build their step lists from the registry, so a new entry
+runs everywhere without further edits. Only the published table needs a hand now.
 
 ## Schema reference
 

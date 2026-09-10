@@ -18,9 +18,7 @@ loaded by the one schema-driven generic loader.
   Sharadar's unchanging issuer id. It lives natively only in `tickers`; it is stamped onto
   the other equity tables from `TICKERS` per `(table, ticker)` — never derived (ambiguous
   pairs are left NULL, not guessed). See `core/backend/ingest/permaticker.py`.
-- **Typed from the source.** Column types come from Sharadar's own INDICATORS metadata, and a value that does not match its declared type is stored as NULL rather than failing the load. `TEXT_OVERRIDE` in the loader pins the columns Sharadar mistypes (`fiscalperiod` is `"2009-Q4"`, not a date). This applies to every table
-  against its downloaded file (row count + per-column non-null). All 13 Sharadar tables
-  currently pass.
+- **Typed from the source.** Column types come from Sharadar's own INDICATORS metadata, and a value that does not match its declared type is stored as NULL rather than failing the load. `TEXT_OVERRIDE` in the loader pins the columns Sharadar mistypes (`fiscalperiod` is `"2009-Q4"`, not a date). The row counts below were reconciled against the downloaded files (rows + per-column non-null) for all 13 Sharadar tables, but no command re-checks this — it is a point-in-time result, not a standing guarantee.
 - **Loading/updating:** `python -m core.setup.bootstrap --dataset sharadar:<CODE>`. A re-run
   is incremental by default, in whatever mode the table's registry entry declares; `--full`
   re-downloads the bulk export from scratch. See `core/README.md` → "Loading / updating data".
@@ -46,6 +44,18 @@ Row counts are the verified file counts. `permaticker` is stamped on equity tabl
 | `sp500` | SP500 | S&P 500 membership log | `(ticker, date, action)` | 59,158 |
 | `tickers` | TICKERS | Security master / reference | `(ticker, table, permaticker)` | 62,099 |
 
+> **13F column names (Sharadar, 2026).** Sharadar renamed the 13F date column from
+> `calendardate` to `date`, replaced `sf3.investorname` with `investorid`, and dropped
+> `sf3.price`. The mirror stores what Sharadar ships. Three app-facing columns are
+> restored at load time: `investorname` (joined from `sf3b`, the 13,247-row investor
+> map), `price` (GENERATED as `value / units * 1000` — value is in millions, units in
+> thousands; reconciled against SEP closes), and `calendardate` (GENERATED from
+> `date`). See `core/backend/ingest/permaticker.py`.
+
+So `sf3`'s key above is the key as the app sees it: `investorname` and `calendardate` are
+restored columns, and Sharadar's own key on the shipped file is `(ticker, securitytype,
+investorid, date)`.
+
 ## Derived / reference objects
 
 | Object | Kind | Purpose |
@@ -53,7 +63,7 @@ Row counts are the verified file counts. `permaticker` is stamped on equity tabl
 | `event_codes` | table | EVENTS code → label legend (from `INDICATORS`); e.g. `35` = Schedule 13D |
 | `events_decoded` | view | expands `events.eventcodes` (`"22\|71\|91"`) into ordered labels |
 | `permaticker_lookup` | table | `(product, ticker) → permaticker` map built from `tickers` (ambiguous pairs excluded) |
-| `sec_fund_class` | table | SEC mutual-fund map `(cik, series_id, class_id, symbol)` — every registered fund **share class** under its parent filer CIK. Powers the fund page's "Fund family" navigation: a fund's CIK (parsed from its `tickers.secfilings` EDGAR link) groups all its sibling series/classes; classes we carry are linked by permaticker. Loaded from the SEC's `company_tickers_mf.json` by **`python -m core.setup.bootstrap --dataset sec:fund_classes`** (a full reload of one ~1 MB JSON; the SEC needs a descriptive `User-Agent` with a contact e-mail). Refreshed by the orchestrator (`update_all`, the `SEC fund-class map` step). Reference data — drop and reload freely. |
+| `sec_fund_class` | table | SEC mutual-fund map `(cik, series_id, class_id, symbol)` — every registered fund **share class** under its parent filer CIK. Powers the fund page's "Fund family" navigation: a fund's CIK (parsed from its `tickers.secfilings` EDGAR link) groups all its sibling series/classes; classes we carry are linked by permaticker. Loaded from the SEC's `company_tickers_mf.json` by **`python -m core.setup.bootstrap --dataset sec:fund_classes`** (a full reload of one ~1 MB JSON; the SEC needs a descriptive `User-Agent` with a contact e-mail). Refreshed by the `sec` phase of a full `bootstrap` run. Reference data — drop and reload freely. |
 | `screener_snapshot` | table | one precomputed row per security for the app's Screener: latest valuation + trailing SF1 fundamentals, margins, returns, ratios, growth, net cash (cash−debt) % of cap, **Altman Z-score** (bankruptcy-distance survivability gate, computed in `queries/securities/health.py` from ART/TTM `sf1` — calibrated for non-financials), company age (from `tickers.firstpricedate`), 52-week-low/high proximity (from `metrics`), 13F holder count — tagged with an `asof` date. Built by `python -m core.setup.bootstrap --dataset derived:screener_snapshot`; auto-refreshed after a DAILY load. Nothing warms it at app startup. Rebuild from `sf1`/`daily`/`sf3a`/`metrics`/`tickers` — never hand-edit. |
 | `holder_timeseries` | table | every SHR 13F holder's quarterly positions for every security — `(permaticker, investorname, rank, calendardate, value, units, adj_units, price, asof)`, ~33M rows / ~3.8 GB. Each holder carries a per-security `rank` (1 = largest by max position value over all time), so the Company page's holdings-over-time bubble chart can **paginate all holders** as a `(permaticker, rank)` range scan (~1ms) instead of a 46M-row `sf3` self-join. `units` is as-filed; `adj_units` is split-adjusted (× the product of splits *after* each quarter, from `actions`) so the shares-over-time view is continuous across splits. `asof` = max 13F `calendardate` at build time. Built by `python -m core.setup.bootstrap --dataset derived:holder_timeseries`; auto-refreshed after an SF3 load. Nothing warms it at app startup. Rebuild from `sf3`+`actions` — never hand-edit. |
 | `sp500_concentration` | table | one row per S&P 500 **snapshot date** (every `sp500` *historical* quarter-end 1998→present, plus the latest *current* snapshot) with the index's concentration measures: cap-weight of the top 1/3/5/10/25/50 constituents, the **HHI** (Herfindahl points), and the **effective number of constituents** (1/Σwᵢ²), plus `n_constituents`, `total_mktcap`, and the top-1 name/ticker. **Point-in-time:** membership is the `sp500` log as it stood at each date, each constituent's cap is its `daily.marketcap` as of that date (latest close in a 10-day lookback). **Full-cap** weighting (Sharadar has no float — a documented proxy for S&P's float-adjusted weights, not faked). ~111 rows. Built by `python -m core.setup.bootstrap --dataset derived:sp500_concentration`; auto-refreshed after an SP500 load and by the orchestrator. Rebuild from `sp500`+`daily`+`tickers` — never hand-edit. |
@@ -71,15 +81,6 @@ page redirects to `/etf` when `category == 'ETF'` (funds have no SF1 fundamental
 insiders, or short interest).
 
 ### `derived` schema — insider people pages
-
-
-> **13F column names (Sharadar, 2026).** Sharadar renamed the 13F date column from
-> `calendardate` to `date`, replaced `sf3.investorname` with `investorid`, and dropped
-> `sf3.price`. The mirror stores what Sharadar ships. Three app-facing columns are
-> restored at load time: `investorname` (joined from `sf3b`, the 13,247-row investor
-> map), `price` (GENERATED as `value / units * 1000` — value is in millions, units in
-> thousands; reconciled against SEP closes), and `calendardate` (GENERATED from
-> `date`). See `core/backend/ingest/permaticker.py`.
 
 Built from `sf2` (+ `sep` for market valuation) by **`python -m core.setup.bootstrap --dataset derived:derived.insider`**.
 **Rerun whenever `sf2` changes** (any new insider load) — both tables are stamped with
