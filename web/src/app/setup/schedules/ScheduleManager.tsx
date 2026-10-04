@@ -25,7 +25,7 @@ const INTERVALS: { label: string; minutes: number }[] = [
 const MODE_HELP: Record<JobMode, string> = {
   update: 'Pull what changed since last time. The normal choice.',
   missing: 'Only load what has never been loaded. Skips populated tables.',
-  full: 'Re-download everything from scratch. Slow, and spends API quota.',
+  full: 'Re-download into a fresh copy and swap it in — catches retroactive edits and deleted rows. Slow; needs disk for a second copy. Best monthly.',
 };
 
 function whenText(nextRunAt: string | null, now: string | undefined): string {
@@ -86,7 +86,7 @@ export function ScheduleManager() {
         key, cadence, mode,
         interval_minutes: cadence === 'interval' ? minutes : null,
         at_time: cadence === 'interval' ? null : atTime,
-        weekday: cadence === 'weekly' ? weekday : null,
+        weekday: cadence === 'weekly' || cadence === 'monthly' ? weekday : null,
         note: note.trim() || null,
       });
       setNote('');
@@ -154,7 +154,7 @@ export function ScheduleManager() {
         <div className="mt-5">
           <span className="text-xs font-medium text-ink-light">How often</span>
           <div className="mt-1.5 flex gap-2 flex-wrap">
-            {(['interval', 'daily', 'weekly'] as Cadence[]).map((c) => (
+            {(['interval', 'daily', 'weekly', 'monthly'] as Cadence[]).map((c) => (
               <button
                 key={c}
                 type="button"
@@ -193,8 +193,11 @@ export function ScheduleManager() {
 
             {cadence !== 'interval' && (
               <div className="flex gap-3 items-center flex-wrap">
-                {cadence === 'weekly' && (
-                  <div className="flex gap-1 flex-wrap">
+                {(cadence === 'weekly' || cadence === 'monthly') && (
+                  <div className="flex gap-1 flex-wrap items-center">
+                    {cadence === 'monthly' && (
+                      <span className="text-xs text-ink-light mr-1">first</span>
+                    )}
                     {DAYS.map((d, i) => (
                       <button
                         key={d}

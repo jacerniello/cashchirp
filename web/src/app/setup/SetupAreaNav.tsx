@@ -10,6 +10,8 @@ const ITEMS: SubNavItem[] = [
   { name: 'Ingest', key: 'ingest', url: '/setup/ingest' },
   { name: 'Derived', key: 'derived', url: '/setup/derived' },
   { name: 'Database', key: 'database', url: '/setup/database' },
+  { name: 'Watermarks', key: 'watermarks', url: '/setup/watermarks' },
+  { name: 'Rebuilds', key: 'rebuilds', url: '/setup/rebuilds' },
   { name: 'Schedules', key: 'schedules', url: '/setup/schedules' },
   { name: 'Runs', key: 'runs', url: '/setup/runs' },
 ];

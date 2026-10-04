@@ -60,7 +60,9 @@ STOP_PATH = CORE_DIR / "data" / "bootstrap.stop"
 # Set by --full. The registry's Sharadar mode is `sync` — an incremental upsert from the
 # stored watermark — which is what you want almost always. `--full` replaces it with a
 # complete re-download of the bulk export, for when the local copy is suspect rather than
-# merely stale.
+# merely stale: loaded into a fresh copy that is checked, diffed and swapped in
+# (core.backend.ingest.sharadar.rebuild), so retroactive edits AND rows Sharadar deleted
+# are both caught. An empty table just gets a plain first load.
 FULL_REBUILD = False
 
 
@@ -528,9 +530,16 @@ def _runner(ds: sources.Dataset) -> Callable[[Callable[[str], None]], object]:
             # describe how to find NEW rows, so they are meaningless here and passing
             # them would be a TypeError.
             if FULL_REBUILD:
-                from core.backend.ingest.sharadar.sharadar_generic import load_table
-                return load_table(table, skip_derived=True, progress=lambda *a: progress(
-                    " ".join(str(x) for x in a)))
+                from core.backend.ingest.sharadar.rebuild import NOT_REBUILDABLE, rebuild_table
+                from core.backend.ingest.sharadar.sharadar_generic import _dest_ready, load_table
+                if not _dest_ready(table.lower()):
+                    return load_table(table, skip_derived=True, progress=lambda *a: progress(
+                        " ".join(str(x) for x in a)))
+                if table.upper() not in NOT_REBUILDABLE:
+                    return rebuild_table(
+                        table, sync_col=kwargs.get("sync_col", "lastupdated"), progress=progress)
+                progress(f"{table}: no full rebuild ({NOT_REBUILDABLE[table.upper()]}) — "
+                         "running its normal refresh instead")
             from core.backend.ingest.sharadar.sharadar_generic import load_table, sync_coarse_table, sync_table
             fn = {"sync": sync_table, "quarters": sync_coarse_table,
                   "full": load_table}[mode]
@@ -991,9 +1000,10 @@ def main() -> int:
                         "is an INCREMENTAL sync (new rows since the watermark), not a "
                         "re-download — see --full for that.")
     p.add_argument("--full", action="store_true",
-                   help="Re-download each Sharadar table's bulk export from scratch and "
-                        "upsert the lot. Implies --force. Hours; use when the local copy "
-                        "is suspect, not merely stale.")
+                   help="Re-download each Sharadar table's bulk export into a fresh copy, "
+                        "check and diff it, then swap it in — catches retroactive edits and "
+                        "deleted rows. Implies --force. Hours, and needs disk for a second "
+                        "copy of the largest table.")
     p.add_argument("--plain", action="store_true",
                    help="One line per event instead of a redrawing display.")
     args = p.parse_args()

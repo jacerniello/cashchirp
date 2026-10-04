@@ -25,7 +25,7 @@ from sqlalchemy import select
 from core.backend.db.engine import session_scope
 from core.backend.db.models import JobRun, JobSchedule
 
-CADENCES = ("interval", "daily", "weekly")
+CADENCES = ("interval", "daily", "weekly", "monthly")
 MODES = ("update", "missing", "full")
 TRIGGERS = ("manual", "scheduled", "cli")
 
@@ -94,6 +94,20 @@ def next_occurrence(
             candidate += timedelta(days=7)
         return candidate
 
+    if cadence == "monthly":
+        # The first <weekday> of each month: reuses the weekday field, so a monthly
+        # schedule needs no new column. Meant for occasional heavy jobs like rebuilds.
+        wd = 6 if weekday is None else int(weekday)
+        if not (0 <= wd <= 6):
+            raise ValueError(f"weekday must be 0..6 (Mon..Sun), got {weekday}")
+        first = candidate.replace(day=1)
+        for _ in range(3):
+            hit = first + timedelta(days=(wd - first.weekday()) % 7)
+            if hit > after:
+                return hit
+            first = (first + timedelta(days=32)).replace(day=1)
+        raise AssertionError("unreachable: a later month always has a first weekday")
+
     raise ValueError(f"cadence must be one of {CADENCES}, got {cadence!r}")
 
 
@@ -110,6 +124,8 @@ def describe(s: JobSchedule) -> str:
         return f"daily at {s.at_time}"
     days = ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
     wd = days[s.weekday] if s.weekday is not None and 0 <= s.weekday <= 6 else "?"
+    if s.cadence == "monthly":
+        return f"first {wd} of the month at {s.at_time}"
     return f"{wd} at {s.at_time}"
 
 

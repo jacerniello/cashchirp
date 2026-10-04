@@ -20,8 +20,12 @@ loaded by the one schema-driven generic loader.
   pairs are left NULL, not guessed). See `core/backend/ingest/permaticker.py`.
 - **Typed from the source.** Column types come from Sharadar's own INDICATORS metadata, and a value that does not match its declared type is stored as NULL rather than failing the load. `TEXT_OVERRIDE` in the loader pins the columns Sharadar mistypes (`fiscalperiod` is `"2009-Q4"`, not a date). The row counts below were reconciled against the downloaded files (rows + per-column non-null) for all 13 Sharadar tables, but no command re-checks this — it is a point-in-time result, not a standing guarantee.
 - **Loading/updating:** `python -m core.setup.bootstrap --dataset sharadar:<CODE>`. A re-run
-  is incremental by default, in whatever mode the table's registry entry declares; `--full`
-  re-downloads the bulk export from scratch. See `core/README.md` → "Loading / updating data".
+  is incremental by default, in whatever mode the table's registry entry declares, and never
+  removes rows. `--full` re-downloads the bulk export into a fresh copy, checks and diffs it,
+  then swaps it in, so retroactive edits and deleted rows are both caught (not SF3, which is
+  refreshed by whole quarter). The Setup **Rebuilds** tab runs and schedules this, and the
+  **Watermarks** tab rewinds where the next incremental sync starts. See `core/README.md` →
+  "Loading / updating data".
 
 ## Sharadar mirror tables
 

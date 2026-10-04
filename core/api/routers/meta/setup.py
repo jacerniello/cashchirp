@@ -21,6 +21,7 @@ import os
 import signal
 import subprocess
 import sys
+from datetime import date
 from pathlib import Path
 from typing import Any
 
@@ -868,3 +869,56 @@ def database_unjam(req: UnjamRequest) -> dict[str, Any]:
     from core.backend.db import health
     return health.unjam(dry_run=req.dry_run, db_only=req.db_only,
                         procs_only=req.procs_only)
+
+
+# ---------------------------------------------------------------------------------------
+# Sync watermarks — where each incremental sync will start from, and a way to rewind it.
+
+class RewindRequest(BaseModel):
+    tables: list[str]
+    to: date
+
+
+@router.get("/watermarks")
+@router.get("/watermarks/")
+def watermarks() -> dict[str, Any]:
+    """Every table's sync watermark: the date its next incremental sync starts from."""
+    from core.backend.queries.meta import sync_state
+    from core.setup.reset_db import _running_pids
+    return {"watermarks": sync_state.list_watermarks(),
+            "running": sorted(_running_pids())}
+
+
+@router.post("/watermarks/rewind")
+def rewind_watermarks(req: RewindRequest) -> dict[str, Any]:
+    """Move the chosen tables' watermarks back to a date, so the next sync re-pulls from it.
+
+    Refused while any ingest is running: a sync finishing after the rewind writes its own
+    watermark over it, and the rewind would look applied when it is not."""
+    from core.backend.queries.meta import sync_state
+    from core.setup.reset_db import _running_pids
+    running = _running_pids()
+    if running:
+        raise HTTPException(
+            409, f"Stop the running job(s) first ({', '.join(sorted(running))}) — "
+                 "a sync that finishes afterwards would overwrite the rewind.")
+    try:
+        return sync_state.rewind(req.tables, req.to)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
+@router.get("/rebuilds")
+@router.get("/rebuilds/")
+def rebuilds() -> dict[str, Any]:
+    """Tables a full rebuild (copy-and-swap) can replace: size, last rebuild and its diff,
+    whether one is running, and any schedule that rebuilds it. Start one through
+    /dataset/run with mode "full"."""
+    from core.backend.ingest.sharadar.rebuild import rebuild_overview
+    out = rebuild_overview()
+    scheds = jobsq.list_schedules()
+    for t in out["tables"]:
+        job = _job_state(t["key"])
+        t["running"] = bool(job["running"])
+        t["schedules"] = [s for s in scheds if s["key"] == t["key"] and s["mode"] == "full"]
+    return out

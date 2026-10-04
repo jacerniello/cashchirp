@@ -6,7 +6,8 @@ SHARADAR/INDICATORS metadata, creates a matching Postgres table, and upserts row
 through one COPY-into-staging path — with stage/byte progress so long loads are
 observable. Two entry points:
 
-- `load_table()` — full backfill from the bulk export (one zipped CSV).
+- `load_table()` — first load from the bulk export (one zipped CSV); refuses a
+  populated table — a full reload of one is `rebuild.rebuild_table()` (copy-and-swap).
 - `sync_table()` — incremental: pull only rows with `<sync_col> >= watermark`
   via the query API and upsert. The watermark comes from `sync_state` (or, first
   time, from the max `<sync_col>` already in the table — so an existing backfill
@@ -84,6 +85,33 @@ def fetch_schema(table_code: str) -> tuple[dict[str, str], list[str]]:
     return types, pk
 
 
+def _cast(c: str, types: dict[str, str]) -> str:
+    """Value-guarded cast of staged text column `c`: a value that doesn't match its type
+    becomes NULL, never a failed load."""
+    base = f"NULLIF(st.\"{c}\", '')"
+    t = types.get(c, "text")
+    if t == "date":
+        return f"(CASE WHEN {base} ~ {_DATE_RE} THEN {base}::date END)"
+    if t == "double precision":
+        return (
+            f"(CASE WHEN {base} ~ '^-?[0-9]*\\.?[0-9]+([eE][-+]?[0-9]+)?$' "
+            f"THEN {base}::double precision END)"
+        )
+    return base
+
+
+def _stage_select(header, types, pk) -> str:
+    """SELECT of the typed rows in `_stage`, one per key (DISTINCT ON pk) when a key exists.
+    Shared by the upsert and the copy-and-swap rebuild so both convert values identically."""
+    selects = ", ".join(f'{_cast(c, types)} AS "{c}"' for c in header)
+    pk = [c for c in pk if c in header]
+    if not pk:
+        return f"SELECT {selects} FROM _stage st"
+    key_exprs = ", ".join(_cast(c, types) for c in pk)
+    return (f"SELECT DISTINCT ON ({key_exprs}) {selects}\n"
+            f"FROM _stage st\nORDER BY {key_exprs}")
+
+
 def _build_sql(header, types, pk, dest):
     """Build (ddl, dml, stage_defs, stage_cols, has_lastupdated) for a table."""
     col_defs = ",\n  ".join(f'"{c}" {types.get(c, "text")}' for c in header)
@@ -94,32 +122,16 @@ def _build_sql(header, types, pk, dest):
         ddl += f",\n  CONSTRAINT uq_{dest} UNIQUE ({pk_cols})"
     ddl += "\n);"
 
-    # value-guarded casts: a value that doesn't match its type -> NULL, never a failed load
-    def cast(c: str) -> str:
-        base = f"NULLIF(st.\"{c}\", '')"
-        t = types.get(c, "text")
-        if t == "date":
-            return f"(CASE WHEN {base} ~ {_DATE_RE} THEN {base}::date END)"
-        if t == "double precision":
-            return (
-                f"(CASE WHEN {base} ~ '^-?[0-9]*\\.?[0-9]+([eE][-+]?[0-9]+)?$' "
-                f"THEN {base}::double precision END)"
-            )
-        return base
-
     insert_cols = ", ".join(f'"{c}"' for c in header)
-    selects = ", ".join(cast(c) for c in header)
+    select = _stage_select(header, types, pk)
     if pk:
-        key_exprs = ", ".join(cast(c) for c in pk)
         updates = ", ".join(f'"{c}" = EXCLUDED."{c}"' for c in header if c not in pk)
         dml = (
-            f"INSERT INTO {dest} ({insert_cols})\n"
-            f"SELECT DISTINCT ON ({key_exprs}) {selects}\n"
-            f"FROM _stage st\nORDER BY {key_exprs}\n"
+            f"INSERT INTO {dest} ({insert_cols})\n{select}\n"
             f"ON CONFLICT ON CONSTRAINT uq_{dest} DO UPDATE SET {updates};"
         )
     else:
-        dml = f"INSERT INTO {dest} ({insert_cols}) SELECT {selects} FROM _stage st;"
+        dml = f"INSERT INTO {dest} ({insert_cols}) {select};"
 
     stage_defs = ", ".join(f'"{c}" text' for c in header)
     stage_cols = ", ".join(f'"{c}"' for c in header)
@@ -435,6 +447,14 @@ def load_table(
     dataset = f"SHARADAR/{table_code.upper()}"
     requested_at = datetime.now()
 
+    # First loads only. Upserting a full export onto a populated table keeps every row
+    # Sharadar has deleted since; a full reload of a populated table is a copy-and-swap
+    # (rebuild.rebuild_table), which replaces it exactly.
+    if _dest_ready(dest):
+        raise RuntimeError(
+            f"{dest} already holds rows — load_table only does first loads. To reload it "
+            f"whole, rebuild it (bootstrap --dataset sharadar:{table_code.upper()} --full).")
+
     types, pk = fetch_schema(table_code)
     _progress(progress, table_code, f"schema: {len(types)} cols, pk={pk}")
 
@@ -577,8 +597,11 @@ def sync_table(
 
     watermark = since or _get_watermark(dataset, dest, sync_col)
     if watermark is None:
-        _progress(progress, table_code, "no watermark — full backfill")
-        return load_table(table_code, dest_table=dest, progress=progress)
+        # Populated but with nothing to resume from: reload it whole, by copy-and-swap so
+        # rows Sharadar has since deleted go too (an upsert onto the live table would keep them).
+        _progress(progress, table_code, "no watermark — full rebuild")
+        from core.backend.ingest.sharadar.rebuild import rebuild_table
+        return rebuild_table(table_code, sync_col=sync_col, progress=progress)
 
     # Past here an incremental sync really is what is happening, so the column has to work.
     if sync_col not in types:

@@ -9,7 +9,7 @@ import api from '@/lib/api';
 // Neither retries: a 404 here means this deployment has no control surface at all, and
 // hammering it three times cannot change that.
 
-export type Cadence = 'interval' | 'daily' | 'weekly';
+export type Cadence = 'interval' | 'daily' | 'weekly' | 'monthly';
 export type JobMode = 'update' | 'missing' | 'full';
 export type Trigger = 'manual' | 'scheduled' | 'cli';
 
@@ -20,7 +20,7 @@ export interface Schedule {
   cadence: Cadence;
   interval_minutes: number | null;
   at_time: string | null;
-  /** 0 = Monday .. 6 = Sunday. Weekly only. */
+  /** 0 = Monday .. 6 = Sunday. Weekly, and monthly (the first such day of the month). */
   weekday: number | null;
   enabled: boolean;
   note: string | null;
