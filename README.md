@@ -50,10 +50,14 @@ Three parts:
   table per Sharadar product) plus FRED macro panels, the query modules over it, and
   `core/api/`, a FastAPI bridge serving them as JSON at `/api/v1`. See
   [core/README.md](core/README.md) and [docs/reference/schema.md](docs/reference/schema.md).
-- `web/` — the frontend. Next.js, React and Tailwind: screener, company pages, macro and
-  commodities. Routes are in `web/src/app`, shared components in `web/src/components`.
+- `web/` — the frontend. Next.js, React and Tailwind: screener, research, backtests,
+  company pages, macro and commodities. Routes are in `web/src/app`, shared components in `web/src/components`.
 - `config/screens/` — the screens. YAML filters that say what you are looking for. This is
   the part you are meant to edit; the screener and the idea board both read these files.
+- **Research and backtests** — notes and AI due diligence on any stock, groups, frozen
+  screener snapshots, rankings, and point-in-time backtests of your screens. The tooling is
+  in the repo; your research is plain files in a gitignored folder that you can point an AI
+  agent at. See [docs/RESEARCH.md](docs/RESEARCH.md).
 
 ## Documentation
 
@@ -61,6 +65,7 @@ Three parts:
 |---|---|
 | [docs/setup/](docs/setup/README.md) | Start here. Install, keys, build, verify. |
 | [docs/CONFIGURATION.md](docs/CONFIGURATION.md) | Every setting, and the screen-spec schema. |
+| [docs/RESEARCH.md](docs/RESEARCH.md) | Research: notes, AI DD, groups, snapshots, rankings, backtests — and pointing Claude at it. |
 | [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) | Sizing tiers, topology, the nightly refresh, backups. |
 | [docs/setup/database.md](docs/setup/database.md) | The database on its own: build, resume, watch, repair. |
 | [docs/setup/sources.md](docs/setup/sources.md) | Where each dataset comes from, and its licence. |

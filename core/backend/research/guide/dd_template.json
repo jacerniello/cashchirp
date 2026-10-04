@@ -1,0 +1,174 @@
+{
+  "id": "_template",
+  "ticker": "TMPL",
+  "permaticker": null,
+  "company": "TEMPLATE — schema example, not a real report",
+  "sector": "Technology",
+  "industry": "Software - Application",
+  "group": 0,
+  "asof": "2026-06-17",
+  "generated_at": "2026-06-19T12:00:00Z",
+  "rating": {
+    "score": 5,
+    "label": "Strong double candidate",
+    "confidence": "medium",
+    "one_liner": "Illustrative example showing every section and chart type the renderer supports — replace with a real, fully-sourced DD."
+  },
+  "price": {
+    "current": 280.0,
+    "currency": "USD",
+    "market_cap": 5020000000,
+    "fair_value_bear": 240,
+    "fair_value_base": 480,
+    "fair_value_bull": 650,
+    "upside_base_pct": 0.71
+  },
+  "tldr": "This file is a TEMPLATE. It exercises the full DD layout: TL;DR, charts, bull/bear, thesis points, priced-in expectations, scenarios, analyst estimates, catalysts, the 24-item checklist, risks, verdict, data gaps, and sources. Subagents copy this shape into <TICKER>.json with real, sourced research.",
+  "bull_case": "High-moat franchise with sticky revenue, expanding margins, and a balance sheet that funds buybacks. The market is extrapolating a temporary growth scare; normalization alone re-rates the multiple.",
+  "bear_case": "If the disruption thesis is right, net retention rolls over and the multiple is justified — cheap stays cheap. Quantify the churn level that breaks the base case.",
+  "verdict": "Replace with a real synthesis: the weight of evidence, the rating, and the one or two things that would move it up or down.",
+  "thesis_points": [
+    {
+      "claim": "Revenue is ~80% recurring with >100% net retention.",
+      "evidence": "Disclosed dollar-based net retention and subscription mix in the latest annual report.",
+      "confidence": "verified",
+      "source": { "label": "FY annual report, MD&A", "url": "https://www.sec.gov/" }
+    },
+    {
+      "claim": "Buybacks have shrunk the share count ~3%/yr net of SBC.",
+      "evidence": "Diluted share count trend reconciled across the last 5 income statements.",
+      "confidence": "verified",
+      "source": { "label": "10-K share data", "url": "https://www.sec.gov/" }
+    }
+  ],
+  "expectations": {
+    "summary": "Reverse-DCF on today's price implies ~3% long-run FCF growth; our model and consensus both sit near ~8%. The market is pricing near-stagnation for a company still compounding.",
+    "implied_growth_pct": 0.03,
+    "reference_growth_pct": 0.08,
+    "method": "10-year reverse DCF, WACC 9%, terminal growth 3%"
+  },
+  "analyst_estimates": {
+    "consensus_pt": 360,
+    "n_analysts": 18,
+    "rating_dist": "12 Buy / 5 Hold / 1 Sell",
+    "note": "PT trend has risen over the last two quarters; we sit above consensus on out-year margins.",
+    "source": { "label": "Sell-side consensus aggregate", "url": "https://www.example.com/" }
+  },
+  "scenarios": [
+    { "name": "Bear", "prob": 0.25, "price_target": 240, "return_pct": -0.14, "assumptions": "Growth decelerates to low-single-digits; multiple stays at trough ~6x EBITDA." },
+    { "name": "Base", "prob": 0.5, "price_target": 480, "return_pct": 0.71, "assumptions": "Mid-single-digit growth resumes; multiple re-rates to ~10x as the scare fades." },
+    { "name": "Bull", "prob": 0.25, "price_target": 650, "return_pct": 1.32, "assumptions": "Reacceleration + margin expansion; multiple normalizes to peer ~13x." }
+  ],
+  "catalysts": [
+    { "date": "2025-02-13", "title": "Q4 guide light on cloud", "kind": "guidance", "direction": "past", "price_reaction_pct": -0.18, "note": "Stock gapped down on a soft forward number.", "source": { "label": "Q4 press release", "url": "https://www.sec.gov/" } },
+    { "date": "2025-08-07", "title": "Buyback authorization raised", "kind": "buyback", "direction": "past", "price_reaction_pct": 0.06, "note": "Signaled confidence; modest pop.", "source": { "label": "8-K", "url": "https://www.sec.gov/" } },
+    { "date": "2026-Q3", "title": "Next-gen product GA", "kind": "product", "direction": "forward", "note": "Could reset the growth narrative and trigger the re-rate.", "source": { "label": "Roadmap, earnings call", "url": "https://www.example.com/" } }
+  ],
+  "charts": [
+    {
+      "id": "price_catalysts",
+      "type": "price_catalysts",
+      "title": "5-year price with catalysts",
+      "yFormat": "currency",
+      "series": [
+        { "label": "Price", "points": [
+          { "date": "2021-06-01", "value": 300 },
+          { "date": "2021-12-01", "value": 360 },
+          { "date": "2022-06-01", "value": 250 },
+          { "date": "2022-12-01", "value": 230 },
+          { "date": "2023-06-01", "value": 200 },
+          { "date": "2023-12-01", "value": 210 },
+          { "date": "2024-06-01", "value": 240 },
+          { "date": "2024-12-01", "value": 290 },
+          { "date": "2025-02-13", "value": 238 },
+          { "date": "2025-08-07", "value": 252 },
+          { "date": "2026-06-01", "value": 280 }
+        ] }
+      ],
+      "markers": [
+        { "date": "2025-02-13", "label": "Q4 guide light", "tone": "neg" },
+        { "date": "2025-08-07", "label": "Buyback raised", "tone": "pos" }
+      ]
+    },
+    {
+      "id": "exp",
+      "type": "multiline",
+      "title": "Revenue growth: priced-in vs consensus",
+      "yFormat": "percent",
+      "series": [
+        { "label": "Priced-in (reverse DCF)", "points": [
+          { "date": "2024-01-01", "value": 0.05 }, { "date": "2025-01-01", "value": 0.04 }, { "date": "2026-01-01", "value": 0.03 }
+        ] },
+        { "label": "Consensus", "points": [
+          { "date": "2024-01-01", "value": 0.09 }, { "date": "2025-01-01", "value": 0.08 }, { "date": "2026-01-01", "value": 0.08 }
+        ] }
+      ],
+      "note": "Gap between the two lines is the mispricing the thesis monetizes."
+    },
+    {
+      "id": "val",
+      "type": "multiline",
+      "title": "EV/EBITDA vs 5-year median",
+      "yFormat": "ratio",
+      "series": [
+        { "label": "EV/EBITDA", "points": [
+          { "date": "2021-06-01", "value": 14 }, { "date": "2022-06-01", "value": 11 }, { "date": "2023-06-01", "value": 8 }, { "date": "2024-06-01", "value": 7 }, { "date": "2025-06-01", "value": 6 }, { "date": "2026-06-01", "value": 6.5 }
+        ] },
+        { "label": "5y median", "points": [
+          { "date": "2021-06-01", "value": 9.5 }, { "date": "2026-06-01", "value": 9.5 }
+        ] }
+      ]
+    },
+    {
+      "id": "est",
+      "type": "bars",
+      "title": "Revenue: actual vs estimate",
+      "yFormat": "currency",
+      "categories": ["FY23", "FY24", "FY25E", "FY26E"],
+      "series": [
+        { "label": "Actual", "values": [2100000000, 2300000000, null, null] },
+        { "label": "Estimate", "values": [null, null, 2480000000, 2670000000] }
+      ]
+    }
+  ],
+  "checklist": [
+    { "section": "A · Business & moat", "item": "Revenue model & segment/geo mix quantified", "status": "pass", "finding": "Example finding — replace with sourced segment breakdown.", "sources": [{ "label": "10-K", "url": "https://www.sec.gov/" }] },
+    { "section": "A · Business & moat", "item": "Moat source named, evidenced + durability test", "status": "pass", "finding": "Switching costs evidenced via net retention.", "sources": [] },
+    { "section": "A · Business & moat", "item": "Market share / TAM with direction", "status": "warn", "finding": "Share roughly flat; TAM growing — verify with third-party sizing.", "sources": [] },
+    { "section": "A · Business & moat", "item": "Pricing power / retention / unit economics", "status": "pass", "finding": "Price increases stuck; churn low.", "sources": [] },
+    { "section": "B · Financial quality", "item": "Revenue & EPS growth verified; organic vs acquired", "status": "pass", "finding": "Reconciled to filings.", "sources": [] },
+    { "section": "B · Financial quality", "item": "Margin trend vs peers; reconciled", "status": "pass", "finding": "Gross/oper/net stable-to-up.", "sources": [] },
+    { "section": "B · Financial quality", "item": "ROIC/ROE quality (not leverage/buyback inflated)", "status": "pass", "finding": "Returns largely operating.", "sources": [] },
+    { "section": "B · Financial quality", "item": "FCF conversion; capex; honest SBC", "status": "warn", "finding": "SBC ~X% of revenue — adjust FCF accordingly.", "sources": [] },
+    { "section": "B · Financial quality", "item": "Balance sheet: net cash/debt, maturities, Z", "status": "pass", "finding": "Net cash; Altman-Z safe.", "sources": [] },
+    { "section": "B · Financial quality", "item": "Share count trend net of dilution", "status": "pass", "finding": "Count falling ~3%/yr.", "sources": [] },
+    { "section": "C · Valuation & expectations", "item": "Multiples vs own history & peers", "status": "pass", "finding": "Trading below own 5y median and peers.", "sources": [] },
+    { "section": "C · Valuation & expectations", "item": "Reverse-DCF / implied expectations", "status": "pass", "finding": "Price implies ~3% vs ~8% reality.", "sources": [] },
+    { "section": "C · Valuation & expectations", "item": "Scenario fair value with assumptions", "status": "pass", "finding": "Bear/base/bull mapped.", "sources": [] },
+    { "section": "C · Valuation & expectations", "item": "Analyst consensus & where we differ", "status": "pass", "finding": "Above consensus on margins.", "sources": [] },
+    { "section": "D · Catalysts & price history", "item": "Why it's cheap now — quantified overhang", "status": "pass", "finding": "Growth scare; ~50% de-rate.", "sources": [] },
+    { "section": "D · Catalysts & price history", "item": "Historical catalyst price reactions", "status": "pass", "finding": "Mapped on the price chart.", "sources": [] },
+    { "section": "D · Catalysts & price history", "item": "Identifiable forward catalyst(s) + timing", "status": "warn", "finding": "Product GA next year; timing soft.", "sources": [] },
+    { "section": "D · Catalysts & price history", "item": "Ownership / insider / institutional signals", "status": "na", "finding": "Pending — link to company page data.", "sources": [] },
+    { "section": "E · Risks & disconfirmation", "item": "Bear case steelmanned", "status": "pass", "finding": "See bear case.", "sources": [] },
+    { "section": "E · Risks & disconfirmation", "item": "Key risks quantified", "status": "pass", "finding": "Concentration / regulation sized.", "sources": [] },
+    { "section": "E · Risks & disconfirmation", "item": "Disconfirming evidence sought", "status": "warn", "finding": "Need more channel checks.", "sources": [] },
+    { "section": "F · Verdict", "item": "Rating 1–6 with justification", "status": "pass", "finding": "Scored 5 — strong double candidate.", "sources": [] },
+    { "section": "F · Verdict", "item": "What moves the rating up / down", "status": "pass", "finding": "Up on reaccel; down on retention break.", "sources": [] },
+    { "section": "F · Verdict", "item": "Data gaps noted", "status": "pass", "finding": "See data gaps.", "sources": [] }
+  ],
+  "risks": [
+    "Disruption: if the secular thesis bites, retention falls and the cheap multiple is deserved.",
+    "Concentration: a single large customer/segment drives an outsized share of growth.",
+    "FX / macro: revenue translation and enterprise budgets are cycle-sensitive."
+  ],
+  "sources": [
+    { "label": "Latest 10-K / annual report", "url": "https://www.sec.gov/", "accessed": "2026-06-19" },
+    { "label": "Most recent 10-Q", "url": "https://www.sec.gov/", "accessed": "2026-06-19" },
+    { "label": "Earnings call transcript", "url": "https://www.example.com/", "accessed": "2026-06-19" }
+  ],
+  "data_gaps": [
+    "Segment-level margins not disclosed — only consolidated.",
+    "Insider/institutional flow not yet pulled into this report."
+  ]
+}

@@ -1,8 +1,9 @@
 # Configuration
 
-Two files hold everything that is *yours*: `core/.env` (secrets and environment) and
-`config/screens/*.yaml` (what you're looking for). Nothing else needs editing to make this
-project your own.
+Two files hold everything that is *configuration*: `core/.env` (secrets and environment) and
+`config/screens/*.yaml` (what you're looking for). Your research — notes, DD, groups,
+snapshots, backtest reports — is content, not configuration; it lives in the research folder
+(`RESEARCH_DIR`, see [RESEARCH.md](RESEARCH.md)).
 
 ---
 
@@ -20,6 +21,7 @@ Copy from `core/.env.example`. Gitignored — secrets never leave your machine.
 | `NASDAQ_DATA_LINK_API_KEY` | — | Required for any Sharadar load. |
 | `FRED_API_KEY` | — | Required for the macro layer. Free. |
 | `SEC_USER_AGENT` | — | **Required for anything reading filings.** Your real name and e-mail. No default: SEC rate-limits by this identity, so a shared one gets everyone blocked. |
+| `RESEARCH_DIR` | `<repo>/research` | Where your research lives — stock notes, DD, groups, snapshots, backtest reports. Plain files, gitignored. See [RESEARCH.md](RESEARCH.md). |
 
 ---
 
@@ -34,7 +36,8 @@ Screens are data, not code, for two reasons:
    is the filter as written. There is no second definition to drift from it.
 
 Screens are defined in `config/screens/` and run from the UI: `/screener` builds one,
-`/screener/ideas` runs every saved screen. There is no command-line runner.
+`/screener/ideas` runs every saved screen, and either can be frozen into a research snapshot
+or backtested (see [RESEARCH.md](RESEARCH.md)).
 
 Copy `quality-value.yaml`, change the numbers, point `ACTIVE_SCREEN` at yours. Files
 beginning with `_` are ignored, so a half-finished draft can sit in the folder safely.

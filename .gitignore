@@ -34,3 +34,7 @@ web/.env.*.local
 
 # Agent guidance — local only, not part of the published project
 CLAUDE.md
+
+# Your research (notes, DD, groups, snapshots, backtest reports) — content, not code.
+# The apparatus that reads and writes it lives in core/backend/research/.
+/research/

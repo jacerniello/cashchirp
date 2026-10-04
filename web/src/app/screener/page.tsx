@@ -12,6 +12,7 @@ import {
 import { ALL_SCREEN_METRICS, type FilterPreset } from './constants';
 import { parseFilterValue, filterToParam } from './utils';
 import { SaveScreen } from './components/SaveScreen';
+import { SnapshotResults } from './components/SnapshotResults';
 import { FilterPanel } from './components/FilterPanel';
 import { LiveResults } from './components/LiveResults';
 import { Card, EmptyState, Spinner } from './components/shared';
@@ -336,6 +337,8 @@ function FilterPageContent() {
         {/* Keep the current filter as a screen — see SaveScreen.tsx for why it writes
             YAML rather than storing it in the browser. */}
         <SaveScreen params={screenerParams} />
+        {/* Freeze the current result (all matches) as a research snapshot. */}
+        <SnapshotResults params={screenerParams} />
         <FilterPanel
           selectedRange={selectedRange}
           selectedSector={selectedSector}

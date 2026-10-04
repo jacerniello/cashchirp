@@ -6,7 +6,7 @@ import Link from "next/link";
 export const metadata = {
   title: "Personal Investing Research Tool",
   description:
-    "A personal research platform for forming hypotheses about how markets behave, testing them against data, and recording what holds up.",
+    "Screen the US equity universe, freeze what a screen finds, research and group the names with your own notes and AI due diligence, and backtest the screens.",
 };
 
 /** The tools, in the order someone new should meet them: find names, then the context to
@@ -23,6 +23,18 @@ const TOOLS: { href: string; label: string; blurb: string }[] = [
     label: "Ideas",
     blurb:
       "Every screen you have saved, each run live against the latest snapshot so you can compare what they surface.",
+  },
+  {
+    href: "/research",
+    label: "Research",
+    blurb:
+      "Notes and AI due diligence on any stock, red-team reviews, groups you define, frozen screener snapshots — and a ranking of everything you have rated.",
+  },
+  {
+    href: "/backtests",
+    label: "Backtests",
+    blurb:
+      "Run a saved screen back through history, point-in-time and survivorship-free, and keep the report.",
   },
   {
     href: "/sectors",
@@ -47,23 +59,6 @@ const TOOLS: { href: string; label: string; blurb: string }[] = [
   },
 ];
 
-/** The discipline the project runs on. Stated here because it is the actual product — the
- *  tools are just how it gets applied. */
-const PRINCIPLES: { title: string; body: string }[] = [
-  {
-    title: "Hypothesis first",
-    body: "Write the question, and what would change your mind, before you build the screen. A screen with no stated question is a black box that returns names you will rationalise.",
-  },
-  {
-    title: "Distrust the numbers first",
-    body: "Financial data looks entirely plausible while being wrong. Verify the mirror against source, reconcile a screen's figures to the filings, and treat anything you could not check as unknown rather than done.",
-  },
-  {
-    title: "Keep what you reject",
-    body: "A name you rejected is a result, and the one you are most likely to waste a week rediscovering when the screen surfaces it again next quarter. Write it down somewhere — this tool no longer does it for you.",
-  },
-];
-
 export default function RootHome() {
   return (
     <div className="bg-white min-h-[calc(100vh-4rem)] font-sans">
@@ -77,7 +72,8 @@ export default function RootHome() {
         </h1>
         <p className="text-lg text-ink-light max-w-2xl mx-auto text-pretty">
           A screener over your own mirror of two decades of US fundamentals, prices and
-          filings: define what you are looking for, save it, and see who passes today.
+          filings — with a place to research what it finds, group it, rank it, and test
+          whether the screen would have worked.
         </p>
         <p className="text-sm text-ink-muted max-w-2xl mx-auto mt-4">
           A research program, not a trading bot — and nothing here is investment advice.
@@ -90,10 +86,10 @@ export default function RootHome() {
             Open the screener
           </Link>
           <Link
-            href="/screener/ideas"
+            href="/research"
             className="no-underline rounded-lg border border-rule px-5 py-2.5 text-[0.9375rem] font-medium text-ink transition-colors duration-150 hover:border-green hover:text-green"
           >
-            Browse your ideas
+            Open your research
           </Link>
         </div>
       </div>
@@ -129,16 +125,23 @@ export default function RootHome() {
             fundamentals, prices, insider transactions and 13F holdings back to 1998 —
             alongside <span className="font-medium text-ink">FRED</span> macro panels. What
             you look for is a screen you define yourself — one definition, read by the idea
-            board and the CLI alike, so what you look at is what you run.
+            board, snapshots and backtests alike, so what you look at is what you test.
           </p>
           <p className="text-sm text-ink-light leading-relaxed mt-3">
-            What it does <em>not</em> do is tell you whether a screen works. There is no
-            historical validation here, and no place to keep notes: a basket is a list of
-            candidates to research, never evidence of an edge. Judging them, and recording
-            what you concluded, happens outside this tool.
+            When a screen surfaces names, freeze the result as a{" "}
+            <span className="font-medium text-ink">snapshot</span>, trim it, and sort what
+            is left into <span className="font-medium text-ink">groups</span> of your own
+            making. Each stock gets your notes and, when you want it, an AI due-diligence
+            report and red-team review — written into a research folder you can point Claude
+            at and say &ldquo;do DD on this snapshot&rdquo;. Rated stocks rank against each
+            other, and a backtest tells you whether the screen behind them would have worked.
+          </p>
+          <p className="text-sm text-ink-light leading-relaxed mt-3">
+            Your research stays on your machine as plain files; only the tooling is in the
+            repository.
           </p>
           <div className="mt-5 flex items-center gap-2 flex-wrap text-[0.8125rem] text-ink-faint">
-            {["Define a screen", "Save it", "Run it", "Research the survivors"].map(
+            {["Screen", "Snapshot", "Research & group", "Rank", "Backtest"].map(
               (step, i, arr) => (
                 <span key={step} className="flex items-center gap-2">
                   <span className="rounded-md bg-green-soft px-2 py-1 font-medium text-green-text">
@@ -151,21 +154,6 @@ export default function RootHome() {
           </div>
         </div>
 
-        {/* Principles */}
-        <h2 className="text-sm font-semibold text-ink mt-16 mb-5 uppercase tracking-wide">
-          How it is kept honest
-        </h2>
-        <div className="grid grid-cols-3 max-[900px]:grid-cols-1 gap-4">
-          {PRINCIPLES.map((p) => (
-            <div
-              key={p.title}
-              className="bg-white rounded-xl border border-rule shadow-sm p-5"
-            >
-              <div className="text-base font-semibold text-ink">{p.title}</div>
-              <p className="mt-1.5 text-sm text-ink-light leading-relaxed">{p.body}</p>
-            </div>
-          ))}
-        </div>
       </div>
     </div>
   );

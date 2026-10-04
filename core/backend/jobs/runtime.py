@@ -52,7 +52,12 @@ _ps_cache: dict[str, Any] = {"at": 0.0, "procs": {}}
 #
 # Requiring `-m` also makes it stricter than the substring test it replaces, which matched
 # any command line that merely mentioned the module — an editor, a grep, a shell one-liner.
-_BOOTSTRAP_INVOCATION = re.compile(r"(?:^|\s)-m\s+[\w.]*\bsetup\.bootstrap(?:\s|$)")
+#
+# Backtests (`-m core.backend.backtest.run`) are jobs of this project too: they are spawned
+# the same way and recorded in the same run ledger, so the ledger's reconcile must see them
+# as alive while they run, or it would close a running backtest out as failed.
+_BOOTSTRAP_INVOCATION = re.compile(
+    r"(?:^|\s)-m\s+[\w.]*\b(?:setup\.bootstrap|backtest\.run)(?:\s|$)")
 
 
 def _bootstrap_procs() -> dict[int, str]:

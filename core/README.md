@@ -164,9 +164,17 @@ The screener's saved filters are YAML, not code — `config/screens/*.yaml`, loa
 `backend/screens.py`. `ACTIVE_SCREEN` in `core/.env` picks the default.
 
 Screens run from the UI: `/screener` to build one, `/screener/ideas` for every saved
-screen. There is no CLI runner and no backtest harness — a screen produces a list of
-candidates, not evidence that the filter has an edge. Schema:
+screen. A screen produces a list of candidates, not evidence that the filter has an edge —
+that is what a backtest is for (`backend/backtest/`). Schema:
 [../docs/CONFIGURATION.md](../docs/CONFIGURATION.md).
+
+## Research
+
+`backend/research/store.py` reads and writes the research folder (`settings.research_dir`):
+per-stock notes and DD, groups, snapshots, free notes. `backend/research/guide/` holds the
+standards and the `CLAUDE.md` an AI agent reads there; they are copied into the folder when
+the API starts. Routes: `api/routers/research/`. See
+[../docs/RESEARCH.md](../docs/RESEARCH.md).
 
 ## Reuse cheatsheet
 

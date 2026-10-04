@@ -88,11 +88,10 @@ def _num(qp, key):
         return None
 
 
-@router.get("/")
-def list_companies(request: Request) -> dict[str, Any]:
-    qp = request.query_params
-    with session_scope() as s:
-        df = screener.snapshot(s)
+def filter_grid(df: pd.DataFrame, qp) -> pd.DataFrame:
+    """The `/screener` grid's filters and sort, applied to the snapshot. `qp` is anything
+    with `.get` returning strings (query params, or a dict from `params_to_query`). Shared
+    with research snapshots, so a snapshot holds exactly the rows the grid showed."""
     df = df.copy()
 
     # range filters
@@ -137,6 +136,27 @@ def list_companies(request: Request) -> dict[str, Any]:
     col = "name" if key == "name" else _FILT.get(key, "marketcap")
     if col in df.columns:
         df = df.sort_values(col, ascending=not desc, na_position="last")
+
+    return df
+
+
+def params_to_query(params: dict[str, Any]) -> dict[str, str]:
+    """Grid params as sent in a JSON body (booleans, numbers) -> the string form the grid's
+    query string uses, so `filter_grid` reads both the same way."""
+    out: dict[str, str] = {}
+    for k, v in (params or {}).items():
+        if v is None or v == "":
+            continue
+        out[k] = ("true" if v else "false") if isinstance(v, bool) else str(v)
+    return out
+
+
+@router.get("/")
+def list_companies(request: Request) -> dict[str, Any]:
+    qp = request.query_params
+    with session_scope() as s:
+        df = screener.snapshot(s)
+    df = filter_grid(df, qp)
 
     total = len(df)
     page = max(int(qp.get("page") or 1), 1)

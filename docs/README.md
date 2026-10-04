@@ -10,6 +10,7 @@ Where things are, and which question each document answers.
 | [reference/schema.md](reference/schema.md) | What is *in* the database: tables, keys, indexes, the fidelity conventions. |
 | [reference/nasdaq-data-link.md](reference/nasdaq-data-link.md) | How the Nasdaq Data Link API works — auth, bulk export vs the query API, the row cap, and how the loader uses each. |
 | [CONFIGURATION.md](CONFIGURATION.md) | Every setting, and the screen-spec schema. |
+| [RESEARCH.md](RESEARCH.md) | The research folder and backtests: what is stored where, the AI workflow, the DD standard. |
 | [DEPLOYMENT.md](DEPLOYMENT.md) | Sizing tiers, topology, the nightly job, backups. |
 
 Two documents live outside this directory on purpose:

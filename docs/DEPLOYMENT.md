@@ -235,7 +235,7 @@ ingest runs.
 
 ## Backups
 
-Back up **Postgres** and **git**. Nothing else.
+Back up **Postgres**, **git**, and the **research folder**.
 
 ```bash
 pg_dump -Fc investing > investing-$(date +%F).dump
@@ -246,6 +246,12 @@ is effectively its backup. What cannot be re-fetched is small and mostly in git:
 `config/screens/`, `docs/`, and your `.env` values (kept wherever you store secrets, not in
 git). If rebuilding the derived tables takes longer than restoring them, dump those
 selectively.
+
+The research folder (`RESEARCH_DIR`, default `<repo>/research/`) is the one thing here that
+exists nowhere else: your notes, DD reports, groups, snapshots and backtest reports are plain
+files, deliberately kept out of git and out of Postgres. Copy it somewhere off the machine on
+a schedule (`rsync`/`tar` it, or make the folder its own private git repo). Deploys never
+touch it — `deploy.sh` and the homelab push hook only update tracked files.
 
 ---
 

@@ -5,6 +5,7 @@ import { useParams } from 'next/navigation';
 import { Suspense } from 'react';
 import { useIdeas } from '@/hooks/useIdeas';
 import { LiveResults } from '../../components/LiveResults';
+import { SnapshotScreenButton } from '../../components/SnapshotResults';
 import { Card, Spinner } from '../../components/shared';
 import { ScreenerAreaNav } from '@/components/nav/AreaSubNav';
 
@@ -82,9 +83,12 @@ function IdeaDetail() {
               <div className="text-sm text-ink-muted">
                 <span className="font-semibold text-ink">{data?.total ?? 0}</span> survivors
               </div>
-              <Link href="/screener" className="text-sm font-medium text-green hover:text-green-dark">
-                Screen further →
-              </Link>
+              <div className="flex items-center gap-4 flex-wrap justify-end">
+                {data?.screen?.id && <SnapshotScreenButton screenId={data.screen.id} />}
+                <Link href="/screener" className="text-sm font-medium text-green hover:text-green-dark">
+                  Screen further →
+                </Link>
+              </div>
             </div>
           </Card>
 

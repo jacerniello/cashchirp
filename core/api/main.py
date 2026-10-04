@@ -19,6 +19,7 @@ from core.api.routers.market import macro, short_interest, sp500
 from core.api.routers.meta import setup
 from core.api.routers.ownership import insiders, institutional
 from core.api.routers.securities import company, etf, prices, sectors
+from core.api.routers.research import backtests, research
 
 app = FastAPI(title="Investing Research API", version="0.1.0")
 
@@ -34,7 +35,7 @@ app.add_middleware(
 
 API_PREFIX = "/api/v1"
 _ROUTERS = [screener, prices, company, institutional, insiders,
-            short_interest, macro, search, etf, sp500, sectors]
+            short_interest, macro, search, etf, sp500, sectors, research, backtests]
 
 # Gated at MOUNT time, not per-request: an unmounted route 404s like any other unknown
 # path, so a disabled deployment does not even advertise that a setup surface exists.

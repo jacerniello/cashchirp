@@ -8,6 +8,8 @@ export const links: NavLink[] = [
   // sub-nav for their second page (Ideas, Commodities), so those don't
   // need a slot here — their URLs say where they live.
   { href: "/screener", label: "Screener" },
+  { href: "/research", label: "Research" },
+  { href: "/backtests", label: "Backtests" },
   { href: "/sectors", label: "Sectors" },
   { href: "/sp500", label: "S&P 500" },
   { href: "/macro", label: "Macro" },

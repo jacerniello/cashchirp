@@ -27,6 +27,7 @@ import {
 } from '@/lib/formatters';
 import { SOLID_COLORS } from '@/lib/chart-utils';
 import { segItem } from '@/lib/styles';
+import { CompanyResearchTab } from '@/components/research/StockResearch';
 
 // ============================================================================
 // Types
@@ -83,6 +84,7 @@ const TABS = [
   { key: 'institutional', label: 'Institutional' },
   { key: 'short_interest', label: 'Short interest' },
   { key: 'events', label: 'Events' },
+  { key: 'research', label: 'Research' },
 ] as const;
 
 type TabKey = (typeof TABS)[number]['key'];
@@ -223,6 +225,7 @@ export default function CompanyPage({
         {activeTab === 'institutional' && <InstitutionalTab pt={pt} profile={profile} />}
         {activeTab === 'short_interest' && <ShortInterestTab pt={pt} />}
         {activeTab === 'events' && <EventsTab pt={pt} />}
+        {activeTab === 'research' && <CompanyResearchTab pt={pt} />}
       </div>
     </div>
   );
