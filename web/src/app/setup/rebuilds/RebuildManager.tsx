@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Badge } from '@/components/Badge';
 import api from '@/lib/api';
-import { useDatasetJob } from '@/hooks/useSetup';
+import { setupPollingKicked, useDatasetJob } from '@/hooks/useSetup';
 import { useScheduleMutations, type Schedule } from '@/hooks/useJobs';
 
 interface RebuildResult {
@@ -57,7 +57,8 @@ export function RebuildManager() {
   const { data, isLoading, isError } = useQuery({
     queryKey: ['setup-rebuilds'],
     queryFn: async (): Promise<RebuildsResponse> => (await api.get('/setup/rebuilds')).data,
-    refetchInterval: (q) => (q.state.data?.tables.some((t) => t.running) ? 5000 : 30000),
+    refetchInterval: (q) =>
+      (q.state.data?.tables.some((t) => t.running) || setupPollingKicked() ? 3000 : 30000),
     retry: false,
   });
   const refresh = () => qc.invalidateQueries({ queryKey: ['setup-rebuilds'] });

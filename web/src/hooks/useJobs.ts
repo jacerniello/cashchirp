@@ -2,6 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import api from '@/lib/api';
+import { kickSetupPolling, setupPollingKicked } from '@/hooks/useSetup';
 
 // Schedules and run history — the two halves of "what runs here, and what has run".
 //
@@ -121,6 +122,7 @@ export function useScheduleMutations() {
       mutationFn: async (id: number) =>
         (await api.post(`/setup/schedules/${id}/run`, {})).data,
       onSuccess: () => {
+        kickSetupPolling();
         invalidate();
         qc.invalidateQueries({ queryKey: ['setup-status'] });
       },
@@ -140,7 +142,8 @@ export function useRuns(opts: { limit?: number; key?: string; trigger?: Trigger 
     },
     // Anything in flight will change; poll while it is.
     refetchInterval: (query) =>
-      query.state.data?.runs?.some((r) => r.status === 'running') ? 3000 : 20000,
+      query.state.data?.runs?.some((r) => r.status === 'running') || setupPollingKicked()
+        ? 3000 : 20000,
     retry: false,
   });
 }

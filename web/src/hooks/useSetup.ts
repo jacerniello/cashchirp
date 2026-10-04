@@ -178,10 +178,30 @@ export function useBuildLog(
   });
 }
 
+// After a start/stop click, poll fast for a while even though the last status said idle.
+// The job writes its own state a moment after it is spawned, so the one refetch a click
+// triggers can land just before it and report "idle" — and the idle poll is 30s, which in
+// practice meant refreshing the page to see the progress bar.
+const FAST_POLL_MS = 30_000;
+let fastPollUntil = 0;
+
+/** Poll setup status fast for the next 30s. Call after anything that starts or stops a job. */
+export function kickSetupPolling(): void {
+  fastPollUntil = Date.now() + FAST_POLL_MS;
+}
+
+/** True while a recent click wants fast polling — for other job-backed queries to share. */
+export function setupPollingKicked(): boolean {
+  return Date.now() < fastPollUntil;
+}
+
 /** Run / stop ONE dataset as its own process. */
 export function useDatasetJob() {
   const qc = useQueryClient();
-  const invalidate = () => qc.invalidateQueries({ queryKey: ['setup-status'] });
+  const invalidate = () => {
+    kickSetupPolling();
+    qc.invalidateQueries({ queryKey: ['setup-status'] });
+  };
   return {
     run: useMutation({
       mutationFn: async (v: { key: string; mode?: 'update' | 'missing' | 'full' }) =>
@@ -221,7 +241,10 @@ export function useStartBuild() {
       mode?: 'update' | 'missing' | 'full';
     }) =>
       (await api.post('/setup/build', body)).data,
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['setup-status'] }),
+    onSuccess: () => {
+      kickSetupPolling();
+      qc.invalidateQueries({ queryKey: ['setup-status'] });
+    },
   });
 }
 
@@ -229,7 +252,10 @@ export function useStopBuild() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async () => (await api.post('/setup/build/stop', {})).data,
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['setup-status'] }),
+    onSuccess: () => {
+      kickSetupPolling();
+      qc.invalidateQueries({ queryKey: ['setup-status'] });
+    },
   });
 }
 
@@ -295,7 +321,7 @@ export function useSetup() {
     refetchInterval: (query) => {
       const d = query.state.data;
       const busy = d?.build_status?.running || d?.datasets?.some((x) => x.job?.running);
-      return busy ? 2000 : 30000;
+      return busy || setupPollingKicked() ? 2000 : 30000;
     },
     retry: false,
     staleTime: 0,

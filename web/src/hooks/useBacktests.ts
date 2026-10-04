@@ -2,6 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import api from '@/lib/api';
+import { kickSetupPolling, setupPollingKicked } from '@/hooks/useSetup';
 
 // Backtest reports — folders under <research_dir>/backtests/, written by
 // `python -m core.backend.backtest.run`. Nothing here retries: a failed read means the API
@@ -160,7 +161,7 @@ export function useCurrentBacktestRun() {
     queryKey: ['backtest-run'],
     queryFn: async (): Promise<CurrentRun> => (await api.get('/backtests/runs/current')).data,
     retry: false,
-    refetchInterval: (q) => (q.state.data?.running ? 1500 : 15_000),
+    refetchInterval: (q) => (q.state.data?.running || setupPollingKicked() ? 1500 : 15_000),
   });
 }
 
@@ -169,7 +170,10 @@ export function useRunBacktest() {
   return useMutation({
     mutationFn: async (body: RunBacktestBody): Promise<{ pid: number; log_name: string }> =>
       (await api.post('/backtests/run', body)).data,
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['backtest-run'] }),
+    onSuccess: () => {
+      kickSetupPolling();
+      qc.invalidateQueries({ queryKey: ['backtest-run'] });
+    },
   });
 }
 
