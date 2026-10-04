@@ -8,6 +8,17 @@
     --kind cohort      each rebalance date's passers, forward --hold-months total return;
                        pooled base rates (double / halve) vs universe and SPY
 
+Study kinds — "does the screen remove losers and keep winners?" (backtest/study.py), over the
+cached point-in-time panel (backtest/panel.py; built on first use, several minutes):
+
+    --kind gate-audit   --screen quality-value [--periods discovery,holdout]
+                        each gate alone, leave-one-out, and on a pre-declared threshold grid
+    --kind signal-study --screen quality-value [--periods discovery]
+                        quintile analysis of every candidate signal within the universe
+    --kind compare      --screens quality-value,quality-value-v2 [--periods discovery,holdout]
+                        [--with-backtests]  selection metrics per screen and period, plus
+                        portfolio and cohort backtests over the holdout and the full range
+
 Writes `<research_dir>/backtests/<YYYYMMDD-HHMM>-<slug>/` with report.json, periods.csv and
 holdings.csv, and prints progress as it goes (the app tails this output). Exits non-zero on
 failure. The run is recorded in the job-run ledger (Setup → Runs) unless --no-record.
@@ -50,8 +61,17 @@ def _write_state(path: Path | None, **fields: Any) -> None:
 def parse(argv: list[str] | None = None) -> argparse.Namespace:
     ap = argparse.ArgumentParser(prog="python -m core.backend.backtest.run",
                                  description=__doc__.split("\n\n")[0])
-    ap.add_argument("--screen", required=True, help="screen id from config/screens/")
-    ap.add_argument("--kind", choices=("portfolio", "cohort"), default="portfolio")
+    ap.add_argument("--screen", default=None, help="screen id from config/screens/")
+    ap.add_argument("--kind", choices=("portfolio", "cohort", "gate-audit", "signal-study",
+                                       "compare"), default="portfolio")
+    ap.add_argument("--screens", default=None, help="compare: comma-separated screen ids")
+    ap.add_argument("--periods", default=None,
+                    help="study kinds: comma-separated of discovery,holdout "
+                         "(signal-study defaults to discovery only)")
+    ap.add_argument("--with-backtests", action="store_true",
+                    help="compare: also run portfolio + cohort backtests per screen")
+    ap.add_argument("--rebuild-panel", action="store_true",
+                    help="study kinds: rebuild the cached panel from the database")
     ap.add_argument("--start", default="2005-01-01")
     ap.add_argument("--end", default=None, help="default: latest price date")
     ap.add_argument("--rebalance", type=int, default=12, help="months between rebalances")
@@ -69,6 +89,12 @@ def parse(argv: list[str] | None = None) -> argparse.Namespace:
     ap.add_argument("--no-record", action="store_true",
                     help="do not write this run to the job-run ledger")
     a = ap.parse_args(argv)
+    if a.kind == "compare":
+        if not a.screens:
+            ap.error("--kind compare needs --screens a,b")
+        a.screen = a.screen or a.screens.split(",")[0]
+    elif not a.screen:
+        ap.error("--screen is required")
     if not 1 <= a.rebalance <= 60:
         ap.error("--rebalance must be 1..60 months")
     if not 1 <= a.hold_months <= 120:
@@ -95,6 +121,12 @@ def main(argv: list[str] | None = None) -> int:
 
     status, detail, report_id = "failed", None, None
     try:
+        if a.kind in ("gate-audit", "signal-study", "compare"):
+            from core.backend.backtest import studyrun
+            report_id = studyrun.main(a, say)
+            print(f"REPORT_ID={report_id}", flush=True)
+            status, detail = "ok", report_id
+            return 0
         spec = screens.load_screen(a.screen)
         p = harness.Params(
             screen=a.screen, kind=a.kind, start=a.start, end=a.end,
@@ -112,23 +144,7 @@ def main(argv: list[str] | None = None) -> int:
             res = harness.run(session, p, say)
 
         name = a.name or f"{spec['id']} {p.kind} {p.start[:4]}-{p.end[:4]}"
-        report_id = reports.new_id(name)
-        report = {
-            "id": report_id, "name": name, "kind": p.kind,
-            "created_at": datetime.now().isoformat(timespec="seconds"),
-            "elapsed_seconds": round(time.time() - t0, 1),
-            "params": asdict(p),
-            "screen": {"id": spec["id"], "title": spec.get("title"),
-                       "description": (spec.get("description") or "").strip(),
-                       "criteria": spec.get("criteria") or [], "spec": spec},
-            "series_kind": res.series_kind,
-            "summary": res.summary,
-            "series": res.series,
-            "periods": res.periods,
-            "warnings": res.warnings,
-            "method": _method(p),
-        }
-        out = reports.write_report(report)
+        report_id, out = save_result(res, spec, name, t0)
         _print_summary(say, res)
         serious = sum(w["level"] == "warn" for w in res.warnings)
         say(f"{len(res.warnings)} warning(s), {serious} serious" if res.warnings
@@ -148,6 +164,29 @@ def main(argv: list[str] | None = None) -> int:
                      steps=[{"status": "ok" if status == "ok" else "FAIL",
                              "detail": detail or ""}])
         _finish_run(run_id, status, detail)
+
+
+def save_result(res: harness.Result, spec: dict[str, Any], name: str,
+                t0: float) -> tuple[str, Path]:
+    """Write a portfolio / cohort result as a report folder; returns (id, path)."""
+    p = res.params
+    report_id = reports.new_id(name)
+    report = {
+        "id": report_id, "name": name, "kind": p.kind,
+        "created_at": datetime.now().isoformat(timespec="seconds"),
+        "elapsed_seconds": round(time.time() - t0, 1),
+        "params": asdict(p),
+        "screen": {"id": spec["id"], "title": spec.get("title"),
+                   "description": (spec.get("description") or "").strip(),
+                   "criteria": spec.get("criteria") or [], "spec": spec},
+        "series_kind": res.series_kind,
+        "summary": res.summary,
+        "series": res.series,
+        "periods": res.periods,
+        "warnings": res.warnings,
+        "method": _method(p),
+    }
+    return report_id, reports.write_report(report)
 
 
 def _finish_run(run_id: int | None, status: str, detail: str | None) -> None:

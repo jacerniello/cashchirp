@@ -11,7 +11,8 @@ import {
 } from '@/hooks/useBacktests';
 import { Suspense } from 'react';
 import { RunBacktestForm } from './RunBacktestForm';
-import { headline, pct, signClass, when } from './format';
+import { isStudyKind } from '@/hooks/useBacktests';
+import { headline, pct, signClass, studyLine, when } from './format';
 
 // Saved backtest reports. Each is a folder under <research_dir>/backtests/ — plain files,
 // gitignored — written by `python -m core.backend.backtest.run` (or the form below, which
@@ -35,6 +36,9 @@ export default function BacktestsPage() {
         <p className="text-base text-ink-light max-w-2xl mx-auto">
           What a saved screen would have picked with only the data public at the time, and
           what those names did next — against SPY and against the screen&apos;s own universe.
+          Screen studies (gate audits, signal studies, comparisons) ask the sharper question: does
+          each gate remove losers while keeping winners? Run them from a terminal — see
+          docs/RESEARCH.md.
         </p>
       </div>
 
@@ -102,11 +106,26 @@ export default function BacktestsPage() {
                       </td>
                       <td className="px-3 py-3 text-ink-light">{r.screen?.title ?? r.screen?.id ?? '—'}</td>
                       <td className="px-3 py-3">
-                        {r.kind && <Badge variant={r.kind === 'portfolio' ? 'blue' : 'purple'}>{r.kind}</Badge>}
+                        {r.kind && (
+                          <Badge variant={r.kind === 'portfolio' ? 'blue' : r.kind === 'cohort' ? 'purple' : 'green'}>
+                            {r.kind}
+                          </Badge>
+                        )}
                       </td>
+                      {isStudyKind(r.kind) ? (
+                        <>
+                          <td className="px-3 py-3 text-ink-light text-xs">
+                            {(r.params?.periods ?? []).join(' + ') || '—'}
+                          </td>
+                          <td colSpan={3} className="px-3 py-3 text-xs text-ink-light">{studyLine(r)}</td>
+                        </>
+                      ) : (
+                        <>
                       <td className="px-3 py-3 text-ink-light text-xs whitespace-nowrap">
                         {r.summary?.start ?? r.params?.start ?? '—'} → {r.summary?.end ?? r.params?.end ?? '—'}
-                        {r.params && <div className="text-ink-faint">every {r.params.rebalance_months}m</div>}
+                        {r.params?.rebalance_months != null && (
+                          <div className="text-ink-faint">every {r.params.rebalance_months}m</div>
+                        )}
                       </td>
                       <td className={`px-3 py-3 text-right tabular-nums font-semibold ${signClass(h.main)}`}>
                         {pct(h.main)}
@@ -117,6 +136,8 @@ export default function BacktestsPage() {
                         <div className="text-[0.7rem] text-ink-faint">{r.params?.benchmark ?? ''}</div>
                       </td>
                       <td className="px-3 py-3 text-right tabular-nums text-ink-light">{pct(h.dd)}</td>
+                        </>
+                      )}
                       <td className="px-3 py-3 text-xs text-ink-light whitespace-nowrap">{when(r.created_at)}</td>
                       <td className="px-6 py-3 text-right">
                         <button

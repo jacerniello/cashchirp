@@ -42,6 +42,12 @@ into a snapshot (`/screener/snapshots`) or backtested (see [RESEARCH.md](RESEARC
 Copy `quality-value.yaml`, change the numbers, point `ACTIVE_SCREEN` at yours. Files
 beginning with `_` are ignored, so a half-finished draft can sit in the folder safely.
 
+`quality-value-v2.yaml` is a re-cut of it built from a point-in-time gate audit on
+2003–2012 and judged once on 2015–2022; each gate's comment quotes its evidence and the
+header says how it was made. (A broader three-gate variant, v2b, was rejected: its edge
+roughly halved out of sample.) See
+[RESEARCH.md](RESEARCH.md#screen-studies--does-a-screen-remove-losers-and-keep-winners).
+
 `quality-value.yaml` is an example, not a recommendation. It exists so the format has a
 worked reference and a fresh clone has something to run. Replace it with your own.
 

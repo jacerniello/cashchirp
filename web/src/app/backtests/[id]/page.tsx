@@ -8,6 +8,7 @@ import { MultiLineChart, type MultiLineSeries } from '@/components/charts/MultiL
 import {
   backtestFileUrl,
   errorText,
+  isStudyReport,
   useBacktest,
   type BacktestPeriod,
   type BacktestReport,
@@ -15,6 +16,7 @@ import {
 } from '@/hooks/useBacktests';
 import { num, pct, signClass, when } from '../format';
 import { PeriodBars } from './PeriodBars';
+import { StudyReportView } from './StudyReport';
 
 // One saved backtest report. Everything shown comes from report.json in the report's
 // folder — nothing is recomputed here, so the page and the file can never disagree.
@@ -187,22 +189,6 @@ export default function BacktestReportPage({ params }: { params: Promise<{ id: s
   const { id } = use(params);
   const { data: r, isLoading, isError, error } = useBacktest(id);
 
-  const lines = useMemo<MultiLineSeries[]>(() => {
-    if (!r || r.kind !== 'portfolio') return [];
-    return [
-      { label: 'Strategy (net)', points: r.series.strategy, color: STRAT },
-      { label: r.params.benchmark, points: r.series.benchmark, color: BENCH },
-      { label: 'Universe (EW, at rebalances)', points: r.series.universe, color: UNIV },
-    ];
-  }, [r]);
-  const dd = useMemo<MultiLineSeries[]>(() => {
-    if (!r || r.kind !== 'portfolio') return [];
-    return [
-      { label: 'Strategy', points: drawdown(r.series.strategy), color: STRAT },
-      { label: r.params.benchmark, points: drawdown(r.series.benchmark), color: BENCH },
-    ];
-  }, [r]);
-
   if (isLoading) {
     return <div className="max-w-[1200px] mx-auto px-6 py-16 text-sm text-ink-faint">Loading report…</div>;
   }
@@ -216,6 +202,25 @@ export default function BacktestReportPage({ params }: { params: Promise<{ id: s
       </div>
     );
   }
+  return isStudyReport(r) ? <StudyReportView r={r} /> : <BacktestView r={r} />;
+}
+
+function BacktestView({ r }: { r: BacktestReport }) {
+  const lines = useMemo<MultiLineSeries[]>(() => {
+    if (r.kind !== 'portfolio') return [];
+    return [
+      { label: 'Strategy (net)', points: r.series.strategy, color: STRAT },
+      { label: r.params.benchmark, points: r.series.benchmark, color: BENCH },
+      { label: 'Universe (EW, at rebalances)', points: r.series.universe, color: UNIV },
+    ];
+  }, [r]);
+  const dd = useMemo<MultiLineSeries[]>(() => {
+    if (r.kind !== 'portfolio') return [];
+    return [
+      { label: 'Strategy', points: drawdown(r.series.strategy), color: STRAT },
+      { label: r.params.benchmark, points: drawdown(r.series.benchmark), color: BENCH },
+    ];
+  }, [r]);
 
   const serious = r.warnings.filter((w) => w.level === 'warn');
   const info = r.warnings.filter((w) => w.level !== 'warn');

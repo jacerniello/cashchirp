@@ -6,12 +6,12 @@ import type { ReactNode } from 'react';
 import { Badge } from '@/components/Badge';
 import { ScreenerAreaNav } from '@/components/nav/AreaSubNav';
 import { ErrorPanel, fmtWhen, SectionCard } from '@/components/research/ResearchBits';
-import type { BacktestListItem } from '@/hooks/useBacktests';
+import { isStudyKind, type BacktestListItem } from '@/hooks/useBacktests';
 import { ReportStatusBadge } from '@/components/research/Reports';
 import { errDetail, isNotFound, useReports, type ReportSummary, type SnapshotSummary } from '@/hooks/useResearch';
 import { useScreen, useScreens } from '@/hooks/useSavedScreens';
 import { useScreenHistory } from '@/hooks/useScreenHistory';
-import { headline, pct, signClass } from '../../../backtests/format';
+import { headline, pct, signClass, studyLine } from '../../../backtests/format';
 import { ScreenActions } from '../../components/ScreenActions';
 import { ScreenSpec } from '../../components/ScreenSpec';
 
@@ -107,17 +107,19 @@ function BacktestRow({ r }: { r: BacktestListItem }) {
           </Link>
         )}
         <div className="text-xs text-ink-muted">
-          {r.kind ?? '—'} · {r.summary?.start ?? r.params?.start ?? '—'} → {r.summary?.end ?? r.params?.end ?? '—'}
+          {isStudyKind(r.kind)
+            ? `${r.kind} · ${studyLine(r)}`
+            : `${r.kind ?? '—'} · ${r.summary?.start ?? r.params?.start ?? '—'} → ${r.summary?.end ?? r.params?.end ?? '—'}`}
           {r.serious_warnings > 0 && (
             <span className="text-neg"> · {r.serious_warnings} sanity warning{r.serious_warnings > 1 ? 's' : ''}</span>
           )}
         </div>
       </div>
-      <div className="text-right tabular-nums whitespace-nowrap">
+      {isStudyKind(r.kind) ? <div /> : <div className="text-right tabular-nums whitespace-nowrap">
         <span className={`text-sm font-semibold ${signClass(h.main)}`}>{pct(h.main)}</span>
         <span className="text-xs text-ink-muted"> vs {pct(h.bench)} {r.params?.benchmark ?? ''}</span>
         <div className="text-[0.7rem] text-ink-faint">{h.label}</div>
-      </div>
+      </div>}
     </>
   );
 }

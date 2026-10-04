@@ -284,6 +284,21 @@ def build_panel(session: Session, grid: list[date], spec: dict[str, Any],
     return derived
 
 
+def panel_for(session: Session, grid: list[date], spec: dict[str, Any], say: Say,
+              prebuilt: pd.DataFrame | None = None) -> pd.DataFrame:
+    """`build_panel`, reusing a prebuilt panel's dates where it has them (the cached study
+    panel from `backtest.panel`, built by this same function) and building only the rest."""
+    if prebuilt is None:
+        return build_panel(session, grid, spec, say)
+    have = set(prebuilt["q"])
+    missing = [q for q in grid if q not in have]
+    parts = [prebuilt[prebuilt["q"].isin(set(grid))]]
+    if missing:
+        parts.append(build_panel(session, missing, spec, say))
+    say(f"Reusing the cached panel for {len(grid) - len(missing)} of {len(grid)} dates")
+    return pd.concat(parts, ignore_index=True)
+
+
 # ----------------------------------------------------------------------------- prices
 
 
@@ -459,7 +474,8 @@ def _stats_nav(points: list[tuple[date, float]]) -> dict[str, float | None]:
     }
 
 
-def run_portfolio(session: Session, p: Params, spec: dict[str, Any], say: Say) -> Result:
+def run_portfolio(session: Session, p: Params, spec: dict[str, Any], say: Say,
+                  prebuilt: pd.DataFrame | None = None) -> Result:
     """Equal-weight the screen's passers at each rebalance date and hold them to the next
     (buy-and-hold within the period, marked monthly); compare with SPY and with the
     equal-weight eligible universe."""
@@ -474,7 +490,7 @@ def run_portfolio(session: Session, p: Params, spec: dict[str, Any], say: Say) -
         raise ValueError("Range too short for one holding period — move start or end.")
     warnings: list[dict[str, str]] = []
 
-    panel = build_panel(session, grid, spec, say)
+    panel = panel_for(session, grid, spec, say, prebuilt)
     say(f"Panel: {len(panel):,} (date, security) rows across {len(grid)} rebalance dates")
     passed_all = screens.apply_screen(panel, spec, drop_delisted=False)
     say("Loading cross-sectional price windows…")
@@ -607,7 +623,8 @@ def run_portfolio(session: Session, p: Params, spec: dict[str, Any], say: Say) -
     return Result(p, spec, summary, series, periods, warnings, "nav")
 
 
-def run_cohort(session: Session, p: Params, spec: dict[str, Any], say: Say) -> Result:
+def run_cohort(session: Session, p: Params, spec: dict[str, Any], say: Say,
+               prebuilt: pd.DataFrame | None = None) -> Result:
     """For each rebalance date, the forward `hold_months` total return of every passer — a
     per-name claim ("these names double") rather than portfolio compounding. Pooled base
     rates vs the eligible universe and SPY over the identical windows."""
@@ -628,7 +645,7 @@ def run_cohort(session: Session, p: Params, spec: dict[str, Any], say: Say) -> R
                            "names and months, so they are not independent samples. Read the "
                            "spread against the universe, not significance."))
 
-    panel = build_panel(session, usable, spec, say)
+    panel = panel_for(session, usable, spec, say, prebuilt)
     passed_all = screens.apply_screen(panel, spec, drop_delisted=False)
     say("Loading cross-sectional price windows…")
     pws = {q: price_window(session, q) for q in sorted(set(usable) | {horizon[t] for t in usable})}
@@ -727,8 +744,10 @@ def run_cohort(session: Session, p: Params, spec: dict[str, Any], say: Say) -> R
     return Result(p, spec, summary, series, periods, warnings, "forward_return")
 
 
-def run(session: Session, p: Params, say: Say = print) -> Result:
-    """Load the screen, resolve dates, dispatch on kind."""
+def run(session: Session, p: Params, say: Say = print,
+        prebuilt: pd.DataFrame | None = None) -> Result:
+    """Load the screen, resolve dates, dispatch on kind. `prebuilt`: a cached panel whose
+    dates are reused instead of rebuilt (see `panel_for`)."""
     spec = screens.load_screen(p.screen)
     latest = scalar(session, "SELECT max(date) FROM sep")
     if latest is None:
@@ -737,9 +756,9 @@ def run(session: Session, p: Params, say: Say = print) -> Result:
     if _d(p.start) >= _d(p.end):
         raise ValueError(f"start {p.start} is not before end {p.end}.")
     if p.kind == "portfolio":
-        return run_portfolio(session, p, spec, say)
+        return run_portfolio(session, p, spec, say, prebuilt)
     if p.kind == "cohort":
-        return run_cohort(session, p, spec, say)
+        return run_cohort(session, p, spec, say, prebuilt)
     raise ValueError(f"kind must be portfolio or cohort, got {p.kind!r}")
 
 

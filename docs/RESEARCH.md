@@ -155,5 +155,84 @@ research folder, appears in **Setup → Runs**, and is listed on the Backtests p
 equity curve, per-period returns and holdings.
 
 Known limits: drawdown and volatility are measured on month-end marks, so intra-month drops
-are understated, and there is no out-of-sample split yet — fit a screen on one period and
-judge it on another by running the two ranges separately.
+are understated. For an out-of-sample test, use the screen studies below, which fix a
+discovery and a holdout period.
+
+## Screen studies — does a screen remove losers and keep winners?
+
+A backtest says whether a screen's basket made money. A **screen study** asks the sharper
+question, gate by gate: of the stocks that went on to be winners and losers, how many does
+each gate keep and how many does it throw away?
+
+```bash
+# the cached point-in-time panel is built on first use (a few minutes), then reused
+.venv/bin/python -m core.backend.backtest.run --kind gate-audit   --screen quality-value [--periods discovery,holdout]
+.venv/bin/python -m core.backend.backtest.run --kind signal-study --screen quality-value [--periods discovery]
+.venv/bin/python -m core.backend.backtest.run --kind compare \
+    --screens quality-value,quality-value-v2 [--with-backtests]
+# add --rebuild-panel after new data is loaded or the panel code changes
+```
+
+**The objective**, stated at the top of every study report. At each 1 January from 2003
+to 2022, within the screen's universe (its sector/industry exclusions and market-cap band,
+the backtest's tradability floor):
+
+| Labels | Winner | Loser |
+|---|---|---|
+| **Primary** (gates are chosen on these) | top 20% of forward 24-month total return *among that date's universe* | bottom 20%, or stopped trading at a loss within the window |
+| Secondary (checked, not optimised) | forward 24m ≥ +50% (≈ 22%/yr) | ≤ −30%, or stopped trading at a loss |
+| 12-month | top 20% of forward 12m | bottom 20% of forward 12m |
+| Tails (reported only) | doubled (≥ +100%) | busted (≤ −50%) |
+
+The primary labels are relative so they mean the same thing in 2003 (median name +59% over
+24 months) and in 2007 (median −35%).
+
+**The protocol.** *Discovery* = rebalance dates 2003–2012 (forward windows end by 2014);
+*holdout* = 2015–2022 (windows to 2024); 2013–14 is a gap so the two never share a month.
+Choose signals, thresholds and gates on discovery only; look at the holdout **once**, for
+the final screens, and keep the result whatever it is. Thresholds come from a small grid
+declared in code before any result is seen (`study.SWEEPS`), not from optimisation.
+
+**Reading the numbers** — each report has a *Labels* switch (primary / absolute / 12-month):
+
+- **Winner retention** — share of the universe's winners the screen (or gate) keeps.
+- **Loser removal** — share of the universe's losers it removes.
+- **Edge** = winner retention − loser retention. A gate that keeps a random 30% keeps 30% of
+  winners and 30% of losers: edge 0, whatever its size. Positive = it keeps winners
+  preferentially. Edge rewards breadth, so compare a narrow screen on the next two lines.
+- **Winners / losers among kept** vs the universe's rate (≈ 20% / 20% under primary labels).
+- **Excess (by date)** — mean over dates of the kept set's median forward 24m return minus
+  the universe's. Pooled medians overweight the years with many passers; this does not.
+  *Years beating* is how often that difference was positive.
+
+**gate-audit** — for every gate (market cap excepted: it defines the universe) and every
+growth rule: **alone** (the gate by itself on the universe), **let back in** (what the full
+screen minus this gate admits that the full screen does not — mostly winners means the gate
+hurts; mostly losers means it earns its place), and a **threshold sweep** on the declared
+grid, alone and inside the screen. Discovery and holdout side by side; the holdout column
+is descriptive — never use it to pick.
+
+**signal-study** — every candidate signal in quintiles formed within each date: median and
+mean forward return, winner / loser / doubled / busted rates per quintile, the null bucket,
+coverage, the Spearman correlation of (winner − loser rate) with the quintile (±1 =
+monotonic), and how many years the good extreme beat the bad one. Prefer signals that are
+monotonic, agree with their economic prior and hold most years. Coverage limits of the
+data itself: insider trades (`sf2`) start in 2008, so insider signals cover only the
+2009–2012 discovery dates; 13F holders (`sf3a`, from mid-2013) and FINRA short interest
+(from end-2017) do not exist in the discovery period and are not studied.
+
+**compare** — the selection metrics per screen and period, plus (`--with-backtests`) the
+ordinary portfolio and cohort backtests of each screen over the holdout (2015–2024) and
+the full range (2003–2024), each saved as its own report and linked.
+
+The panel (`core/backend/backtest/panel.py`) is cached at
+`core/data/panels/panel-v<N>-….parquet` (gitignored): `harness.build_panel` at each date —
+so every gate sees exactly the value the backtest saw — plus the extra signals and forward
+12/24-month returns from the backtest's own entry/exit logic (one ticker series per name;
+names that stop trading valued at their last print). Studies over it take seconds. Reports
+land in `backtests/<id>/` like any backtest, with `report.json` and CSVs (`gates.csv`,
+`sensitivity.csv`, `signals.csv`, `quintiles.csv`, `comparison.csv`), and render on
+`/backtests/<id>`.
+
+Caveat: yearly dates with 24-month windows overlap, so the observations are not
+independent — read differences as sizes, not as significance.

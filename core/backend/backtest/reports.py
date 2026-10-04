@@ -19,8 +19,11 @@ from typing import Any
 from core.config import settings
 
 REPORT_FILE = "report.json"
-# The only files a client may download from a report folder.
-FILES = ("report.json", "periods.csv", "holdings.csv")
+# The only files a client may download from a report folder. The last five belong to the
+# study kinds (gate-audit, signal-study, screen-comparison — see backtest/study.py).
+FILES = ("report.json", "periods.csv", "holdings.csv", "gates.csv", "sensitivity.csv",
+         "signals.csv", "quintiles.csv", "comparison.csv")
+STUDY_KINDS = ("gate-audit", "signal-study", "screen-comparison")
 
 _ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 
@@ -82,10 +85,23 @@ _HOLDING_COLS = ("start", "end", "permaticker", "ticker", "name", "sector", "mar
                  "entry_px", "exit_px", "exit_date", "ret", "stopped_trading")
 
 
-def write_report(report: dict[str, Any]) -> Path:
+def _write_csv(path: Path, rows: list[dict[str, Any]]) -> None:
+    cols: list[str] = []
+    for r in rows:
+        cols.extend(k for k in r if k not in cols)
+    with path.open("w", newline="") as fh:
+        w = csv.DictWriter(fh, fieldnames=cols, extrasaction="ignore")
+        w.writeheader()
+        for r in rows:
+            w.writerow(r)
+
+
+def write_report(report: dict[str, Any],
+                 tables: dict[str, list[dict[str, Any]]] | None = None) -> Path:
     """Write report.json, periods.csv and holdings.csv into a new folder named by
     `report["id"]`. Written to a temp name then renamed, so a half-written report is never
-    listed."""
+    listed. A study report (no periods) passes its flat tables as `tables`
+    ({"gates.csv": rows, …}); each name must be in FILES."""
     rid = report["id"]
     if not _ID_RE.match(rid):
         raise ValueError(f"bad report id {rid!r}")
@@ -97,6 +113,13 @@ def write_report(report: dict[str, Any]) -> Path:
     tmp.mkdir()
     report = _clean(report)
     (tmp / REPORT_FILE).write_text(json.dumps(report, indent=1))
+    for name, rows in (tables or {}).items():
+        if name not in FILES:
+            raise ValueError(f"{name!r} is not a downloadable report file")
+        _write_csv(tmp / name, _clean(rows))
+    if report.get("kind") in STUDY_KINDS:
+        tmp.rename(final)
+        return final
     with (tmp / "periods.csv").open("w", newline="") as fh:
         w = csv.DictWriter(fh, fieldnames=_PERIOD_COLS, extrasaction="ignore")
         w.writeheader()
