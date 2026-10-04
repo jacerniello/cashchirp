@@ -9,6 +9,15 @@ live, so whatever you write here shows up on the site immediately.
 > Generated from the repo (`core/backend/research/guide/AGENT_GUIDE.md`) and refreshed when the
 > app starts. Do not edit this copy; it will be overwritten.
 
+## Delegation rule
+
+**Only the top-level session may spawn subagents. A subagent must never spawn its own
+subagents** — no nested delegation, at any depth. If you were launched as a subagent (you
+were given a delegated task by another agent rather than by the owner), do the work
+yourself; if it is too large, finish what you can and report back what is left so the
+top-level session can delegate the rest. When you are the top-level session and delegate,
+include this rule in every subagent's instructions.
+
 ## Layout
 
 ```
