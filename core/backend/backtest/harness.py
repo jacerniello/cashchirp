@@ -287,7 +287,7 @@ def build_panel(session: Session, grid: list[date], spec: dict[str, Any],
 def panel_for(session: Session, grid: list[date], spec: dict[str, Any], say: Say,
               prebuilt: pd.DataFrame | None = None) -> pd.DataFrame:
     """`build_panel`, reusing a prebuilt panel's dates where it has them (the cached study
-    panel from `backtest.panel`, built by this same function) and building only the rest."""
+    panel from `backtest.study.panel`, built by this same function) and building only the rest."""
     if prebuilt is None:
         return build_panel(session, grid, spec, say)
     have = set(prebuilt["q"])

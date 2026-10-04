@@ -225,7 +225,7 @@ data itself: insider trades (`sf2`) start in 2008, so insider signals cover only
 ordinary portfolio and cohort backtests of each screen over the holdout (2015–2024) and
 the full range (2003–2024), each saved as its own report and linked.
 
-The panel (`core/backend/backtest/panel.py`) is cached at
+The panel (`core/backend/backtest/study/panel.py`) is cached at
 `core/data/panels/panel-v<N>-….parquet` (gitignored): `harness.build_panel` at each date —
 so every gate sees exactly the value the backtest saw — plus the extra signals and forward
 12/24-month returns from the backtest's own entry/exit logic (one ticker series per name;

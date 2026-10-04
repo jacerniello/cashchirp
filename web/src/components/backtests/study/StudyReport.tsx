@@ -13,7 +13,7 @@ import {
   type StudyMetrics,
   type StudyReport,
 } from '@/hooks/useBacktests';
-import { num, pct, signClass, when } from '../format';
+import { num, pct, signClass, when } from '@/app/backtests/format';
 
 // Screen-study reports (gate-audit, signal-study, screen-comparison) written by
 // `python -m core.backend.backtest.run --kind gate-audit|signal-study|compare`. Like the

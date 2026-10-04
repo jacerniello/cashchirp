@@ -8,8 +8,8 @@
     --kind cohort      each rebalance date's passers, forward --hold-months total return;
                        pooled base rates (double / halve) vs universe and SPY
 
-Study kinds — "does the screen remove losers and keep winners?" (backtest/study.py), over the
-cached point-in-time panel (backtest/panel.py; built on first use, several minutes):
+Study kinds — "does the screen remove losers and keep winners?" (backtest/study/analysis.py), over the
+cached point-in-time panel (backtest/study/panel.py; built on first use, several minutes):
 
     --kind gate-audit   --screen quality-value [--periods discovery,holdout]
                         each gate alone, leave-one-out, and on a pre-declared threshold grid
@@ -122,7 +122,7 @@ def main(argv: list[str] | None = None) -> int:
     status, detail, report_id = "failed", None, None
     try:
         if a.kind in ("gate-audit", "signal-study", "compare"):
-            from core.backend.backtest import studyrun
+            from core.backend.backtest.study import run as studyrun
             report_id = studyrun.main(a, say)
             print(f"REPORT_ID={report_id}", flush=True)
             status, detail = "ok", report_id

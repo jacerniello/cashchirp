@@ -16,7 +16,7 @@ import {
 } from '@/hooks/useBacktests';
 import { num, pct, signClass, when } from '../format';
 import { PeriodBars } from './PeriodBars';
-import { StudyReportView } from './StudyReport';
+import { StudyReportView } from '@/components/backtests/study/StudyReport';
 
 // One saved backtest report. Everything shown comes from report.json in the report's
 // folder — nothing is recomputed here, so the page and the file can never disagree.

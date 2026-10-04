@@ -13,7 +13,8 @@ from datetime import datetime
 from typing import Any, Callable
 
 from core.backend import screens
-from core.backend.backtest import harness, panel, reports, study
+from core.backend.backtest import harness, reports
+from core.backend.backtest.study import analysis as study, panel
 
 Say = Callable[[str], None]
 

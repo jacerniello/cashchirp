@@ -1,6 +1,6 @@
 """Does a screen remove losers and keep winners? — gate audit, signal study, comparison.
 
-Everything here is pure pandas over the point-in-time panel (`panel.py`): no database, so a
+Everything here is pure pandas over the point-in-time panel (`study/panel.py`): no database, so a
 study re-runs in seconds once the panel is cached.
 
 **The objective** (stated in every report — `OBJECTIVE`). At each yearly rebalance date,
@@ -34,7 +34,8 @@ import numpy as np
 import pandas as pd
 
 from core.backend import screens
-from core.backend.backtest import harness, panel
+from core.backend.backtest import harness
+from core.backend.backtest.study import panel
 
 WIN_Q, LOSE_Q = 0.8, 0.2              # primary: top / bottom quintile
 ABS_WIN, ABS_LOSE = 0.5, -0.3         # secondary

@@ -20,7 +20,7 @@ from core.config import settings
 
 REPORT_FILE = "report.json"
 # The only files a client may download from a report folder. The last five belong to the
-# study kinds (gate-audit, signal-study, screen-comparison — see backtest/study.py).
+# study kinds (gate-audit, signal-study, screen-comparison — see backtest/study/analysis.py).
 FILES = ("report.json", "periods.csv", "holdings.csv", "gates.csv", "sensitivity.csv",
          "signals.csv", "quintiles.csv", "comparison.csv")
 STUDY_KINDS = ("gate-audit", "signal-study", "screen-comparison")
