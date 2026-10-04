@@ -25,6 +25,7 @@ observable. Two entry points:
 Tables are created here (CREATE TABLE IF NOT EXISTS), not via the ORM models.
 """
 import itertools
+import time
 import zipfile
 from datetime import date, datetime, timedelta
 from pathlib import Path
@@ -160,7 +161,9 @@ def _run(cur, table_code, dest, header, types, pk, copy_writer, progress):
         copy_writer(copy)
     cur.execute("SELECT count(*) FROM _stage;")
     staged = cur.fetchone()[0]
-    _progress(progress, table_code, f"staged {staged:,} rows; upserting into {dest} ...")
+    _progress(progress, table_code,
+              f"staged {staged:,} rows; merging into {dest} — one database step with no "
+              f"progress of its own (millions of rows can take several minutes) ...")
     cur.execute(dml)
     cur.execute(f"SELECT count(*) FROM {dest};")
     total = cur.fetchone()[0]
@@ -646,6 +649,7 @@ def sync_table(
     # so an interrupted fetch leaves the table and its watermark exactly as they were.
     header = list(first.columns)
     seen = {"rows": 0, "pages": 0, "max": None}
+    t0 = time.monotonic()
 
     def writer(copy):
         for page in itertools.chain([first], pages):
@@ -664,9 +668,16 @@ def sync_table(
             copy.write(page.to_csv(index=False, header=seen["pages"] == 0).encode())
             seen["rows"] += len(page)
             seen["pages"] += 1
-            if seen["pages"] % 50 == 0:
+            if seen["pages"] % 10 == 0:
+                secs = time.monotonic() - t0
                 _progress(progress, table_code,
-                          f"streamed {seen['rows']:,} rows ({seen['pages']} pages)…")
+                          f"fetched {seen['rows']:,} rows ({seen['pages']} pages) in "
+                          f"{secs / 60:.1f} min — {seen['rows'] / max(secs, 1):,.0f} rows/s; "
+                          f"newest {sync_col} so far "
+                          f"{seen['max'].date() if seen['max'] is not None else '—'}")
+        _progress(progress, table_code,
+                  f"fetch done: {seen['rows']:,} rows in {seen['pages']} pages, "
+                  f"{(time.monotonic() - t0) / 60:.1f} min")
 
     raw = engine.raw_connection()
     try:
