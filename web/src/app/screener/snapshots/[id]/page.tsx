@@ -74,7 +74,7 @@ export default function SnapshotPage() {
   }
 
   async function onDelete() {
-    if (!window.confirm(`Delete the snapshot "${snap?.name ?? id}"? Stock research and groups are not affected.`)) return;
+    if (!window.confirm(`Delete the snapshot "${snap?.name ?? id}"? Reports and stock research are not affected.`)) return;
     try {
       await del.mutateAsync(id);
       router.push('/screener/snapshots');

@@ -6,7 +6,7 @@ import Link from "next/link";
 export const metadata = {
   title: "Personal Investing Research Tool",
   description:
-    "Screen the US equity universe, freeze what a screen finds, research and group the names with your own notes and AI due diligence, and backtest the screens.",
+    "Screen the US equity universe, freeze what a screen finds, research the names in reports with your own notes and AI due diligence, and backtest the screens.",
 };
 
 /** The tools, in the order someone new should meet them: find names, then the context to
@@ -28,7 +28,7 @@ const TOOLS: { href: string; label: string; blurb: string }[] = [
     href: "/research",
     label: "Research",
     blurb:
-      "Notes and AI due diligence on any stock, red-team reviews, groups you define — and a ranking of everything you have rated.",
+      "Reports — dated runs of AI due diligence and red-team reviews, each with its own ranking and your notes.",
   },
   {
     href: "/backtests",
@@ -72,8 +72,8 @@ export default function RootHome() {
         </h1>
         <p className="text-lg text-ink-light max-w-2xl mx-auto text-pretty">
           A screener over your own mirror of two decades of US fundamentals, prices and
-          filings — with a place to research what it finds, group it, rank it, and test
-          whether the screen would have worked.
+          filings — with a place to research what it finds in reports, and test whether
+          the screen would have worked.
         </p>
         <p className="text-sm text-ink-muted max-w-2xl mx-auto mt-4">
           A research program, not a trading bot — and nothing here is investment advice.
@@ -129,19 +129,20 @@ export default function RootHome() {
           </p>
           <p className="text-sm text-ink-light leading-relaxed mt-3">
             When a screen surfaces names, freeze the result as a{" "}
-            <span className="font-medium text-ink">snapshot</span>, trim it, and sort what
-            is left into <span className="font-medium text-ink">groups</span> of your own
-            making. Each stock gets your notes and, when you want it, an AI due-diligence
-            report and red-team review — written into a research folder you can point Claude
-            at and say &ldquo;do DD on this snapshot&rdquo;. Rated stocks rank against each
-            other, and a backtest tells you whether the screen behind them would have worked.
+            <span className="font-medium text-ink">snapshot</span>, trim it, and start a{" "}
+            <span className="font-medium text-ink">report</span> on what is left. A report
+            gives each stock an AI due-diligence write-up and, when you want it, a red-team
+            review — written into a research folder you can point Claude at and say
+            &ldquo;do DD on this snapshot&rdquo; — ranks them against each other, and holds
+            your notes on the run and on each stock. A backtest tells you whether the screen behind
+            them would have worked.
           </p>
           <p className="text-sm text-ink-light leading-relaxed mt-3">
             Your research stays on your machine as plain files; only the tooling is in the
             repository.
           </p>
           <div className="mt-5 flex items-center gap-2 flex-wrap text-[0.8125rem] text-ink-faint">
-            {["Screen", "Snapshot", "Research & group", "Rank", "Backtest"].map(
+            {["Screen", "Snapshot", "Report", "Backtest"].map(
               (step, i, arr) => (
                 <span key={step} className="flex items-center gap-2">
                   <span className="rounded-md bg-green-soft px-2 py-1 font-medium text-green-text">

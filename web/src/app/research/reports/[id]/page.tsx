@@ -3,8 +3,8 @@
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { ResearchAreaNav } from '../../ResearchAreaNav';
-import { AddToGroup, StockSearch } from '@/components/research/Pickers';
+import { StockSearch } from '@/components/research/Pickers';
+import { ReportNotes } from '@/components/research/ReportNotes';
 import {
   AddedByBadge,
   btnDanger,
@@ -14,7 +14,6 @@ import {
   ErrorPanel,
   fmtSignedPct,
   fmtWhen,
-  GroupChips,
   InlineError,
   inputCls,
   RatingPill,
@@ -41,7 +40,8 @@ import { tableStyles } from '@/lib/styles';
 
 // One report: an analysis run built at a particular time. The API returns its members in
 // ranking order (score desc, base upside desc; unanalysed last), so the table below is the
-// report's own ranking — independent of any later analysis of the same stocks.
+// report's own ranking — independent of any later analysis of the same stocks. Below it, the
+// report's notes (reports/<id>/notes/); per-stock notes sit on each stock's page in the report.
 
 export default function ReportPage() {
   const params = useParams<{ id: string }>();
@@ -58,7 +58,6 @@ export default function ReportPage() {
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState('');
   const [thesis, setThesis] = useState('');
-  const [selected, setSelected] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     if (rep && !editing) {
@@ -73,16 +72,6 @@ export default function ReportPage() {
   const memberIds = useMemo(() => new Set(members.map((m) => String(m.permaticker))), [members]);
   // The source snapshot's kept members not yet in the report — what "Expand" would add.
   const remaining = (snap.data?.members ?? []).filter((m) => !m.removed && !memberIds.has(String(m.permaticker)));
-  const pickedMembers = members.filter((m) => selected.has(String(m.permaticker)));
-
-  function toggle(pt: string) {
-    setSelected((s) => {
-      const n = new Set(s);
-      if (n.has(pt)) n.delete(pt);
-      else n.add(pt);
-      return n;
-    });
-  }
 
   async function saveMeta() {
     try {
@@ -101,7 +90,7 @@ export default function ReportPage() {
     )) return;
     try {
       await del.mutateAsync(id);
-      router.push('/research/reports');
+      router.push('/research');
     } catch {
       /* shown below */
     }
@@ -116,9 +105,8 @@ export default function ReportPage() {
 
   return (
     <div className="bg-white min-h-[calc(100vh-4rem)] font-sans">
-      <ResearchAreaNav />
       <div className="max-w-[1300px] mx-auto px-6 max-md:px-4 py-8 space-y-6">
-        <Link href="/research/reports" className="text-xs text-ink-muted hover:text-green no-underline">← All reports</Link>
+        <Link href="/research" className="text-xs text-ink-muted hover:text-green no-underline">← All reports</Link>
 
         {isLoading && <p className="text-sm text-ink-muted">Loading report…</p>}
         {isError && (
@@ -194,17 +182,7 @@ export default function ReportPage() {
             </div>
 
             {/* ---- Ranking ---- */}
-            <SectionCard
-              title={`Ranking — ${analysed.length} of ${members.length} analysed`}
-              actions={
-                <AddToGroup
-                  disabled={!pickedMembers.length}
-                  label={pickedMembers.length ? `Add ${pickedMembers.length} to group` : 'Add selected to group'}
-                  members={pickedMembers.map((m) => ({ permaticker: String(m.permaticker), ticker: m.ticker, name: m.name }))}
-                  onDone={() => setSelected(new Set())}
-                />
-              }
-            >
+            <SectionCard title={`Ranking — ${analysed.length} of ${members.length} analysed`}>
               {rep.prices_error && (
                 <p className="px-5 pt-3 m-0 text-xs text-ink-muted">Today&apos;s prices are unavailable ({rep.prices_error}).</p>
               )}
@@ -212,7 +190,6 @@ export default function ReportPage() {
                 <table className={tableStyles.table}>
                   <thead>
                     <tr>
-                      <th className={`${tableStyles.th} w-8`}></th>
                       <th className={tableStyles.thNum}>#</th>
                       <th className={tableStyles.th}>Ticker</th>
                       <th className={tableStyles.th}>Rating</th>
@@ -220,14 +197,13 @@ export default function ReportPage() {
                       <th className={tableStyles.thNum}>Base upside</th>
                       <th className={tableStyles.thNum}>Price then → now</th>
                       <th className={tableStyles.th}>Red team</th>
-                      <th className={tableStyles.th}>Groups</th>
                       <th className={tableStyles.th}>As of</th>
                     </tr>
                   </thead>
                   <tbody>
                     {analysed.length === 0 && (
                       <tr>
-                        <td colSpan={10} className="px-3 py-6 text-center text-sm text-ink-faint">
+                        <td colSpan={8} className="px-3 py-6 text-center text-sm text-ink-faint">
                           Nothing analysed yet — ask Claude to complete this report (below).
                         </td>
                       </tr>
@@ -237,12 +213,7 @@ export default function ReportPage() {
                       const a = m.analysis!;
                       const up = toNum(a.rating?.upside_base_pct);
                       return (
-                        <tr key={pt} className={`${tableStyles.row} ${selected.has(pt) ? '!bg-green-soft' : ''}`}
-                            title={a.rating?.one_liner ?? undefined}>
-                          <td className={tableStyles.td}>
-                            <input type="checkbox" checked={selected.has(pt)} onChange={() => toggle(pt)}
-                                   aria-label={`Select ${m.ticker ?? pt}`} />
-                          </td>
+                        <tr key={pt} className={tableStyles.row} title={a.rating?.one_liner ?? undefined}>
                           <td className={`${tableStyles.tdNum} text-ink-muted`}>{i + 1}</td>
                           <td className={`${tableStyles.td} font-mono font-semibold`}>
                             <Link href={stockHref(pt)} className="text-ink no-underline hover:text-green">
@@ -250,6 +221,9 @@ export default function ReportPage() {
                             </Link>
                             {m.name && <div className="font-sans font-normal text-xs text-ink-muted max-w-[200px] truncate">{m.name}</div>}
                             {m.listed === false && <div className="font-sans font-normal text-[10px] text-ink-muted">not in members list</div>}
+                            {m.has_notes && (
+                              <Link href={`${stockHref(pt)}?tab=notes`} className="font-sans font-normal text-[10px] text-green no-underline">notes</Link>
+                            )}
                           </td>
                           <td className={tableStyles.td}><RatingPill rating={a.rating} size="sm" /></td>
                           <td className={`${tableStyles.td} text-ink-light`}>{a.rating?.confidence || '—'}</td>
@@ -264,7 +238,6 @@ export default function ReportPage() {
                               <Link href={`${stockHref(pt)}?tab=redteam`} className="text-xs font-semibold text-red no-underline">RT</Link>
                             ) : <span className="text-xs text-ink-muted">—</span>}
                           </td>
-                          <td className={tableStyles.td}><GroupChips groups={m.groups} max={2} /></td>
                           <td className={`${tableStyles.td} text-xs tabular-nums`}>{fmtWhen(a.asof)}</td>
                         </tr>
                       );
@@ -288,14 +261,13 @@ export default function ReportPage() {
                       const a = m.analysis;
                       return (
                         <li key={pt} className="px-5 py-2 flex items-center gap-3">
-                          <input type="checkbox" checked={selected.has(pt)} onChange={() => toggle(pt)}
-                                 aria-label={`Select ${m.ticker ?? pt}`} />
-                          <Link href={`/research/stocks/${pt}`} className="font-mono text-sm font-semibold text-ink no-underline hover:text-green w-16">
+                          <Link href={stockHref(pt)} className="font-mono text-sm font-semibold text-ink no-underline hover:text-green w-16">
                             {m.ticker || `#${pt}`}
                           </Link>
                           <span className="text-xs text-ink-light truncate flex-1">{m.name || '—'}</span>
                           {a?.dd_error && <span className="text-[11px] text-neg" title={a.dd_error}>dd.json unreadable</span>}
                           {a?.has_redteam && <span className="text-[11px] text-ink-muted">red team only</span>}
+                          {m.has_notes && <span className="text-[11px] text-ink-muted">notes</span>}
                           {!a && (
                             <button type="button" onClick={() => removeMember(m)} disabled={patch.isPending}
                                     className="bg-transparent border-0 cursor-pointer text-xs text-ink-muted hover:text-neg">
@@ -336,6 +308,8 @@ export default function ReportPage() {
                 </div>
               </SectionCard>
             </div>
+
+            <ReportNotes reportId={rep.id} disabled={!!rep.error} />
 
             <ClaudeInstruction
               root={guide.data?.root}

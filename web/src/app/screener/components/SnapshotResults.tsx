@@ -6,7 +6,7 @@ import { errDetail, useCreateSnapshot } from '@/hooks/useResearch';
 import type { ScreenerParams } from '@/hooks/useScreener';
 
 // Freeze what the grid matches right now — every matching row, not just this page — as a
-// research snapshot you can trim, group and hand to Claude. Lives beside SaveScreen: a saved
+// research snapshot you can trim, start a report on and hand to Claude. Lives beside SaveScreen: a saved
 // screen keeps the *filter*, a snapshot keeps the *result*.
 
 export function SnapshotResults({ params }: { params: ScreenerParams }) {
@@ -49,7 +49,7 @@ export function SnapshotResults({ params }: { params: ScreenerParams }) {
         >
           {create.isPending ? 'Snapshotting…' : 'Snapshot'}
         </button>
-        <span className="text-xs text-ink-muted">Freezes every match for research — trim, group, hand to Claude.</span>
+        <span className="text-xs text-ink-muted">Freezes every match for research — trim, start a report, hand to Claude.</span>
       </div>
       {create.isError && (
         <div className="text-xs text-neg bg-neg-soft rounded-lg px-3 py-2">

@@ -1,15 +1,16 @@
 """The research store: plain files under `settings.research_dir`, readable by people and AI.
 
 The apparatus (this module, the DD standard, the AI prompts) lives in the repo; the research
-itself does not. `research_dir` defaults to `<repo>/research/`, which git ignores, so notes
-and reports stay on the machine that wrote them and never ride along with a push.
+itself does not. `research_dir` defaults to `<repo>/research/`, which git ignores, so
+reports and their notes stay on the machine that wrote them and never ride along with a push.
 
     research/
-      stocks/<permaticker>/   meta.json · notes.md — the living notes on a stock (yours)
-      reports/<id>/           one analysis run: report.json + stocks/<pt>/dd.json · redteam.md
-      groups/<id>.json        a named, editable set of stocks, with a change log
+      reports/<id>/           one analysis run — reports are how research is organised:
+        report.json           name, thesis, source, status, members, a short `notes` summary
+        notes/**              the report's own notes (Markdown; other files kept alongside)
+        stocks/<pt>/          dd.json · redteam.md · notes.md — one stock within this run
       snapshots/<id>.json     a screener result frozen at a moment, trimmable
-      notes/**.md             free-form notes not tied to one stock
+      stocks/<permaticker>/   meta.json only (ticker/name); notes and analyses live in reports
 
 Stocks are keyed by permaticker, never ticker: tickers get recycled. Files are written
 atomically (temp file + rename), so a reader — a page, or an AI agent editing the same
@@ -102,28 +103,12 @@ def _pt(permaticker: Any) -> str:
 
 # ------------------------------------------------------------------------------- stocks
 #
-# A stock's own folder holds only the living documents: meta.json and the owner's notes.md.
-# Analyses (DD + red team) are dated and belong to a report: reports/<id>/stocks/<pt>/.
-
-STOCK_DOCS = {"notes": "notes.md"}
-
+# A stock has no documents of its own: its analyses (DD, red team) and notes are dated and
+# belong to a report — reports/<id>/stocks/<pt>/. `stocks/<pt>/meta.json` may remain from
+# earlier layouts and is read for the ticker/name only.
 
 def stock_dir(permaticker: Any) -> Path:
     return root() / "stocks" / _pt(permaticker)
-
-
-def touch_stock(permaticker: Any, ticker: str | None = None, name: str | None = None) -> dict:
-    """Create or refresh a stock's meta.json, keeping what it already knew."""
-    d = stock_dir(permaticker)
-    meta, _ = _read_json(d / "meta.json")
-    meta = meta if isinstance(meta, dict) else {"permaticker": _pt(permaticker), "created_at": _now()}
-    if ticker:
-        meta["ticker"] = ticker.upper()
-    if name:
-        meta["name"] = name
-    meta["updated_at"] = _now()
-    _write_json(d / "meta.json", meta)
-    return meta
 
 
 def _rating(dd: Any) -> dict | None:
@@ -148,15 +133,6 @@ def _score(rating: dict | None) -> float | None:
     return _num((rating or {}).get("score"))
 
 
-def _group_memberships() -> dict[str, list[dict]]:
-    """permaticker -> [{id, name}] of every group it is in."""
-    out: dict[str, list[dict]] = {}
-    for g in list_groups():
-        for m in g.get("members", []):
-            out.setdefault(str(m.get("permaticker")), []).append({"id": g["id"], "name": g["name"]})
-    return out
-
-
 def _all_analyses() -> dict[str, list[dict]]:
     """permaticker -> every analysis of it across all reports, newest first.
 
@@ -169,6 +145,21 @@ def _all_analyses() -> dict[str, list[dict]]:
             out.setdefault(pt, []).append(a)
     for xs in out.values():
         xs.sort(key=lambda a: (a["sort_key"], a["report_created_at"] or ""), reverse=True)
+    return out
+
+
+def _all_stock_notes() -> dict[str, list[dict]]:
+    """permaticker -> every report holding notes on it (reports/<id>/stocks/<pt>/notes.md)."""
+    out: dict[str, list[dict]] = {}
+    for rep in _read_reports():
+        base = _reports_dir() / rep["id"] / "stocks"
+        if not base.is_dir():
+            continue
+        for d in base.iterdir():
+            if d.is_dir() and d.name.isdigit() and (d / "notes.md").is_file():
+                out.setdefault(d.name, []).append({
+                    "report_id": rep["id"], "report_name": rep.get("name"),
+                    "created_at": rep.get("created_at"), "updated_at": _mtime(d / "notes.md")})
     return out
 
 
@@ -192,8 +183,6 @@ def get_stock(permaticker: Any) -> dict:
     return {
         "permaticker": pt,
         "meta": meta if isinstance(meta, dict) else None,
-        "notes": _read_text(d / "notes.md"),
-        "notes_updated": _mtime(d / "notes.md"),
         "dd": dd if isinstance(dd, dict) else None,
         "dd_error": dd_err,
         "dd_updated": dd_upd,
@@ -207,56 +196,34 @@ def get_stock(permaticker: Any) -> dict:
                       "has_dd": a["has_dd"], "dd_error": a["dd_error"], "has_redteam": a["has_redteam"],
                       "price_at_analysis": a["price_at_analysis"]} for a in analyses],
         "pending_reports": in_reports,
-        "groups": _group_memberships().get(pt, []),
+        "notes_in": _all_stock_notes().get(pt, []),
         "snapshots": [{"id": s["id"], "name": s["name"], "created_at": s.get("created_at")}
                       for s in list_snapshots(full=True)
                       if any(str(m.get("permaticker")) == pt for m in s.get("members", []))],
     }
 
 
-def save_stock_doc(permaticker: Any, doc: str, content: Any, ticker: str | None = None,
-                   name: str | None = None) -> None:
-    if doc not in STOCK_DOCS:
-        raise ValueError(f"A stock's own folder holds only {list(STOCK_DOCS)}; DD and red team "
-                         "belong to a report (PUT /research/reports/{id}/stocks/{pt}/{doc}).")
-    touch_stock(permaticker, ticker, name)
-    _write(stock_dir(permaticker) / STOCK_DOCS[doc], str(content))
-
-
-def delete_stock_doc(permaticker: Any, doc: str) -> bool:
-    if doc not in STOCK_DOCS:
-        raise ValueError(f"doc must be one of {list(STOCK_DOCS)}")
-    path = stock_dir(permaticker) / STOCK_DOCS[doc]
-    if not path.exists():
-        return False
-    path.unlink()
-    return True
-
-
 def list_stocks() -> list[dict]:
-    """The rankings: every stock with notes or an analysis, carrying its LATEST analysis
-    (across all reports) and the rating of the one before it. Prices "now" are added by
-    the API, which has the database."""
+    """Every stock with an analysis or notes in some report, with its LATEST analysis across
+    all reports — the research status the snapshot pages show beside each member."""
     analyses = _all_analyses()
-    groups = _group_memberships()
+    noted = _all_stock_notes()
     base = root() / "stocks"
-    noted = {p.name for p in base.iterdir() if p.is_dir() and p.name.isdigit()} if base.is_dir() else set()
     out = []
-    for pt in sorted(noted | set(analyses), key=int):
+    for pt in sorted(set(noted) | set(analyses), key=int):
         d = base / pt
         meta, _ = _read_json(d / "meta.json")
         meta = meta if isinstance(meta, dict) else {}
         xs = analyses.get(pt, [])
         good = [a for a in xs if a["has_dd"]]
         latest = good[0] if good else None
-        prev = good[1] if len(good) > 1 else None
         out.append({
             "permaticker": pt,
             "ticker": meta.get("ticker") or (latest or {}).get("ticker")
             or next((a["ticker"] for a in xs if a.get("ticker")), None),
             "name": meta.get("name") or (latest or {}).get("name")
             or next((a["name"] for a in xs if a.get("name")), None),
-            "has_notes": (d / "notes.md").exists(),
+            "has_notes": pt in noted,
             "has_dd": latest is not None,
             "dd_error": next((a["dd_error"] for a in xs if a["dd_error"]), None) if not good else None,
             "has_redteam": bool(latest and latest["has_redteam"]),
@@ -265,14 +232,9 @@ def list_stocks() -> list[dict]:
             "report": None if latest is None else {
                 "id": latest["report_id"], "name": latest["report_name"],
                 "created_at": latest["report_created_at"]},
-            "price_at_analysis": latest["price_at_analysis"] if latest else None,
-            "previous": None if prev is None else {
-                "rating": prev["rating"], "asof": prev["asof"], "report_id": prev["report_id"],
-                "report_name": prev["report_name"], "created_at": prev["report_created_at"]},
             "analyses": len(good),
-            "groups": groups.get(pt, []),
-            "updated_at": max(filter(None, [_mtime(d / "meta.json"), _mtime(d / "notes.md"),
-                                            latest and latest["dd_updated"]]), default=None),
+            "updated_at": max(filter(None, [latest and latest["dd_updated"],
+                                            *(n["updated_at"] for n in noted.get(pt, []))]), default=None),
         })
     return out
 
@@ -280,11 +242,14 @@ def list_stocks() -> list[dict]:
 # ------------------------------------------------------------------------------ reports
 #
 # A report is one analysis run, built at a particular time: a set of stocks analysed
-# together, a DD (+ optional red team) per stock done as of that report, and its own
-# ranking. Reports are never overwritten by later analysis — re-analysing means a new
-# report — but they can be expanded and completed over time.
+# together, a DD (+ optional red team) per stock done as of that report, its own ranking,
+# and its notes (report-level under notes/, per-stock as stocks/<pt>/notes.md). Analyses
+# are never overwritten by later work — re-analysing means a new report — but a report can
+# be expanded, annotated and completed over time.
 
-REPORT_DOCS = {"dd": "dd.json", "redteam": "redteam.md"}
+REPORT_DOCS = {"dd": "dd.json", "redteam": "redteam.md", "notes": "notes.md"}
+#: The documents that make an analysis (notes alone do not).
+ANALYSIS_DOCS = ("dd", "redteam")
 REPORT_STATUSES = ("open", "complete")
 
 
@@ -383,8 +348,10 @@ def _report_view(rep: dict, analyses: dict[str, dict]) -> dict:
         a = analyses[pt]
         members.append({"permaticker": pt, "ticker": a.get("ticker"), "name": a.get("name"),
                         "listed": False})
+    sdir = _reports_dir() / rep["id"] / "stocks"
     for m in members:
         a = analyses.get(str(m["permaticker"]))
+        m["has_notes"] = (sdir / str(m["permaticker"]) / "notes.md").is_file()
         m["analysis"] = None if a is None else {k: v for k, v in a.items() if k not in (
             "report_id", "report_name", "report_created_at", "sort_key", "ticker", "name")}
         if a and not m.get("ticker"):
@@ -415,11 +382,7 @@ def get_report(rid: str) -> dict | None:
     rep = _read_report(rid)
     if rep is None:
         return None
-    groups = _group_memberships()
-    view = _report_view(rep, _report_analyses(rep))
-    for m in view["members"]:
-        m["groups"] = groups.get(str(m["permaticker"]), [])
-    return view
+    return _report_view(rep, _report_analyses(rep))
 
 
 def _save_report(rep: dict) -> None:
@@ -436,21 +399,19 @@ def _unique_dir(folder: Path, base: str) -> str:
 
 
 def report_source_members(source: dict) -> list[dict]:
-    """The candidate members a report's source offers: a snapshot's kept members, or a
-    group's members. Manual reports have none."""
+    """The candidate members a report's source offers: a snapshot's kept members. Any other
+    source (hand-picked, or a legacy one such as a group) offers none."""
     if source.get("kind") == "snapshot" and source.get("snapshot_id"):
         s = get_snapshot(source["snapshot_id"]) or {}
         return [m for m in s.get("members", []) if not m.get("removed")]
-    if source.get("kind") == "group" and source.get("group_id"):
-        return (get_group(source["group_id"]) or {}).get("members", [])
     return []
 
 
 def create_report(name: str, *, thesis: str = "", snapshot_id: str | None = None,
-                  group_id: str | None = None, permatickers: list[str] | None = None,
-                  members: list[dict] | None = None, by: str = "human") -> dict:
+                  permatickers: list[str] | None = None, members: list[dict] | None = None,
+                  by: str = "human") -> dict:
     """Start a report from a snapshot (its kept members, or the `permatickers` subset of
-    it), a group (its members, or a subset), or by hand (`members`)."""
+    it), or by hand (`members`, plus any `permatickers`)."""
     pick = {_pt(p) for p in permatickers} if permatickers else None
     if snapshot_id:
         snap = get_snapshot(snapshot_id)
@@ -466,13 +427,6 @@ def create_report(name: str, *, thesis: str = "", snapshot_id: str | None = None
         cand = ([m for m in pool if str(m.get("permaticker")) in pick] if pick is not None
                 else [m for m in pool if not m.get("removed")])
         default_name, thesis = snap.get("name") or snap["id"], thesis or snap.get("note") or ""
-    elif group_id:
-        g = get_group(group_id)
-        if g is None:
-            raise KeyError(f"group {group_id}")
-        source = {"kind": "group", "group_id": g["id"], "group_name": g.get("name")}
-        cand = [m for m in g.get("members", []) if pick is None or str(m.get("permaticker")) in pick]
-        default_name, thesis = g.get("name") or g["id"], thesis or g.get("description") or ""
     else:
         source = {"kind": "manual"}
         cand = list(members or []) + [{"permaticker": p} for p in (pick or set())
@@ -541,7 +495,7 @@ def delete_report(rid: str) -> bool:
 
 
 def read_report_doc(rid: str, permaticker: Any, doc: str) -> tuple[Any, str | None]:
-    """(content, error) — dd as a dict, redteam as text; (None, None) when absent."""
+    """(content, error) — dd as a dict, redteam/notes as text; (None, None) when absent."""
     if doc not in REPORT_DOCS:
         raise ValueError(f"doc must be one of {list(REPORT_DOCS)}")
     path = _report_stock_dir(rid, permaticker) / REPORT_DOCS[doc]
@@ -552,7 +506,7 @@ def read_report_doc(rid: str, permaticker: Any, doc: str) -> tuple[Any, str | No
 
 def save_report_doc(rid: str, permaticker: Any, doc: str, content: Any,
                     ticker: str | None = None, name: str | None = None, by: str = "human") -> None:
-    """Write a DD or red team into a report; the stock becomes a member if it was not."""
+    """Write a DD, red team or notes into a report; the stock becomes a member if it was not."""
     if doc not in REPORT_DOCS:
         raise ValueError(f"doc must be one of {list(REPORT_DOCS)}")
     rep = _read_report(rid)
@@ -583,107 +537,47 @@ def delete_report_doc(rid: str, permaticker: Any, doc: str) -> bool:
     return True
 
 
-# ------------------------------------------------------------------------------- groups
-
-def _groups_dir() -> Path:
-    return root() / "groups"
+def _report_notes_dir(rid: str) -> Path:
+    return _reports_dir() / _rid(rid) / "notes"
 
 
-def _member(m: dict, by: str) -> dict:
-    return {"permaticker": _pt(m["permaticker"]), "ticker": (m.get("ticker") or "").upper() or None,
-            "name": m.get("name"), "note": m.get("note") or "", "added_by": m.get("added_by") or by,
-            "added_at": m.get("added_at") or _now()}
+def _note_path(base: Path, rel: str) -> Path:
+    """A Markdown file under `base`, from a relative path; never escapes it."""
+    base = base.resolve()
+    rel = rel.strip().lstrip("/")
+    if not rel.endswith(".md"):
+        rel += ".md"
+    p = (base / rel).resolve()
+    if base not in p.parents:
+        raise ValueError("note path must stay inside the report's notes/ folder")
+    return p
 
 
-def list_groups() -> list[dict]:
-    d = _groups_dir()
-    if not d.is_dir():
+def list_report_notes(rid: str) -> list[dict]:
+    """The report's Markdown notes. Other files under notes/ (data, scripts) are kept but
+    not listed — they are part of the record, not documents to edit here."""
+    base = _report_notes_dir(rid)
+    if not base.is_dir():
         return []
-    out = []
-    for p in sorted(d.glob("*.json")):
-        g, err = _read_json(p)
-        if isinstance(g, dict):
-            g["id"] = p.stem
-            g.setdefault("name", p.stem)
-            g.setdefault("members", [])
-            out.append(g)
-        else:
-            out.append({"id": p.stem, "name": p.stem, "members": [], "error": err})
-    return out
+    return [{"path": str(p.relative_to(base)), "updated_at": _mtime(p), "bytes": p.stat().st_size}
+            for p in sorted(base.rglob("*.md")) if p.is_file()]
 
 
-def get_group(gid: str) -> dict | None:
-    g, err = _read_json(_groups_dir() / f"{_slug(gid)}.json")
-    if g is None and err is None:
-        return None
-    if not isinstance(g, dict):
-        return {"id": gid, "name": gid, "members": [], "error": err}
-    g["id"] = _slug(gid)
-    g.setdefault("members", [])
-    return g
+def read_report_note(rid: str, rel: str) -> str | None:
+    return _read_text(_note_path(_report_notes_dir(rid), rel))
 
 
-def create_group(name: str, description: str = "", by: str = "human") -> dict:
-    if not name.strip():
-        raise ValueError("A group needs a name.")
-    d = _groups_dir()
-    gid = _unique_id(d, _slug(name, "group"))
-    g = {"id": gid, "name": name.strip(), "description": description, "created_by": by,
-         "created_at": _now(), "updated_at": _now(), "members": [],
-         "history": [{"at": _now(), "action": "create", "by": by}]}
-    _write_json(d / f"{gid}.json", g)
-    return g
+def write_report_note(rid: str, rel: str, text: str) -> str:
+    if _read_report(rid) is None:
+        raise KeyError(rid)
+    base = _report_notes_dir(rid)
+    p = _note_path(base, rel)
+    _write(p, text)
+    return str(p.relative_to(base.resolve()))
 
 
-def update_group(gid: str, *, name: str | None = None, description: str | None = None,
-                 add: list[dict] | None = None, remove: list[str] | None = None,
-                 by: str = "human") -> dict:
-    g = get_group(gid)
-    if g is None:
-        raise KeyError(gid)
-    if g.get("error"):
-        raise ValueError(f"group file is unreadable ({g['error']}); fix it by hand first")
-    history = g.get("history") if isinstance(g.get("history"), list) else []
-    now = _now()
-
-    def log(action: str, m: dict | None = None, note: str | None = None) -> None:
-        e: dict[str, Any] = {"at": now, "action": action, "by": by}
-        if m is not None:
-            e.update(permaticker=str(m.get("permaticker")), ticker=m.get("ticker"))
-        if note:
-            e["note"] = note
-        history.append(e)
-
-    if name is not None and (name.strip() or g["name"]) != g["name"]:
-        log("rename", note=f"{g['name']} → {name.strip()}")
-        g["name"] = name.strip()
-    if description is not None and description != g.get("description", ""):
-        log("describe", note=description[:200])
-        g["description"] = description
-    members = {str(m["permaticker"]): m for m in g.get("members", []) if m.get("permaticker")}
-    for m in add or []:
-        new = _member(m, by)
-        old = members.get(new["permaticker"])
-        if old:  # keep the original provenance; refresh the note if one was given
-            new = {**old, "note": new["note"] or old.get("note", "")}
-            if new["note"] != old.get("note", ""):
-                log("note", new, new["note"][:200])
-        else:
-            log("add", new, new["note"][:200] or None)
-        members[new["permaticker"]] = new
-    for pt in remove or []:
-        gone = members.pop(str(pt), None)
-        if gone is not None:
-            log("remove", gone)
-    g["history"] = history
-    g["members"] = list(members.values())
-    g["updated_at"] = _now()
-    _write_json(_groups_dir() / f"{g['id']}.json", {k: v for k, v in g.items() if k != "error"})
-    return g
-
-
-def delete_group(gid: str) -> bool:
-    p = _groups_dir() / f"{_slug(gid)}.json"
+def delete_report_note(rid: str, rel: str) -> bool:
+    p = _note_path(_report_notes_dir(rid), rel)
     if not p.exists():
         return False
     p.unlink()
@@ -779,49 +673,6 @@ def delete_snapshot(sid: str) -> bool:
     return True
 
 
-# -------------------------------------------------------------------------------- notes
-
-def _notes_dir() -> Path:
-    return root() / "notes"
-
-
-def _note_path(rel: str) -> Path:
-    base = _notes_dir().resolve()
-    rel = rel.strip().lstrip("/")
-    if not rel.endswith(".md"):
-        rel += ".md"
-    p = (base / rel).resolve()
-    if base not in p.parents:
-        raise ValueError("note path must stay inside research/notes")
-    return p
-
-
-def list_notes() -> list[dict]:
-    base = _notes_dir()
-    if not base.is_dir():
-        return []
-    return [{"path": str(p.relative_to(base)), "updated_at": _mtime(p), "bytes": p.stat().st_size}
-            for p in sorted(base.rglob("*.md"))]
-
-
-def read_note(rel: str) -> str | None:
-    return _read_text(_note_path(rel))
-
-
-def write_note(rel: str, text: str) -> str:
-    p = _note_path(rel)
-    _write(p, text)
-    return str(p.relative_to(_notes_dir().resolve()))
-
-
-def delete_note(rel: str) -> bool:
-    p = _note_path(rel)
-    if not p.exists():
-        return False
-    p.unlink()
-    return True
-
-
 # -------------------------------------------------------------------------------- guide
 
 _GUIDE_SRC = Path(__file__).resolve().parent / "guide"
@@ -835,7 +686,7 @@ def ensure_layout() -> None:
     overwritten whenever they differ from the repo, so improving the standard means editing
     `core/backend/research/guide/` and redeploying — never the copies."""
     base = root()
-    for sub in ("stocks", "reports", "groups", "snapshots", "notes", "backtests", "_guide"):
+    for sub in ("reports", "snapshots", "backtests", "_guide"):
         (base / sub).mkdir(parents=True, exist_ok=True)
     # The repo copy is AGENT_GUIDE.md because the repo's .gitignore excludes every file named
     # CLAUDE.md (that name is reserved for the local project charter). In the research folder
@@ -847,7 +698,7 @@ def ensure_layout() -> None:
         src = (_GUIDE_SRC / name).read_text(encoding="utf-8")
         if _read_text(dest) != src:
             _write(dest, src)
-    migrate_legacy_analyses()
+    migrate_legacy_research()
 
 
 # ------------------------------------------------------------------------------ migration
@@ -867,11 +718,13 @@ def _as_utc(v: Any) -> datetime | None:
     return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
 
 
-def migrate_legacy_analyses() -> dict:
-    """Move DDs and red teams left in `stocks/<pt>/` (the old layout) into one report,
-    "Recovered research". Idempotent: nothing to move means nothing happens, and a second
-    run adds to the same report. A file whose destination already exists is left where it
-    is and logged — a migration never overwrites research."""
+def migrate_legacy_research() -> dict:
+    """Move research left in the old layouts into one report, "Recovered research":
+    DDs, red teams and notes from `stocks/<pt>/` into its `stocks/<pt>/`, and everything
+    under the old global `notes/` folder (Markdown and any other files, subpaths kept) into
+    its `notes/`. Idempotent: nothing to move means nothing happens, and a later run adds to
+    the same report. A file whose destination already exists is left where it is and logged
+    — a migration never overwrites research."""
     # The API runs several workers, and each calls this at start-up. Without a lock two of
     # them move different files and each saves its own partial member list — the last write
     # wins and analyses end up "not in members list". One migrator at a time.
@@ -882,11 +735,41 @@ def migrate_legacy_analyses() -> dict:
         return _migrate_legacy_locked()
 
 
+def _move(src: Path, dest: Path) -> bool:
+    """Move one file unless `dest` exists (then log and leave it). True when it moved."""
+    if dest.exists():
+        _log.warning("research migration: %s already exists; left %s in place", dest, src)
+        return False
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        os.replace(src, dest)
+    except FileNotFoundError:  # another worker moved it first
+        return False
+    return True
+
+
+def _prune_empty_dirs(base: Path) -> None:
+    """Remove `base` and the folders under it once the migration has emptied them."""
+    for d in sorted((p for p in base.rglob("*") if p.is_dir()), key=lambda p: len(p.parts), reverse=True):
+        try:
+            d.rmdir()
+        except OSError:
+            pass
+    try:
+        base.rmdir()
+    except OSError:
+        pass
+
+
 def _migrate_legacy_locked() -> dict:
     base = root() / "stocks"
     legacy = [d for d in base.iterdir() if d.is_dir() and d.name.isdigit()
-              and any((d / f).exists() for f in REPORT_DOCS.values())] if base.is_dir() else []
-    if not legacy:
+              and any((d / f).is_file() for f in REPORT_DOCS.values())] if base.is_dir() else []
+    notes_base = root() / "notes"
+    loose_notes = sorted(p for p in notes_base.rglob("*") if p.is_file()) if notes_base.is_dir() else []
+    if not legacy and not loose_notes:
+        if notes_base.is_dir():
+            _prune_empty_dirs(notes_base)
         return {"moved": 0, "skipped": 0}
     stamps: list[datetime] = []
     for d in legacy:
@@ -902,8 +785,8 @@ def _migrate_legacy_locked() -> dict:
     rep = _read_report(rid)
     if rep is None or rep.get("error"):
         if rep is not None:  # an unreadable report.json is never overwritten
-            _log.warning("research migration: %s/report.json is unreadable; legacy DDs left in place", rid)
-            return {"moved": 0, "skipped": len(legacy)}
+            _log.warning("research migration: %s/report.json is unreadable; legacy research left in place", rid)
+            return {"moved": 0, "skipped": len(legacy) + len(loose_notes)}
         rep = {"id": rid, "name": "Recovered research", "thesis": "Imported from the earlier research folder",
                "created_at": earliest.isoformat(timespec="seconds"), "created_by": "migration",
                "status": "complete", "source": {"kind": "manual"}, "members": [], "notes": ""}
@@ -917,19 +800,13 @@ def _migrate_legacy_locked() -> dict:
         took = False
         for fname in REPORT_DOCS.values():
             src = d / fname
-            if not src.exists():
+            if not src.is_file():
                 continue
-            if (dest / fname).exists():
-                _log.warning("research migration: %s already exists; left %s in place", dest / fname, src)
+            if _move(src, dest / fname):
+                moved += 1
+                took = True
+            elif src.exists():
                 skipped += 1
-                continue
-            dest.mkdir(parents=True, exist_ok=True)
-            try:
-                os.replace(src, dest / fname)
-            except FileNotFoundError:  # another worker moved it first
-                continue
-            moved += 1
-            took = True
         if took and d.name not in members:
             meta, _ = _read_json(d / "meta.json")
             dd, _ = _read_json(dest / "dd.json")
@@ -939,6 +816,14 @@ def _migrate_legacy_locked() -> dict:
                                               "ticker": meta.get("ticker") or dd.get("ticker"),
                                               "name": meta.get("name") or dd.get("company"),
                                               "added_at": rep["created_at"]}, "migration")
+    notes_dest = rdir / rid / "notes"
+    for src in loose_notes:
+        if _move(src, notes_dest / src.relative_to(notes_base)):
+            moved += 1
+        elif src.exists():
+            skipped += 1
+    if notes_base.is_dir():
+        _prune_empty_dirs(notes_base)
     rep["members"] = list(members.values())
     if moved:
         _save_report(rep)

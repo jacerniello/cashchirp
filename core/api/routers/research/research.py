@@ -1,17 +1,15 @@
-"""Research endpoints — per-stock notes and DD, groups, screener snapshots, free notes.
+"""Research endpoints — reports (dated DD runs with their notes) and screener snapshots.
 
-    GET    /research/                         rankings: latest analysis per stock across reports
-    GET    /research/stocks/{pt}              notes, groups, snapshots, analysis history + latest DD
-    PUT    /research/stocks/{pt}/notes        write the stock's living notes (DELETE too)
-    GET    /research/reports                  POST to start a report (from a snapshot/group/by hand)
+    GET    /research/                         research status per stock (latest analysis) + counts
+    GET    /research/stocks/{pt}              a stock across reports: analysis history, latest DD,
+                                              reports with notes on it, snapshots
+    GET    /research/reports                  POST to start a report (from a snapshot or by hand)
     GET    /research/reports/{id}             the report + its ranking; PATCH, DELETE
-    GET    /research/reports/{id}/stocks/{pt}/{doc}   dd | redteam within a report; PUT, DELETE
-    GET    /research/groups                   POST to create
-    GET    /research/groups/{id}              PATCH (name/description/add/remove), DELETE
+    GET    /research/reports/{id}/stocks/{pt}/{doc}   dd | redteam | notes within a report; PUT, DELETE
+    GET    /research/reports/{id}/notes       the report's notes; GET/PUT/DELETE .../notes/{path}
     GET    /research/snapshots                POST to freeze a grid filter or saved screen
     GET    /research/snapshots/{id}           PATCH (name/note/remove/restore), DELETE
     GET    /research/snapshots/{id}/csv
-    GET    /research/notes                    GET/PUT/DELETE /research/notes/{path}
     GET    /research/guide                    where the research folder is, for pointing an AI at it
 
 Everything reads and writes files under `settings.research_dir` (see core.backend.research.store);
@@ -85,16 +83,13 @@ def _with_prices(items: list[dict]) -> str | None:
     return None
 
 
-# ---------------------------------------------------------------------------- rankings
+# ------------------------------------------------------------------------------- index
 
 @router.get("/")
 def index() -> dict[str, Any]:
-    stocks = store.list_stocks()
-    prices_error = _with_prices(stocks)
-    return {"root": str(store.root()), "stocks": stocks, "prices_error": prices_error,
-            "reports": len(store.list_reports()),
-            "groups": len(store.list_groups()), "snapshots": len(store.list_snapshots()),
-            "notes": len(store.list_notes())}
+    """Every researched stock with its latest analysis, and how much research there is."""
+    return {"root": str(store.root()), "stocks": store.list_stocks(),
+            "reports": len(store.list_reports()), "snapshots": len(store.list_snapshots())}
 
 
 @router.get("/guide")
@@ -118,25 +113,6 @@ def stock(pt: str) -> dict[str, Any]:
         _bad(exc)
 
 
-@router.put("/stocks/{pt}/{doc}")
-def put_doc(pt: str, doc: str, body: DocBody) -> dict[str, Any]:
-    try:
-        store.save_stock_doc(pt, doc, body.content, body.ticker, body.name)
-    except ValueError as exc:
-        _bad(exc)
-    return {"saved": doc}
-
-
-@router.delete("/stocks/{pt}/{doc}")
-def delete_doc(pt: str, doc: str) -> dict[str, Any]:
-    try:
-        if not store.delete_stock_doc(pt, doc):
-            raise HTTPException(404, f"No {doc} for {pt}.")
-    except ValueError as exc:
-        _bad(exc)
-    return {"deleted": doc}
-
-
 # ----------------------------------------------------------------------------- reports
 
 class ReportMember(BaseModel):
@@ -147,11 +123,10 @@ class ReportMember(BaseModel):
 
 class ReportCreate(BaseModel):
     """Start a report. From a snapshot its kept members (or `permatickers`, the selected
-    rows); from a group its members (or a subset); with neither, `members` by hand."""
+    rows); without one, `members` by hand."""
     name: str = ""
     thesis: str = ""
     snapshot_id: str | None = None
-    group_id: str | None = None
     permatickers: list[str] | None = None
     members_from: str | None = None  # "kept" | "selected" (selected = use `permatickers`)
     members: list[ReportMember] = []
@@ -185,8 +160,8 @@ def create_report(body: ReportCreate) -> dict[str, Any]:
     pick = body.permatickers if body.members_from != "kept" else None
     try:
         rep = store.create_report(
-            body.name, thesis=body.thesis, snapshot_id=body.snapshot_id, group_id=body.group_id,
-            permatickers=pick, members=[m.model_dump() for m in body.members])
+            body.name, thesis=body.thesis, snapshot_id=body.snapshot_id, permatickers=pick,
+            members=[m.model_dump() for m in body.members])
     except KeyError as exc:
         raise HTTPException(404, f"No {exc.args[0]}.") from None
     except ValueError as exc:
@@ -263,70 +238,6 @@ def delete_report_doc(rid: str, pt: str, doc: str) -> dict[str, Any]:
     return {"deleted": doc}
 
 
-# ------------------------------------------------------------------------------ groups
-
-class GroupCreate(BaseModel):
-    name: str
-    description: str = ""
-
-
-class Member(BaseModel):
-    permaticker: str
-    ticker: str | None = None
-    name: str | None = None
-    note: str = ""
-
-
-class GroupPatch(BaseModel):
-    name: str | None = None
-    description: str | None = None
-    add: list[Member] = []
-    remove: list[str] = []
-
-
-@router.get("/groups")
-def groups() -> dict[str, Any]:
-    return {"groups": store.list_groups()}
-
-
-@router.post("/groups")
-def create_group(body: GroupCreate) -> dict[str, Any]:
-    try:
-        return store.create_group(body.name, body.description)
-    except ValueError as exc:
-        _bad(exc)
-
-
-@router.get("/groups/{gid}")
-def group(gid: str) -> dict[str, Any]:
-    g = store.get_group(gid)
-    if g is None:
-        raise HTTPException(404, f"No group {gid!r}.")
-    ratings = {s["permaticker"]: s["rating"] for s in store.list_stocks()}
-    for m in g.get("members", []):
-        m["rating"] = ratings.get(str(m.get("permaticker")))
-    return g
-
-
-@router.patch("/groups/{gid}")
-def patch_group(gid: str, body: GroupPatch) -> dict[str, Any]:
-    try:
-        return store.update_group(
-            gid, name=body.name, description=body.description,
-            add=[m.model_dump() for m in body.add], remove=body.remove)
-    except KeyError:
-        raise HTTPException(404, f"No group {gid!r}.") from None
-    except ValueError as exc:
-        _bad(exc)
-
-
-@router.delete("/groups/{gid}")
-def delete_group(gid: str) -> dict[str, Any]:
-    if not store.delete_group(gid):
-        raise HTTPException(404, f"No group {gid!r}.")
-    return {"deleted": gid}
-
-
 # --------------------------------------------------------------------------- snapshots
 
 class SnapshotCreate(BaseModel):
@@ -391,7 +302,7 @@ def snapshot(sid: str) -> dict[str, Any]:
         r = stocks.get(str(m.get("permaticker")))
         m["research"] = None if r is None else {
             "rating": r["rating"], "has_notes": r["has_notes"], "has_dd": r["has_dd"],
-            "has_redteam": r["has_redteam"], "groups": r["groups"]}
+            "has_redteam": r["has_redteam"]}
     return s
 
 
@@ -428,41 +339,48 @@ def snapshot_csv(sid: str) -> PlainTextResponse:
         "Content-Disposition": f'attachment; filename="{s["id"]}.csv"'})
 
 
-# ------------------------------------------------------------------------------- notes
+# ------------------------------------------------------------------------ report notes
 
 class NoteBody(BaseModel):
     text: str
 
 
-@router.get("/notes")
-def notes() -> dict[str, Any]:
-    return {"notes": store.list_notes()}
-
-
-@router.get("/notes/{path:path}")
-def note(path: str) -> dict[str, Any]:
+@router.get("/reports/{rid}/notes")
+def report_notes(rid: str) -> dict[str, Any]:
     try:
-        text = store.read_note(path)
+        if store.get_report(rid) is None:
+            _report_404(rid)
+        return {"report_id": rid, "notes": store.list_report_notes(rid)}
+    except ValueError as exc:
+        _bad(exc)
+
+
+@router.get("/reports/{rid}/notes/{path:path}")
+def report_note(rid: str, path: str) -> dict[str, Any]:
+    try:
+        text = store.read_report_note(rid, path)
     except ValueError as exc:
         _bad(exc)
     if text is None:
-        raise HTTPException(404, f"No note {path!r}.")
-    return {"path": path, "text": text}
+        raise HTTPException(404, f"No note {path!r} in report {rid!r}.")
+    return {"report_id": rid, "path": path, "text": text}
 
 
-@router.put("/notes/{path:path}")
-def put_note(path: str, body: NoteBody) -> dict[str, Any]:
+@router.put("/reports/{rid}/notes/{path:path}")
+def put_report_note(rid: str, path: str, body: NoteBody) -> dict[str, Any]:
     try:
-        return {"saved": store.write_note(path, body.text)}
+        return {"saved": store.write_report_note(rid, path, body.text)}
+    except KeyError:
+        _report_404(rid)
     except ValueError as exc:
         _bad(exc)
 
 
-@router.delete("/notes/{path:path}")
-def delete_note(path: str) -> dict[str, Any]:
+@router.delete("/reports/{rid}/notes/{path:path}")
+def delete_report_note(rid: str, path: str) -> dict[str, Any]:
     try:
-        if not store.delete_note(path):
-            raise HTTPException(404, f"No note {path!r}.")
+        if not store.delete_report_note(rid, path):
+            raise HTTPException(404, f"No note {path!r} in report {rid!r}.")
     except ValueError as exc:
         _bad(exc)
     return {"deleted": path}

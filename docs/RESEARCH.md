@@ -2,8 +2,9 @@
 
 The screener finds candidates. This is where you judge them: screener results frozen as
 snapshots, **reports** — dated analysis runs with an AI due diligence (and red team) per
-stock — notes, groups you define, a ranking of the latest view of everything you have
-analysed, and backtests that say whether a screen would have worked.
+stock, their own ranking and their own notes — and backtests that say whether a screen
+would have worked. Reports are how research is organised: there are no separate groups or
+free-standing notes.
 
 ## The model
 
@@ -12,10 +13,10 @@ analysed, and backtests that say whether a screen would have worked.
 | **Idea** (saved screen) | settings only — the criteria | `config/screens/<id>.yaml` (repo) | you edit it |
 | **Snapshot** | what an idea or filter caught at a moment | `snapshots/<id>.json` | trimmable (undoable) |
 | **Report** | an analysis run built at a particular time: a set of stocks (usually a snapshot's), a DD + optional red team per stock *as of that report*, and its own ranking | `reports/<id>/` | expanded and completed over time; never overwritten — re-analysing later is a new report |
-| **Stock notes** | your living notes on a stock | `stocks/<permaticker>/notes.md` | edited freely |
-| **Group** | a living category of stocks | `groups/<id>.json` | edited; every change kept in a change log |
+| **Notes** | Markdown that belongs to a report: the report's own (`notes/**.md`) or one stock's within it | `reports/<id>/notes/`, `reports/<id>/stocks/<permaticker>/notes.md` | edited freely |
 
-**Rankings** is derived, not stored: each stock's *latest* analysis across all reports.
+A stock's rating over time is derived, not stored: its research page lists every report that
+analysed it, newest first.
 
 ---
 
@@ -27,11 +28,10 @@ in the research folder — `RESEARCH_DIR` in `core/.env`, default `<repo>/resear
 
 | In the repo (apparatus) | In the research folder (yours) |
 |---|---|
-| `core/backend/research/store.py` — reads and writes the folder | `stocks/<permaticker>/` — your notes |
-| | `reports/<id>/` — analysis runs: DD + red team per stock |
-| `core/backend/research/guide/` — the DD and red-team standards, and the AI guide (`AGENT_GUIDE.md`, copied in as `CLAUDE.md`) | `groups/<id>.json` — your categories |
-| `core/api/routers/research/` — the API | `snapshots/<id>.json` — frozen screener results |
-| `web/src/app/research/`, `web/src/app/backtests/` — the pages | `notes/**.md` — free-form notes |
+| `core/backend/research/store.py` — reads and writes the folder | `reports/<id>/` — analysis runs: DD + red team per stock, and notes |
+| `core/backend/research/guide/` — the DD and red-team standards, and the AI guide (`AGENT_GUIDE.md`, copied in as `CLAUDE.md`) | `snapshots/<id>.json` — frozen screener results |
+| `core/api/routers/research/` — the API | |
+| `web/src/app/research/`, `web/src/app/backtests/` — the pages | |
 | `core/backend/backtest/` — the backtest harness and runner | `backtests/<id>/` — backtest reports |
 
 Plain files mean three things. You can read and edit them with any editor. An AI agent can
@@ -45,17 +45,15 @@ private repo, point `RESEARCH_DIR` there.
 research/
   CLAUDE.md                the guide an AI agent reads (generated — see below)
   _guide/                  DD_STANDARD.md · REDTEAM.md · dd_template.json (generated)
-  stocks/<permaticker>/
-    meta.json              ticker, name, timestamps
-    notes.md               your notes (living)
   reports/<id>/            one analysis run — id YYYYMMDD-HHMM-<slug>
     report.json            name, thesis, created_at, status (open|complete), source, members
+    notes/**.md            the report's notes (other files may sit beside them)
     stocks/<permaticker>/
       dd.json              due-diligence report for this run (the DD standard)
       redteam.md           adversarial review of that DD
-  groups/<id>.json         a named set of stocks, each with a note and who added it, + history
+      notes.md             notes on this stock in this run
   snapshots/<id>.json      a screener result frozen at a moment
-  notes/**.md              anything not tied to one stock
+  stocks/<permaticker>/    meta.json (ticker, name) left from earlier layouts — nothing new goes here
   backtests/<id>/          report.json + CSVs from the backtest runner
 ```
 
@@ -66,35 +64,27 @@ starts. Edit the standards there, not in the copies.
 
 ## In the app
 
-- **Research → Reports** (`/research/reports`) — every analysis run, newest first: source
-  (snapshot → idea, or group), status, analysed/total, top names. Start one from a snapshot,
-  a group, or empty. A report's page is its **ranking** (rating, confidence, base upside,
-  price at analysis → now, red team, groups), the members not yet analysed, **Expand** (add
-  the rest of the source snapshot's kept members, or any stock by ticker), and a copyable
-  instruction for Claude to complete it. Each member's analysis has its own page,
-  `/research/reports/<id>/stocks/<permaticker>`.
-- **Research → Rankings** (`/research`) — the **latest** analysis of every stock across all
-  reports (by the DD's `asof`): rating, the change from the previous analysis (↑/↓), the
-  report and date it came from, price then → now, and a *stale* badge when the analysis is
-  over 90 days old or the price has moved more than 20% since. Stocks with only notes are
-  listed unrated.
+- **Research** (`/research`) — every report, newest first: source (snapshot → idea, or
+  hand-picked), status, analysed/total, top names. Start one from a snapshot or empty. A
+  report's page is its **ranking** (rating, confidence, base upside, price at analysis →
+  now, red team), the members not yet analysed, **Expand** (add the rest of the source
+  snapshot's kept members, or any stock by ticker), the report's **Notes** (Markdown, in
+  folders; `?note=<path>` links one), and a copyable instruction for Claude to complete it.
+  Each member has its own page in the report, `/research/reports/<id>/stocks/<permaticker>`,
+  with that run's DD, red team and notes on the stock.
 - **A stock's research page** (`/research/stocks/<permaticker>`, also the *Research* tab on
-  the company page) — your notes (Markdown), the latest DD and red team (with the report and
-  date they came from), the analysis history, its groups and snapshots.
+  the company page) — the stock across reports: the latest DD and red team (with the report
+  and date they came from), the analysis history (its rating over time), the reports holding
+  notes on it, and its snapshots.
 - **Screener → Snapshots** (`/screener/snapshots`) — made from the Filter tab (*Snapshot*)
   or a saved screen (*Take snapshot now*). A snapshot keeps every matching stock with its
   metrics as of that day. Trim it (removed members are marked, not deleted, so a trim can be
-  undone), add members to groups, download it as CSV, and **start a report** on all kept
+  undone), download it as CSV, and **start a report** on all kept
   members or the selected rows.
 - **Screener → Saved screens** (`/screener/ideas`) — a saved screen is settings, not
   results: its page shows the definition (criteria, gates, today's match count) and the
   snapshots, reports and backtests made from it, with actions to take a snapshot, backtest it, or
   load it into the filter grid.
-- **Research → Groups** — create as many as you like (a catalyst type, a thesis family, "watch",
-  "bought"…), add stocks from a snapshot, a stock page or by ticker, and give each a note.
-  You and the AI both edit them; each member records who added it, and the group page shows
-  the change log (adds, removes, renames).
-- **Research → Notes** — free-form Markdown, organised in folders.
 - **Backtests** (`/backtests`) — run a saved screen through history and keep the report.
 
 ## Pointing Claude at it
@@ -112,7 +102,8 @@ claude
 
 > Start a report on snapshot `20261104-1305-mid-cheap` and do a full DD on every kept member.
 
-> Group the members of that snapshot by why they are cheap. Reuse existing groups where they fit.
+> Sort the members of report `20261104-1310-mid-cheap` by why they are cheap, and write it up in
+> that report's `notes/why-cheap.md`.
 
 > Trim snapshot X to companies with net cash and positive FCF in each of the last 3 years.
 
@@ -121,11 +112,13 @@ The folder's `CLAUDE.md` tells the agent the layout, the file formats, the DD st
 red-team standard, and where to get data — the app's API, Postgres, SEC EDGAR, the web.
 Every analysis goes in a report and is never rewritten by later work — refreshing a view of
 a stock means a new report. What it writes shows up on the site immediately; the research
-pages show a ready-to-paste instruction for each report, stock, group and snapshot.
+pages show a ready-to-paste instruction for each report, stock and snapshot.
 
-DDs written before reports existed (in `stocks/<permaticker>/`) are moved, once, into a
-report called *Recovered research* when the API starts; a file that would overwrite one
-already there is left in place and logged.
+Research written before reports held everything — DDs, red teams and notes in
+`stocks/<permaticker>/`, and the old free-standing `notes/` folder (Markdown and any other
+files in it, subfolders kept) — is moved into a report called *Recovered research* when the
+API starts; a file that would overwrite one already there is left in place and logged. An
+old `groups/` folder is left untouched on disk; the app no longer reads it.
 
 The agent runs on your own Claude subscription, wherever you start it. On the homelab,
 Claude Code is already installed and logged in.

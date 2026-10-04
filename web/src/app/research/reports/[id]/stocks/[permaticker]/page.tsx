@@ -3,16 +3,28 @@
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
-import { ResearchAreaNav } from '../../../../ResearchAreaNav';
 import { DDReportView } from '@/components/dd/DDReportView';
 import { DDRedTeamMarkdown } from '@/components/dd/DDRedTeam';
 import { ClaudeInstruction, ErrorPanel, fmtWhen } from '@/components/research/ResearchBits';
+import { MarkdownEditor } from '@/components/research/MarkdownEditor';
 import { RatingSummary } from '@/components/research/StockResearch';
-import { errDetail, isNotFound, useReport, useReportDoc, useResearchGuide } from '@/hooks/useResearch';
+import {
+  errDetail,
+  isNotFound,
+  useDeleteReportDoc,
+  useReport,
+  useReportDoc,
+  useResearchGuide,
+  useSaveReportDoc,
+} from '@/hooks/useResearch';
 import { segItem } from '@/lib/styles';
 
-// One stock's analysis inside one report: the DD and red team as written for that run.
-// It is a record — the stock's research page shows the latest analysis across reports.
+// One stock inside one report: the DD and red team as written for that run, and the notes
+// on it that belong to this report. The analysis is a record — the stock's research page
+// shows the latest analysis across reports.
+
+type Tab = 'dd' | 'redteam' | 'notes';
+const TAB_KEYS: Tab[] = ['dd', 'redteam', 'notes'];
 
 export default function ReportStockPage() {
   const params = useParams<{ id: string; permaticker: string }>();
@@ -21,12 +33,24 @@ export default function ReportStockPage() {
   const rep = useReport(id);
   const dd = useReportDoc(id, pt, 'dd');
   const rt = useReportDoc(id, pt, 'redteam');
+  const notes = useReportDoc(id, pt, 'notes');
+  const save = useSaveReportDoc(id, pt);
+  const del = useDeleteReportDoc(id, pt);
   const guide = useResearchGuide();
-  const [tab, setTab] = useState<'dd' | 'redteam'>('dd');
+  const [tab, setTab] = useState<Tab>('dd');
 
+  // ?tab= deep-links a section.
   useEffect(() => {
-    if (new URL(window.location.href).searchParams.get('tab') === 'redteam') setTab('redteam');
+    const t = new URL(window.location.href).searchParams.get('tab');
+    if (t && (TAB_KEYS as string[]).includes(t)) setTab(t as Tab);
   }, []);
+
+  function choose(t: Tab) {
+    setTab(t);
+    const url = new URL(window.location.href);
+    url.searchParams.set('tab', t);
+    window.history.replaceState(null, '', url.toString());
+  }
 
   const member = rep.data?.members.find((m) => String(m.permaticker) === pt);
   const ddObj = dd.data?.content && typeof dd.data.content === 'object' ? (dd.data.content as Record<string, unknown>) : null;
@@ -37,10 +61,11 @@ export default function ReportStockPage() {
   const asof = member?.analysis?.asof || (typeof ddObj?.asof === 'string' ? ddObj.asof : null);
   const ddMissing = dd.isError && isNotFound(dd.error);
   const rtMissing = rt.isError && isNotFound(rt.error);
+  const notesText = typeof notes.data?.content === 'string' ? notes.data.content : null;
+  const notesMissing = notes.isError && isNotFound(notes.error);
 
   return (
     <div className="bg-surface min-h-[calc(100vh-4rem)] font-sans">
-      <ResearchAreaNav />
       <div className="bg-white border-b border-rule">
         <div className="max-w-[1100px] mx-auto px-6 max-md:px-4 pt-6 pb-2">
           <Link href={`/research/reports/${encodeURIComponent(id)}`} className="text-xs text-ink-muted hover:text-green no-underline">
@@ -62,10 +87,15 @@ export default function ReportStockPage() {
             Later analyses go in later reports; this one is not updated.
           </p>
           <ul className="flex gap-1 list-none m-0 p-0 pt-4 pb-2">
-            <li><button type="button" onClick={() => setTab('dd')} className={segItem(tab === 'dd')}>DD</button></li>
+            <li><button type="button" onClick={() => choose('dd')} className={segItem(tab === 'dd')}>DD</button></li>
             <li>
-              <button type="button" onClick={() => setTab('redteam')} className={segItem(tab === 'redteam')}>
+              <button type="button" onClick={() => choose('redteam')} className={segItem(tab === 'redteam')}>
                 Red team{rtMissing && <span className="ml-1 opacity-50">·</span>}
+              </button>
+            </li>
+            <li>
+              <button type="button" onClick={() => choose('notes')} className={segItem(tab === 'notes')}>
+                Notes{notesMissing && <span className="ml-1 opacity-50">·</span>}
               </button>
             </li>
           </ul>
@@ -126,6 +156,29 @@ export default function ReportStockPage() {
           ) : rt.isError ? (
             <ErrorPanel title="Could not load the red team."><p className="m-0">{errDetail(rt.error)}</p></ErrorPanel>
           ) : null
+        )}
+        {!(rep.isError && isNotFound(rep.error)) && tab === 'notes' && (
+          notes.isLoading ? <p className="text-sm text-ink-muted">Loading notes…</p>
+          : notes.isError && !notesMissing ? (
+            <ErrorPanel title="Could not load the notes."><p className="m-0">{errDetail(notes.error)}</p></ErrorPanel>
+          ) : (
+            <div className="rounded-xl border border-rule bg-white p-5">
+              <h2 className="text-lg font-bold text-ink m-0 mb-3">Notes on {label} in this report</h2>
+              <MarkdownEditor
+                value={notesText}
+                saving={save.isPending}
+                error={save.isError ? errDetail(save.error, 'Could not save.') : del.isError ? errDetail(del.error) : null}
+                emptyText={`No notes on ${label} in this report yet.`}
+                startLabel="Start notes"
+                placeholder={`# ${label}\n\n## Why I'm looking\n\n## What would change my mind\n`}
+                onSave={(text) => save.mutateAsync({ doc: 'notes', content: text, ticker, name })}
+                onDelete={() => del.mutateAsync('notes')}
+              />
+              <p className="text-xs text-ink-muted mt-4 mb-0">
+                Saved to <code className="font-mono">reports/{id}/stocks/{pt}/notes.md</code> in the research folder.
+              </p>
+            </div>
+          )
         )}
       </div>
     </div>

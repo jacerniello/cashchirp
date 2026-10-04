@@ -219,7 +219,7 @@ export default function SavedScreenPage() {
             items={history.snapshotsFor(id)}
             rowKey={(s) => s.id}
             render={(s) => <SnapshotRow s={s} />}
-            empty={<>None yet. <em>Take snapshot now</em> freezes what this screen finds today, so you can trim it, group it and compare later.</>}
+            empty={<>None yet. <em>Take snapshot now</em> freezes what this screen finds today, so you can trim it, start a report on it and compare later.</>}
           />
           <DerivedSection
             title="Reports"

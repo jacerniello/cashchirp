@@ -2,9 +2,10 @@
 
 You are in the **research folder** of cashchirp, a screening tool over a local mirror of US
 equity fundamentals, prices and filings (Sharadar) plus FRED macro data. This folder holds
-the owner's research: their notes, reports (dated analysis runs holding AI due-diligence and
-red-team reviews), groups of stocks, frozen screener results, and backtest reports. The cashchirp web app reads these same files
-live, so whatever you write here shows up on the site immediately.
+the owner's research: reports (dated analysis runs holding AI due-diligence, red-team
+reviews and notes), frozen screener results, and backtest reports. Reports are how stocks —
+and notes — are organised. The cashchirp web app reads these same files live, so whatever you write here
+shows up on the site immediately.
 
 > Generated from the repo (`core/backend/research/guide/AGENT_GUIDE.md`) and refreshed when the
 > app starts. Do not edit this copy; it will be overwritten.
@@ -21,17 +22,16 @@ include this rule in every subagent's instructions.
 ## Layout
 
 ```
-stocks/<permaticker>/      the LIVING notes on a stock — keyed by permaticker, NEVER ticker
-  meta.json                {permaticker, ticker, name, created_at, updated_at}
-  notes.md                 the OWNER's notes — read them, do not rewrite them
 reports/<id>/              one analysis RUN, built at a particular time
-  report.json              name, thesis, source, status, members (format below)
-  stocks/<permaticker>/
+  report.json              name, thesis, source, status, members, a short `notes` summary
+  notes/**.md              the report's notes — thesis work, findings, experiments, logs
+                           (data files and scripts may sit beside them)
+  stocks/<permaticker>/    one stock in this run — keyed by permaticker, NEVER ticker
     dd.json                the DD for this run (format: _guide/DD_STANDARD.md)
     redteam.md             adversarial review of that dd.json (format: _guide/REDTEAM.md)
-groups/<id>.json           named, editable sets of stocks — categories — with a change log
+    notes.md               notes on this stock in this run — the OWNER's unless you were asked
 snapshots/<id>.json        a screener result frozen at a moment, trimmable
-notes/**.md                free-form notes not tied to one stock (insights, experiments, logs)
+stocks/<permaticker>/      meta.json only (ticker/name) — left from earlier layouts; write nothing here
 backtests/<id>/            backtest reports (report.json + CSVs) — written by the runner, read-only
 _guide/                    DD_STANDARD.md, REDTEAM.md, dd_template.json — the standards
 ```
@@ -47,21 +47,22 @@ Tickers get recycled across companies, so a stock is always identified by its
 | Idea (saved screen) | settings only — `config/screens/<id>.yaml` in the app repo | edited by the owner |
 | Snapshot | what an idea/filter caught at a moment | trimmed (members marked `removed`) |
 | **Report** | an analysis run: a set of stocks, a DD (+ optional red team) per stock done *as of that report*, and its own ranking | expanded and completed over time; **its analyses are never rewritten by later work** |
-| Stock notes | the owner's living notes on a stock | edited freely by the owner |
-| Group | a living category of stocks | edited, every change logged in `history` |
+| Notes | Markdown in a report: report-level (`notes/**.md`) or per stock (`stocks/<pt>/notes.md`) | edited freely; the owner's notes are theirs |
 
-The site's **Rankings** page shows each stock's *latest* analysis across all reports (by the
-DD's `asof`), with the rating of the one before it — so a fresh view of a stock is simply a
-newer report, and the old one stays as the record of what was thought then.
+**Reports are how stocks are organised** — there is no separate category file and no notes
+folder outside reports. A report is a named set of stocks with its own ranking and notes; a
+stock's page on the site lists every report that analysed it (newest first) and every report
+with notes on it, so a fresh view of a stock is simply a newer report, and the old one stays
+as the record of what was thought then. Earlier free-standing notes were moved into the
+"Recovered research" report (`reports/*-recovered-research/`).
 
 ## The report workflow
 
-1. **Every analysis lives in a report.** When asked to do DD on a snapshot, a group or some
-   stocks, first find or create the report for that run:
+1. **Every analysis lives in a report.** When asked to do DD on a snapshot or some stocks,
+   first find or create the report for that run:
    - If the owner names a report (`Complete report <id>`), work in it.
    - Otherwise create one — `POST /research/reports` with `{name, thesis?, snapshot_id? |
-     group_id? | members?}` (members default to the snapshot's kept members / the group's
-     members), or write `reports/<id>/report.json` yourself (format below). Ids are
+     members?}` (members default to the snapshot's kept members), or write `reports/<id>/report.json` yourself (format below). Ids are
      `YYYYMMDD-HHMM-<slug>`.
 2. **Write each analysis inside it:** `reports/<id>/stocks/<permaticker>/dd.json`, then
    `redteam.md` where asked. Add the stock to `members` if it is not there already.
@@ -79,22 +80,25 @@ newer report, and the old one stays as the record of what was thought then.
 - **"Complete report <id>"** — write a DD for every member of `reports/<id>/report.json` that
   has no `reports/<id>/stocks/<pt>/dd.json`, then red-team the ones the owner asks for
   (usually those rated 5–6).
-- **"Do DD on <stock | snapshot | group>"** — start a report for the run (see the workflow
+- **"Do DD on <stock | snapshot>"** — start a report for the run (see the workflow
   above) and follow `_guide/DD_STANDARD.md` for each member. For a snapshot skip members it
   marks `"removed": true`.
 - **"Red-team <stock | the 5–6s in X>"** — follow `_guide/REDTEAM.md`, writing `redteam.md`
   next to the `dd.json` it attacks, in the same report.
-- **"Group these" / "categorise snapshot X"** — create or edit `groups/<id>.json`. Groups are
-  the owner's main way of organising research (catalyst type, sector theme, thesis family,
-  watch vs. buy…). Prefer adding to an existing group over creating a near-duplicate; read
-  `groups/` first. Mark everything you add with `"added_by": "ai"`, give each member a
-  one-line `note` saying why it belongs, and **append an entry to the group's `history`**
-  for every add/remove/rename you make.
+- **"Categorise these" / "sort snapshot X by theme"** — do it inside reports, not in a new
+  kind of file. Either write the categorisation into the report itself (its `notes` summary,
+  or a note under `reports/<id>/notes/`), or, when the owner wants each
+  theme tracked on its own, create one report per theme (catalyst type, sector theme, thesis
+  family…) with the matching members and a `thesis` that says what binds them. Read
+  `reports/` first and reuse an open report rather than creating a near-duplicate.
 - **"Trim snapshot X"** — set `"removed": true` on members that fail the criterion you were
   given, and add `"removed_reason"`. Never delete members: trimming must be undoable.
-- **Notes** — write general findings to `notes/<topic>/<name>.md`. Only touch a stock's
-  `notes.md` if the owner explicitly asks; if you do, append a dated `## AI notes (YYYY-MM-DD)`
-  section rather than editing their text.
+- **Notes** — write findings into the report they belong to:
+  `reports/<id>/notes/<topic>/<name>.md` for the run as a whole (insights, experiments,
+  logs), `reports/<id>/stocks/<pt>/notes.md` for one stock in it. A finding that spans
+  reports goes in the report you are working in (or a new report for that question). Only
+  touch an existing per-stock `notes.md` if the owner explicitly asks; if you do, append a
+  dated `## AI notes (YYYY-MM-DD)` section rather than editing their text.
 
 ## File formats
 
@@ -113,26 +117,8 @@ newer report, and the old one stays as the record of what was thought then.
   "notes": ""
 }
 ```
-`source` is `{"kind": "snapshot", ...}`, `{"kind": "group", "group_id": "..."}` or
-`{"kind": "manual"}`; `status` is `"open"` or `"complete"`.
-
-`groups/<id>.json` (the id is the file name; lowercase, hyphens):
-```json
-{
-  "name": "Asset plays", "description": "Trading below net cash or liquidation value",
-  "created_by": "human", "created_at": "2026-11-04T18:00:00+00:00", "updated_at": "...",
-  "members": [
-    {"permaticker": "199021", "ticker": "UHS", "name": "Universal Health Services",
-     "note": "why it belongs", "added_by": "ai", "added_at": "2026-11-04T18:05:00+00:00"}
-  ],
-  "history": [
-    {"at": "2026-11-04T18:05:00+00:00", "action": "add", "permaticker": "199021",
-     "ticker": "UHS", "by": "ai", "note": "why it belongs"}
-  ]
-}
-```
-`history` actions: `create`, `add`, `remove`, `rename`, `describe`, `note`. Append; never
-rewrite past entries.
+`source` is `{"kind": "snapshot", ...}` or `{"kind": "manual"}`; `status` is `"open"` or
+`"complete"`.
 
 `snapshots/<id>.json`: `{name, note, source: {kind: "grid", params} | {kind: "screen",
 screen_id, title, spec}, asof, created_at, created_by, members: [{permaticker, ticker, name,
@@ -143,10 +129,10 @@ values are as of `asof`; percent metrics are decimals (0.12 = 12%). Edit only `n
 Rules for every file you write:
 - Write the **whole file** as valid JSON (or Markdown), then check it parses:
   `python3 -m json.tool <file> > /dev/null`. A broken file shows as an error on the site.
-- Keep `permaticker` values as strings of digits in reports/groups/snapshots, and as an int
+- Keep `permaticker` values as strings of digits in reports/snapshots, and as an int
   in `dd.json` (the DD format's convention).
-- Do not touch `_guide/` or `backtests/`, and never put `dd.json`/`redteam.md` directly in
-  `stocks/<pt>/` — analyses belong to a report.
+- Do not touch `_guide/` or `backtests/`, and never put `dd.json`/`redteam.md`/`notes.md`
+  directly in `stocks/<pt>/` — analyses and notes belong to a report.
 
 ## Getting data
 
@@ -166,7 +152,7 @@ The app's API is the easiest source. On the homelab it is at `http://127.0.0.1:8
 | Short interest | `GET /short-interest?perma_ticker=…` |
 | Macro (FRED) | `GET /macro/series`, `GET /macro/observations?series_id=…` |
 | A saved screen | `GET /screener/screens/{id}` |
-| Research itself | `GET /research/` (rankings), `/research/reports`, `/research/reports/{id}`, `/research/stocks/{pt}`, `/research/snapshots/{id}`, `/research/groups/{id}` |
+| Research itself | `GET /research/` (latest analysis per stock), `/research/reports`, `/research/reports/{id}`, `/research/reports/{id}/notes`, `/research/stocks/{pt}`, `/research/snapshots/{id}` |
 | Start / expand a report | `POST /research/reports`, `PATCH /research/reports/{id}` (`add`, `add_from_source`, `status`) |
 
 The full list with parameters is at `/openapi.json`. For anything the API does not expose,

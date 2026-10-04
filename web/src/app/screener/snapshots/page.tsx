@@ -19,7 +19,7 @@ export default function SnapshotsPage() {
       <ScreenerAreaNav />
       <PageHeader title="Snapshots">
         Screener results frozen at a moment, with the numbers as they were. Trim the ones you
-        don&apos;t want, group the rest, and hand the list to Claude for due diligence.
+        don&apos;t want, then start a report on the rest and hand it to Claude for due diligence.
       </PageHeader>
 
       <div className="max-w-[1100px] mx-auto px-6 max-md:px-4 py-8 space-y-6">

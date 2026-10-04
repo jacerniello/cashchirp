@@ -6,8 +6,7 @@ import { useQuery } from '@tanstack/react-query';
 import api from '@/lib/api';
 import { normalizeDD } from '@/components/dd/types';
 import { redTeamVerdict, RedTeamVerdictBadge } from '@/components/dd/DDRedTeam';
-import { Markdown } from './Markdown';
-import { btnGhost, btnPrimary, fmtSignedPct, fmtWhen, GroupChips, RatingPill } from './ResearchBits';
+import { btnGhost, fmtSignedPct, fmtWhen, RatingPill } from './ResearchBits';
 import { useResearchStock, type StockDetail } from '@/hooks/useResearch';
 
 // Per-stock research pieces shared by the full research page and the company page's
@@ -113,8 +112,12 @@ export function CompanyResearchTab({ pt }: { pt: string }) {
     );
   }
 
-  const notes = data.notes ?? '';
-  const preview = notes.length > 1500 ? `${notes.slice(0, 1500)}…` : notes;
+  const notesIn = data.notes_in ?? [];
+  // Every report the stock is in: those that analysed it (newest first), then those still pending.
+  const reports = [
+    ...(data.analyses ?? []).map((a) => ({ id: a.report_id, name: a.report_name })),
+    ...(data.pending_reports ?? []).map((r) => ({ id: r.id, name: r.name })),
+  ];
 
   return (
     <div className="space-y-4">
@@ -127,28 +130,41 @@ export function CompanyResearchTab({ pt }: { pt: string }) {
       ) : null}
 
       <div className="rounded-xl border border-rule bg-white p-5">
-        <div className="flex items-center justify-between gap-3 mb-3 flex-wrap">
-          <h2 className="text-lg font-bold text-ink m-0">Notes</h2>
-          <div className="flex items-center gap-2">
-            {data.notes_updated && <span className="text-xs text-ink-muted">updated {fmtWhen(data.notes_updated, true)}</span>}
-            <Link href={`${href}?tab=notes`} className={`${notes ? btnGhost : btnPrimary} no-underline`}>
-              {notes ? 'Edit notes' : 'Start notes'}
-            </Link>
-          </div>
-        </div>
-        {notes.trim() ? (
-          <div className="max-h-[420px] overflow-hidden relative">
-            <Markdown text={preview} />
-          </div>
+        <h2 className="text-lg font-bold text-ink m-0 mb-1">Notes</h2>
+        <p className="text-xs text-ink-muted mt-0 mb-3">Notes on a stock belong to a report.</p>
+        {notesIn.length ? (
+          <ul className="list-none m-0 p-0 divide-y divide-rule-light">
+            {notesIn.map((n) => (
+              <li key={n.report_id} className="py-2 flex items-center justify-between gap-3">
+                <Link href={`/research/reports/${encodeURIComponent(n.report_id)}/stocks/${pt}?tab=notes`}
+                      className="text-sm text-ink no-underline hover:text-green">
+                  {n.report_name || n.report_id}
+                </Link>
+                <span className="text-xs text-ink-muted tabular-nums">updated {fmtWhen(n.updated_at, true)}</span>
+              </li>
+            ))}
+          </ul>
         ) : (
-          <p className="text-sm text-ink-muted m-0">No notes on this stock yet.</p>
+          <p className="text-sm text-ink-muted m-0">No notes on this stock in any report yet.</p>
         )}
       </div>
 
       <div className="rounded-xl border border-rule bg-white p-5 flex items-start justify-between gap-4 flex-wrap">
         <div className="space-y-2">
-          <div className="text-xs font-semibold uppercase tracking-wide text-ink-faint">Groups</div>
-          <GroupChips groups={data.groups} max={12} />
+          <div className="text-xs font-semibold uppercase tracking-wide text-ink-faint">Reports</div>
+          {reports.length ? (
+            <span className="inline-flex flex-wrap gap-x-3 gap-y-1">
+              {reports.slice(0, 6).map((r) => (
+                <Link key={r.id} href={`/research/reports/${encodeURIComponent(r.id)}`}
+                      className="text-sm text-ink no-underline hover:text-green">
+                  {r.name || r.id}
+                </Link>
+              ))}
+              {reports.length > 6 && <span className="text-xs text-ink-muted">+{reports.length - 6}</span>}
+            </span>
+          ) : (
+            <span className="text-xs text-ink-muted">Not in any report yet.</span>
+          )}
           {data.snapshots.length > 0 && (
             <div className="text-xs text-ink-muted">
               In {data.snapshots.length} snapshot{data.snapshots.length === 1 ? '' : 's'}

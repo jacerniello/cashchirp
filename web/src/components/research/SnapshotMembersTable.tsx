@@ -2,11 +2,9 @@
 
 import Link from 'next/link';
 import { useMemo, useState, type ReactNode } from 'react';
-import { AddToGroup } from '@/components/research/Pickers';
 import {
   btnGhost,
   DocIndicators,
-  GroupChips,
   InlineError,
   inputCls,
   RatingPill,
@@ -16,9 +14,10 @@ import { ratingScore, toNum, type SnapshotMember } from '@/hooks/useResearch';
 import { formatCurrency } from '@/lib/formatters';
 import { tableStyles } from '@/lib/styles';
 
-// The members table a snapshot shows — metrics plus research status (rating, docs, groups),
-// with selection, trim/restore (members are marked removed, never deleted, so a trim can
-// be undone) and Add to group. Rows are keyed and selected by permaticker, never ticker.
+// The members table a snapshot shows — metrics plus research status (rating, docs), with
+// selection, trim/restore (members are marked removed, never deleted, so a trim can be
+// undone) and the caller's selection actions (e.g. start a report). Rows are keyed and
+// selected by permaticker, never ticker.
 
 type Fmt = 'cap' | 'ratio' | 'pct' | 'num';
 interface Col {
@@ -172,12 +171,6 @@ export function SnapshotMembersTable({ members, onBulk, busy, error, notice, emp
             Restore {pickedRemoved.length || ''}
           </button>
         )}
-        <span className="w-px h-6 bg-rule mx-1" />
-        <AddToGroup
-          disabled={!picked.length}
-          label={picked.length ? `Add ${picked.length} to group` : 'Add to group'}
-          members={pickedMembers.map((m) => ({ permaticker: String(m.permaticker), ticker: m.ticker, name: m.name }))}
-        />
         {selectionActions && (
           <>
             <span className="w-px h-6 bg-rule mx-1" />
@@ -206,13 +199,12 @@ export function SnapshotMembersTable({ members, onBulk, busy, error, notice, emp
               {COLS.map((c) => sortHeader(c.key, c.label))}
               {sortHeader('rating', 'Rating', false)}
               <th className={tableStyles.th}>Docs</th>
-              <th className={tableStyles.th}>Groups</th>
             </tr>
           </thead>
           <tbody>
             {rows.length === 0 && (
               <tr>
-                <td colSpan={COLS.length + 7} className="px-3 py-6 text-center text-sm text-ink-faint">
+                <td colSpan={COLS.length + 6} className="px-3 py-6 text-center text-sm text-ink-faint">
                   {members.length === 0 ? (emptyText ?? 'This snapshot has no members.') : 'No members match.'}
                 </td>
               </tr>
@@ -249,7 +241,6 @@ export function SnapshotMembersTable({ members, onBulk, busy, error, notice, emp
                   <td className={tableStyles.td}>
                     {r ? <DocIndicators notes={r.has_notes} dd={r.has_dd} redteam={r.has_redteam} /> : <span className="text-xs text-ink-muted">—</span>}
                   </td>
-                  <td className={tableStyles.td}><GroupChips groups={r?.groups} max={2} /></td>
                 </tr>
               );
             })}

@@ -3,17 +3,10 @@
 import { useEffect, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import api from '@/lib/api';
-import {
-  errDetail,
-  useCreateGroup,
-  useGroups,
-  usePatchGroup,
-  type MemberInput,
-} from '@/hooks/useResearch';
-import { btnPrimary, inputCls, InlineError } from './ResearchBits';
+import { inputCls } from './ResearchBits';
 
-// Two pickers the research pages share: find a stock by ticker/name (resolving to its
-// permaticker), and add stocks to a group — an existing one, or one created on the spot.
+// The stock picker the research pages share: find a stock by ticker/name, resolving to its
+// permaticker.
 
 export interface PickedStock {
   permaticker: string;
@@ -111,90 +104,6 @@ export function StockSearch({
           )}
         </div>
       )}
-    </div>
-  );
-}
-
-const NEW = '__new__';
-
-/** Add `members` to a group. Choosing "New group…" creates it first, then adds. */
-export function AddToGroup({
-  members,
-  disabled,
-  label = 'Add to group',
-  exclude,
-  onDone,
-}: {
-  members: MemberInput[];
-  disabled?: boolean;
-  label?: string;
-  /** Group ids to leave out of the list (e.g. ones the stock is already in). */
-  exclude?: Set<string>;
-  onDone?: (groupId: string, groupName: string) => void;
-}) {
-  const groups = useGroups();
-  const create = useCreateGroup();
-  const patch = usePatchGroup();
-  const [choice, setChoice] = useState('');
-  const [newName, setNewName] = useState('');
-  const [err, setErr] = useState<string | null>(null);
-  const [done, setDone] = useState<string | null>(null);
-  const busy = create.isPending || patch.isPending;
-  const options = (groups.data ?? []).filter((g) => !g.error && !exclude?.has(g.id));
-
-  async function go() {
-    setErr(null);
-    setDone(null);
-    try {
-      let id = choice;
-      let name = options.find((g) => g.id === choice)?.name ?? choice;
-      if (choice === NEW) {
-        const g = await create.mutateAsync({ name: newName.trim() });
-        id = g.id;
-        name = g.name;
-      }
-      await patch.mutateAsync({ id, add: members });
-      setDone(`Added ${members.length === 1 ? '1 stock' : `${members.length} stocks`} to ${name}.`);
-      setChoice('');
-      setNewName('');
-      onDone?.(id, name);
-    } catch (e) {
-      setErr(errDetail(e, 'Could not add to the group.'));
-    }
-  }
-
-  const ready = !!choice && (choice !== NEW || !!newName.trim()) && members.length > 0;
-
-  return (
-    <div className="space-y-1.5">
-      <div className="flex items-center gap-2 flex-wrap">
-        <select
-          value={choice}
-          onChange={(e) => setChoice(e.target.value)}
-          disabled={disabled || busy}
-          className={inputCls}
-        >
-          <option value="">{groups.isError ? 'Groups unavailable' : 'Choose a group…'}</option>
-          {options.map((g) => (
-            <option key={g.id} value={g.id}>{g.name} ({g.members?.length ?? 0})</option>
-          ))}
-          <option value={NEW}>+ New group…</option>
-        </select>
-        {choice === NEW && (
-          <input
-            value={newName}
-            onChange={(e) => setNewName(e.target.value)}
-            placeholder="New group name"
-            className={inputCls}
-            onKeyDown={(e) => { if (e.key === 'Enter' && ready) void go(); }}
-          />
-        )}
-        <button type="button" className={btnPrimary} disabled={disabled || busy || !ready} onClick={go}>
-          {busy ? 'Adding…' : label}
-        </button>
-      </div>
-      {err && <InlineError>{err}</InlineError>}
-      {done && <p className="text-xs text-green-text m-0">{done}</p>}
     </div>
   );
 }

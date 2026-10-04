@@ -1,11 +1,10 @@
 'use client';
 
-import Link from 'next/link';
 import { useState, type ReactNode } from 'react';
 import { ratingMeta } from '@/components/dd/types';
-import { ratingScore, toNum, type GroupRef, type Rating } from '@/hooks/useResearch';
+import { ratingScore, toNum, type Rating } from '@/hooks/useResearch';
 
-// Small pieces every research page shares: the rating pill, doc indicators, group chips,
+// Small pieces every research page shares: the rating pill, doc indicators,
 // copyable Claude instructions, the page header and the explicit error panel.
 
 export const inputCls =
@@ -98,26 +97,6 @@ export function DocIndicators({
         <Dot on={dd} label="DD" title="DD report" />
       )}
       <Dot on={redteam} label="RT" title="Red team" />
-    </span>
-  );
-}
-
-export function GroupChips({ groups, max = 4 }: { groups?: GroupRef[] | null; max?: number }) {
-  const g = groups ?? [];
-  if (!g.length) return <span className="text-xs text-ink-muted">—</span>;
-  return (
-    <span className="inline-flex flex-wrap gap-1">
-      {g.slice(0, max).map((x) => (
-        <Link
-          key={x.id}
-          href={`/research/groups/${encodeURIComponent(x.id)}`}
-          onClick={(e) => e.stopPropagation()}
-          className="inline-flex items-center rounded-md bg-surface px-1.5 py-0.5 text-[11px] font-medium text-ink-light no-underline hover:bg-green-soft hover:text-green-text"
-        >
-          {x.name}
-        </Link>
-      ))}
-      {g.length > max && <span className="text-[11px] text-ink-muted">+{g.length - max}</span>}
     </span>
   );
 }

@@ -3,7 +3,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import api from '@/lib/api';
 
-// Research — notes, reports (dated DD + red-team runs), groups and snapshots, stored as plain files on the server
+// Research — reports (dated DD + red-team runs, with their notes) and snapshots, stored as plain files on the server
 // (core/backend/research/store.py) and served by core/api/routers/research/research.py.
 //
 // An AI agent edits the same folder directly, so every shape below is a best guess at
@@ -11,8 +11,8 @@ import api from '@/lib/api';
 // anything missing. Stocks are keyed by permaticker (a digit string), never ticker.
 //
 // Every query uses `retry: false` — a missing research folder or a down backend must say
-// so, not spin. Every mutation invalidates the whole ['research'] tree: stocks, groups and
-// snapshots cross-reference each other, so a narrower invalidation would leave stale chips.
+// so, not spin. Every mutation invalidates the whole ['research'] tree: stocks, reports and
+// snapshots cross-reference each other, so a narrower invalidation would leave stale views.
 
 export interface Rating {
   score?: number | string | null;
@@ -23,52 +23,10 @@ export interface Rating {
   asof?: string | null;
 }
 
-export interface GroupRef {
-  id: string;
-  name: string;
-}
-
 export interface ReportRef {
   id: string;
   name?: string | null;
   created_at?: string | null;
-}
-
-/** One row of the rankings: a stock's LATEST analysis across all reports. */
-export interface ResearchStock {
-  permaticker: string;
-  ticker?: string | null;
-  name?: string | null;
-  has_notes?: boolean;
-  has_dd?: boolean;
-  dd_error?: string | null;
-  has_redteam?: boolean;
-  rating?: Rating | null;
-  asof?: string | null;
-  report?: ReportRef | null;
-  previous?: {
-    rating?: Rating | null;
-    asof?: string | null;
-    report_id?: string;
-    report_name?: string | null;
-    created_at?: string | null;
-  } | null;
-  analyses?: number;
-  price_at_analysis?: number | null;
-  price_now?: number | null;
-  price_date?: string | null;
-  groups?: GroupRef[];
-  updated_at?: string | null;
-}
-
-export interface ResearchIndex {
-  root: string;
-  stocks: ResearchStock[];
-  prices_error?: string | null;
-  reports?: number;
-  groups: number;
-  snapshots: number;
-  notes: number;
 }
 
 export interface ResearchGuide {
@@ -91,8 +49,6 @@ export interface StockAnalysis {
 export interface StockDetail {
   permaticker: string;
   meta: { ticker?: string; name?: string; [k: string]: unknown } | null;
-  notes: string | null;
-  notes_updated: string | null;
   /** The latest analysis's DD and red team (from report `latest`). */
   dd: Record<string, unknown> | null;
   dd_error: string | null;
@@ -104,17 +60,18 @@ export interface StockDetail {
   analyses?: StockAnalysis[];
   /** Reports the stock is in that have no analysis of it yet. */
   pending_reports?: ReportRef[];
-  groups: GroupRef[];
+  /** Reports holding notes on this stock (reports/<id>/stocks/<pt>/notes.md). */
+  notes_in?: { report_id: string; report_name?: string | null; created_at?: string | null; updated_at?: string | null }[];
   snapshots: { id: string; name: string; created_at?: string | null }[];
 }
 
-/** A stock's own folder holds only living notes; DD and red team belong to reports. */
-export type StockDoc = 'notes';
-export type ReportDoc = 'dd' | 'redteam';
+/** A stock's documents within one report: its DD, red team and notes. */
+export type ReportDoc = 'dd' | 'redteam' | 'notes';
 
+/** Where a report's members came from. Any other `kind` in an older report.json (e.g. a
+ *  removed `group` source) is shown as hand-picked. */
 export type ReportSource =
   | { kind: 'snapshot'; snapshot_id?: string; snapshot_name?: string; screen_id?: string; screen_title?: string }
-  | { kind: 'group'; group_id?: string; group_name?: string }
   | { kind: 'manual' };
 
 export interface ReportAnalysis {
@@ -136,10 +93,11 @@ export interface ReportMember {
   added_by?: string;
   /** false when an analysis sits in the report folder without a members entry. */
   listed?: boolean;
+  /** reports/<id>/stocks/<pt>/notes.md exists. */
+  has_notes?: boolean;
   analysis?: ReportAnalysis | null;
   price_now?: number | null;
   price_date?: string | null;
-  groups?: GroupRef[];
 }
 
 export interface ReportSummary {
@@ -165,37 +123,6 @@ export interface Report extends ReportSummary {
   prices_error?: string | null;
 }
 
-export interface GroupMember {
-  permaticker: string;
-  ticker?: string | null;
-  name?: string | null;
-  note?: string;
-  added_by?: 'human' | 'ai' | string;
-  added_at?: string;
-  rating?: Rating | null;
-}
-
-export interface GroupHistoryEntry {
-  at?: string;
-  action?: 'create' | 'add' | 'remove' | 'rename' | 'describe' | 'note' | string;
-  permaticker?: string;
-  ticker?: string | null;
-  by?: string;
-  note?: string;
-}
-
-export interface Group {
-  id: string;
-  name: string;
-  description?: string;
-  members: GroupMember[];
-  history?: GroupHistoryEntry[];
-  created_by?: string;
-  created_at?: string;
-  updated_at?: string;
-  error?: string;
-}
-
 export type SnapshotSource =
   | { kind: 'grid'; params?: Record<string, unknown> }
   | { kind: 'screen'; screen_id?: string; title?: string; spec?: unknown };
@@ -219,7 +146,6 @@ export interface MemberResearch {
   has_notes?: boolean;
   has_dd?: boolean;
   has_redteam?: boolean;
-  groups?: GroupRef[];
 }
 
 export interface SnapshotMember {
@@ -267,7 +193,6 @@ export interface MemberInput {
   permaticker: string;
   ticker?: string | null;
   name?: string | null;
-  note?: string;
 }
 
 /** The API's `detail` message if there is one — it usually says exactly what is wrong. */
@@ -303,14 +228,6 @@ const encPath = (p: string) => p.split('/').map(enc).join('/');
 
 // ------------------------------------------------------------------------------ reads
 
-export function useResearchIndex() {
-  return useQuery({
-    queryKey: [...KEY, 'index'],
-    queryFn: async (): Promise<ResearchIndex> => (await api.get('/research/')).data,
-    retry: false,
-  });
-}
-
 export function useResearchGuide() {
   return useQuery({
     queryKey: [...KEY, 'guide'],
@@ -325,23 +242,6 @@ export function useResearchStock(pt: string) {
     queryKey: [...KEY, 'stock', pt],
     queryFn: async (): Promise<StockDetail> => (await api.get(`/research/stocks/${enc(pt)}`)).data,
     enabled: !!pt,
-    retry: false,
-  });
-}
-
-export function useGroups() {
-  return useQuery({
-    queryKey: [...KEY, 'groups'],
-    queryFn: async (): Promise<Group[]> => (await api.get('/research/groups')).data?.groups ?? [],
-    retry: false,
-  });
-}
-
-export function useGroup(id: string) {
-  return useQuery({
-    queryKey: [...KEY, 'group', id],
-    queryFn: async (): Promise<Group> => (await api.get(`/research/groups/${enc(id)}`)).data,
-    enabled: !!id,
     retry: false,
   });
 }
@@ -385,7 +285,7 @@ export function useReport(id: string) {
   });
 }
 
-/** One document of one report — `content` is the DD object or the red-team Markdown. */
+/** One document of one report — `content` is the DD object, or the red-team / notes Markdown. */
 export function useReportDoc(id: string, pt: string, doc: ReportDoc) {
   return useQuery({
     queryKey: [...KEY, 'report-doc', id, pt, doc],
@@ -396,20 +296,23 @@ export function useReportDoc(id: string, pt: string, doc: ReportDoc) {
   });
 }
 
-export function useNotes() {
+/** The report's own notes (Markdown under reports/<id>/notes/). */
+export function useReportNotes(id: string) {
   return useQuery({
-    queryKey: [...KEY, 'notes'],
-    queryFn: async (): Promise<NoteEntry[]> => (await api.get('/research/notes')).data?.notes ?? [],
+    queryKey: [...KEY, 'report-notes', id],
+    queryFn: async (): Promise<NoteEntry[]> =>
+      (await api.get(`/research/reports/${enc(id)}/notes`)).data?.notes ?? [],
+    enabled: !!id,
     retry: false,
   });
 }
 
-export function useNote(path: string | null) {
+export function useReportNote(id: string, path: string | null) {
   return useQuery({
-    queryKey: [...KEY, 'note', path],
+    queryKey: [...KEY, 'report-note', id, path],
     queryFn: async (): Promise<{ path: string; text: string }> =>
-      (await api.get(`/research/notes/${encPath(path as string)}`)).data,
-    enabled: !!path,
+      (await api.get(`/research/reports/${enc(id)}/notes/${encPath(path as string)}`)).data,
+    enabled: !!id && !!path,
     retry: false,
   });
 }
@@ -422,60 +325,6 @@ function useResearchMutation<TVars, TResult>(fn: (v: TVars) => Promise<TResult>)
     mutationFn: fn,
     onSuccess: () => qc.invalidateQueries({ queryKey: KEY }),
   });
-}
-
-export function useSaveStockDoc(pt: string) {
-  return useResearchMutation(
-    async (v: { doc: StockDoc; content: unknown; ticker?: string | null; name?: string | null }) =>
-      (await api.put(`/research/stocks/${enc(pt)}/${v.doc}`, {
-        content: v.content,
-        ticker: v.ticker || undefined,
-        name: v.name || undefined,
-      })).data,
-  );
-}
-
-export function useDeleteStockDoc(pt: string) {
-  return useResearchMutation(
-    async (doc: StockDoc) => (await api.delete(`/research/stocks/${enc(pt)}/${doc}`)).data,
-  );
-}
-
-export function useCreateGroup() {
-  return useResearchMutation(
-    async (v: { name: string; description?: string }): Promise<Group> =>
-      (await api.post('/research/groups', { name: v.name, description: v.description ?? '' })).data,
-  );
-}
-
-export function usePatchGroup() {
-  return useResearchMutation(
-    async (v: {
-      id: string;
-      name?: string;
-      description?: string;
-      add?: MemberInput[];
-      remove?: string[];
-    }): Promise<Group> => {
-      const { id, ...body } = v;
-      const clean = {
-        ...body,
-        add: (body.add ?? []).map((m) => ({
-          permaticker: String(m.permaticker),
-          ticker: m.ticker || undefined,
-          name: m.name || undefined,
-          note: m.note ?? '',
-        })),
-      };
-      return (await api.patch(`/research/groups/${enc(id)}`, clean)).data;
-    },
-  );
-}
-
-export function useDeleteGroup() {
-  return useResearchMutation(
-    async (id: string) => (await api.delete(`/research/groups/${enc(id)}`)).data,
-  );
 }
 
 export function useCreateSnapshot() {
@@ -517,7 +366,6 @@ export function useCreateReport() {
       name?: string;
       thesis?: string;
       snapshot_id?: string;
-      group_id?: string;
       permatickers?: string[];
       members_from?: 'kept' | 'selected';
       members?: MemberInput[];
@@ -558,15 +406,33 @@ export function useDeleteReport() {
   );
 }
 
-export function useSaveNote() {
+/** Write a stock's DD, red team or notes within a report. */
+export function useSaveReportDoc(id: string, pt: string) {
   return useResearchMutation(
-    async (v: { path: string; text: string }): Promise<{ saved: string }> =>
-      (await api.put(`/research/notes/${encPath(v.path)}`, { text: v.text })).data,
+    async (v: { doc: ReportDoc; content: unknown; ticker?: string | null; name?: string | null }) =>
+      (await api.put(`/research/reports/${enc(id)}/stocks/${enc(pt)}/${v.doc}`, {
+        content: v.content,
+        ticker: v.ticker || undefined,
+        name: v.name || undefined,
+      })).data,
   );
 }
 
-export function useDeleteNote() {
+export function useDeleteReportDoc(id: string, pt: string) {
   return useResearchMutation(
-    async (path: string) => (await api.delete(`/research/notes/${encPath(path)}`)).data,
+    async (doc: ReportDoc) => (await api.delete(`/research/reports/${enc(id)}/stocks/${enc(pt)}/${doc}`)).data,
+  );
+}
+
+export function useSaveReportNote(id: string) {
+  return useResearchMutation(
+    async (v: { path: string; text: string }): Promise<{ saved: string }> =>
+      (await api.put(`/research/reports/${enc(id)}/notes/${encPath(v.path)}`, { text: v.text })).data,
+  );
+}
+
+export function useDeleteReportNote(id: string) {
+  return useResearchMutation(
+    async (path: string) => (await api.delete(`/research/reports/${enc(id)}/notes/${encPath(path)}`)).data,
   );
 }
