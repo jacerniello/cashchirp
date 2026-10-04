@@ -2,136 +2,214 @@
 
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
-import { Suspense } from 'react';
-import { useIdeas } from '@/hooks/useIdeas';
-import { LiveResults } from '../../components/LiveResults';
-import { SnapshotScreenButton } from '../../components/SnapshotResults';
-import { Card, Spinner } from '../../components/shared';
+import type { ReactNode } from 'react';
+import { Badge } from '@/components/Badge';
 import { ScreenerAreaNav } from '@/components/nav/AreaSubNav';
+import { ErrorPanel, fmtWhen, SectionCard } from '@/components/research/ResearchBits';
+import type { BacktestListItem } from '@/hooks/useBacktests';
+import { errDetail, isNotFound, type SnapshotSummary } from '@/hooks/useResearch';
+import { useScreen, useScreens } from '@/hooks/useSavedScreens';
+import { useScreenHistory } from '@/hooks/useScreenHistory';
+import { headline, pct, signClass } from '../../../backtests/format';
+import { ScreenActions } from '../../components/ScreenActions';
+import { ScreenSpec } from '../../components/ScreenSpec';
 
-// One saved screen (config/screens/<id>.yaml) run live on the snapshot. The title and
-// description come from the screen spec, so this page describes whatever filter it is
-// rather than naming one. Reuses the screener's LiveResults grid verbatim.
-function IdeaDetail() {
-  // One idea = one screen = one page, addressed by its own id. That makes it linkable,
-  // bookmarkable, and reachable with the back button from the list.
-  const params = useParams<{ id: string }>();
-  const selected = decodeURIComponent(params.id);
-  const { data, isLoading, error } = useIdeas(selected);
-  // 404 from the API means the screen doesn't exist, which is a different problem from
-  // the backend being down — and has a different fix.
-  const notFound =
-    (error as { response?: { status?: number } })?.response?.status === 404;
+// One saved screen (config/screens/<id>.yaml). A screen is SETTINGS — this page shows its
+// definition, never its results. Results exist only as things derived from it: snapshots
+// (what it found on a given day) and backtests (what it would have found in the past).
+//
+// Layout: the definition, then one DerivedSection per kind of derived item. To add a kind,
+// add a section to the list at the bottom of the page.
 
+/** One list of things made from this screen, with its own loading / error / empty state —
+ *  each comes from a different endpoint and can fail on its own. */
+function DerivedSection<T>({
+  title,
+  query,
+  items,
+  empty,
+  render,
+  rowKey,
+}: {
+  title: string;
+  query: { isLoading: boolean; isError: boolean; error: unknown; data?: unknown };
+  items: T[];
+  empty: ReactNode;
+  render: (item: T) => ReactNode;
+  rowKey: (item: T) => string;
+}) {
   return (
-    <div className="bg-white min-h-[calc(100vh-200px)] font-sans">
-      <ScreenerAreaNav />
-      {/* Header */}
-      <div className="py-16 px-8 pb-12 text-center border-b border-rule">
-        <h1 className="font-sans text-[2.5rem] font-bold tracking-tight text-ink mb-3">
-          {data?.screen?.title || 'Ideas'}
-        </h1>
-        <p className="text-lg text-ink-light max-w-2xl mx-auto">
-          {data?.screen?.description
-            || 'Everything your active screen surfaces, run live on the latest snapshot.'}
+    <SectionCard title={`${title}${query.data ? ` (${items.length})` : ''}`}>
+      {query.isError ? (
+        <p className="px-5 py-4 text-sm text-neg m-0">
+          Could not load {title.toLowerCase()}: {errDetail(query.error)}
         </p>
-        <p className="text-sm text-ink-muted max-w-2xl mx-auto mt-3">
-          Candidates to research, not recommendations.
-          {data?.screen?.id && (
-            <>
-              {' '}Screen{' '}
-              <code className="font-mono text-[0.9em]">{data.screen.id}</code> — edit it in{' '}
-              <code className="font-mono text-[0.9em]">config/screens/</code>.
-            </>
-          )}
-        </p>
-        <div className="mt-5">
-          <Link href="/screener/ideas" className="text-sm font-medium text-green
-                 hover:text-green-dark no-underline">
-            ← All ideas
-          </Link>
-        </div>
-        {data?.asof && (
-          <p className="text-xs text-ink-muted mt-4">Numbers as of {data.asof}</p>
-        )}
-      </div>
-
-      <div className="max-w-[1400px] mx-auto py-12 px-6 space-y-6">
-        {/* How the list was built */}
-        {data?.criteria && (
-          <Card>
-            <div className="p-5">
-              <h2 className="text-sm font-semibold text-ink mb-3 uppercase tracking-wide">
-                How this list was built
-              </h2>
-              <ul className="space-y-1.5">
-                {data.criteria.map((c) => (
-                  <li key={c} className="flex items-start gap-2 text-sm text-ink-light">
-                    <span className="mt-0.5 text-green">•</span>
-                    <span>{c}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          </Card>
-        )}
-
-        {/* Results table — the screener grid, reused verbatim */}
-        <div>
-          <Card className="mb-4">
-            <div className="flex items-center justify-between gap-4 p-4">
-              <div className="text-sm text-ink-muted">
-                <span className="font-semibold text-ink">{data?.total ?? 0}</span> survivors
-              </div>
-              <div className="flex items-center gap-4 flex-wrap justify-end">
-                {data?.screen?.id && <SnapshotScreenButton screenId={data.screen.id} />}
-                <Link href="/screener" className="text-sm font-medium text-green hover:text-green-dark">
-                  Screen further →
-                </Link>
-              </div>
-            </div>
-          </Card>
-
-          <Card>
-            {isLoading ? (
-              <Spinner className="h-5 w-5 text-green" />
-            ) : error ? (
-              // A missing screen is not a transient failure — "try again" would be a lie.
-              // Say which it is, and give the way back.
-              <div className="py-10 px-5">
-                <p className="text-base font-semibold text-ink mb-1">
-                  {notFound ? `No screen called “${selected}”` : 'Could not load this idea'}
-                </p>
-                <p className="text-sm text-ink-light">
-                  {notFound
-                    ? 'It may have been renamed or deleted. Screens live in config/screens/.'
-                    : 'The API did not answer. Check that the backend is running.'}
-                </p>
-                <Link href="/screener/ideas" className="inline-block mt-4 text-sm font-medium
-                       text-green hover:text-green-dark no-underline">
-                  ← All ideas
-                </Link>
-              </div>
-            ) : (
-              <LiveResults
-                results={data?.results || []}
-                page={1}
-                totalPages={1}
-                onPageChange={() => {}}
-              />
-            )}
-          </Card>
-        </div>
-
-      </div>
-    </div>
+      ) : query.isLoading ? (
+        <p className="px-5 py-4 text-sm text-ink-muted m-0">Loading…</p>
+      ) : items.length === 0 ? (
+        <p className="px-5 py-4 text-sm text-ink-muted m-0">{empty}</p>
+      ) : (
+        <ul className="list-none m-0 p-0 divide-y divide-rule-light">
+          {items.map((it) => (
+            <li key={rowKey(it)} className="px-5 py-2.5 flex items-center justify-between gap-3">
+              {render(it)}
+            </li>
+          ))}
+        </ul>
+      )}
+    </SectionCard>
   );
 }
 
-export default function IdeaDetailPage() {
+function SnapshotRow({ s }: { s: SnapshotSummary }) {
   return (
-    <Suspense fallback={<div className="flex justify-center py-12"><Spinner className="h-8 w-8 text-green" /></div>}>
-      <IdeaDetail />
-    </Suspense>
+    <>
+      <Link href={`/screener/snapshots/${encodeURIComponent(s.id)}`}
+            className="text-sm text-ink no-underline hover:text-green truncate">
+        {s.name}
+        {s.error && <span className="ml-2 text-[11px] text-neg">unreadable file</span>}
+      </Link>
+      <span className="text-xs text-ink-muted tabular-nums whitespace-nowrap">
+        {s.count ?? '—'} kept{s.removed_count ? ` · ${s.removed_count} trimmed` : ''}
+        {' · '}data {fmtWhen(s.asof)} · taken {fmtWhen(s.created_at, true)}
+      </span>
+    </>
+  );
+}
+
+function BacktestRow({ r }: { r: BacktestListItem }) {
+  const h = headline(r);
+  return (
+    <>
+      <div className="min-w-0">
+        {r.error ? (
+          <span className="text-sm text-ink">{r.id} <span className="text-[11px] text-neg">{r.error}</span></span>
+        ) : (
+          <Link href={`/backtests/${encodeURIComponent(r.id)}`} className="text-sm text-ink no-underline hover:text-green">
+            {r.name ?? r.id}
+          </Link>
+        )}
+        <div className="text-xs text-ink-muted">
+          {r.kind ?? '—'} · {r.summary?.start ?? r.params?.start ?? '—'} → {r.summary?.end ?? r.params?.end ?? '—'}
+          {r.serious_warnings > 0 && (
+            <span className="text-neg"> · {r.serious_warnings} sanity warning{r.serious_warnings > 1 ? 's' : ''}</span>
+          )}
+        </div>
+      </div>
+      <div className="text-right tabular-nums whitespace-nowrap">
+        <span className={`text-sm font-semibold ${signClass(h.main)}`}>{pct(h.main)}</span>
+        <span className="text-xs text-ink-muted"> vs {pct(h.bench)} {r.params?.benchmark ?? ''}</span>
+        <div className="text-[0.7rem] text-ink-faint">{h.label}</div>
+      </div>
+    </>
+  );
+}
+
+export default function SavedScreenPage() {
+  const params = useParams<{ id: string }>();
+  const id = decodeURIComponent(params.id ?? '');
+  const screenQ = useScreen(id);
+  const list = useScreens(); // carries each screen's live match count
+  const history = useScreenHistory();
+  const d = screenQ.data;
+  const listed = list.data?.screens.find((s) => s.id === id);
+
+  return (
+    <div className="bg-white min-h-[calc(100vh-4rem)] font-sans">
+      <ScreenerAreaNav />
+      <div className="max-w-[1100px] mx-auto px-6 max-md:px-4 py-8 space-y-6">
+        <Link href="/screener/ideas" className="text-xs text-ink-muted hover:text-green no-underline">← All saved screens</Link>
+
+        {screenQ.isLoading && <p className="text-sm text-ink-muted">Loading screen…</p>}
+        {screenQ.isError && (
+          // A missing screen is not a transient failure — "try again" would be a lie.
+          <ErrorPanel title={isNotFound(screenQ.error) ? `No saved screen called “${id}”.` : 'Could not load this screen.'}>
+            <p className="m-0">
+              {isNotFound(screenQ.error)
+                ? 'It may have been renamed or deleted. Screens live in config/screens/.'
+                : errDetail(screenQ.error, 'The API did not answer. Check that the backend is running.')}
+            </p>
+          </ErrorPanel>
+        )}
+
+        {/* ---- Definition ---- */}
+        {d && (
+          <div className="space-y-4">
+            <div className="flex items-start justify-between gap-6 flex-wrap">
+              <div className="space-y-2 min-w-0 flex-1">
+                <h1 className="text-[1.75rem] font-bold tracking-tight text-ink m-0 flex items-center gap-3 flex-wrap">
+                  {d.title || id}
+                  {d.active && <Badge variant="green">active</Badge>}
+                </h1>
+                <p className="text-sm text-ink-light m-0 whitespace-pre-line">
+                  {d.description || <span className="text-ink-muted">No description.</span>}
+                </p>
+                <p className="text-xs text-ink-muted m-0">
+                  <code className="font-mono">config/screens/{d.id}.yaml</code>
+                </p>
+              </div>
+              <div className="rounded-xl border border-rule bg-white px-5 py-3 text-center shrink-0">
+                <div className="text-2xl font-bold text-ink tabular-nums">
+                  {listed?.count != null ? listed.count.toLocaleString() : '—'}
+                </div>
+                <div className="text-xs text-ink-muted">
+                  {list.isError ? 'match count unavailable' : list.isLoading ? 'counting…' : 'stocks match today'}
+                  {list.data?.asof && <div>data as of {list.data.asof}</div>}
+                </div>
+              </div>
+            </div>
+
+            <ScreenActions screenId={d.id} />
+
+            <SectionCard title="Definition">
+              <div className="p-5 space-y-5">
+                {d.criteria?.length > 0 && (
+                  <div>
+                    <h3 className="text-xs font-semibold uppercase tracking-wide text-ink-faint m-0 mb-2">In words</h3>
+                    <ul className="list-none m-0 p-0 space-y-1.5">
+                      {d.criteria.map((c) => (
+                        <li key={c} className="flex items-start gap-2 text-sm text-ink-light">
+                          <span className="mt-0.5 text-green">•</span>
+                          <span>{c}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                <ScreenSpec spec={d.spec ?? {}} />
+                {d.lossy?.length > 0 && (
+                  <p className="text-xs text-ink-muted m-0">
+                    The filter grid has no widget for: {d.lossy.join('; ')}. These still apply whenever
+                    the screen runs; <em>Edit in screener</em> keeps them on re-save.
+                  </p>
+                )}
+              </div>
+            </SectionCard>
+          </div>
+        )}
+
+        {/* ---- Derived from this screen ----
+            Shown even if the definition failed to load: these come from other endpoints and
+            are still true. One DerivedSection per kind; add a kind by adding a section. */}
+        <div className="space-y-6">
+          <DerivedSection
+            title="Snapshots"
+            query={history.snapshots}
+            items={history.snapshotsFor(id)}
+            rowKey={(s) => s.id}
+            render={(s) => <SnapshotRow s={s} />}
+            empty={<>None yet. <em>Take snapshot now</em> freezes what this screen finds today, so you can trim it, group it and compare later.</>}
+          />
+          <DerivedSection
+            title="Backtests"
+            query={history.backtests}
+            items={history.backtestsFor(id)}
+            rowKey={(r) => r.id}
+            render={(r) => <BacktestRow r={r} />}
+            empty={<>None yet. <em>Backtest this screen</em> shows what it would have picked in the past, and what happened next.</>}
+          />
+        </div>
+      </div>
+    </div>
   );
 }

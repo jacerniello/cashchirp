@@ -2,12 +2,11 @@
 
 import { SubNav, type SubNavItem } from '@/components/nav/SubNav';
 
-// Research area: what you have researched (rankings), how you have grouped it, the
-// screener results you froze to work through, and free-form notes.
+// Research area: what you have researched (rankings), how you have grouped it, and
+// free-form notes. Snapshots (frozen screener results) live under the Screener area.
 const ITEMS: SubNavItem[] = [
   { name: 'Rankings', key: 'research', url: '/research' },
   { name: 'Groups', key: 'groups', url: '/research/groups' },
-  { name: 'Snapshots', key: 'snapshots', url: '/research/snapshots' },
   { name: 'Notes', key: 'notes', url: '/research/notes' },
 ];
 

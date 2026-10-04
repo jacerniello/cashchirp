@@ -59,7 +59,7 @@ export function SnapshotResults({ params }: { params: ScreenerParams }) {
       {result && (
         <div className="text-xs bg-green-soft text-green-text rounded-lg px-3 py-2">
           Snapshotted {result.count.toLocaleString()} stock{result.count === 1 ? '' : 's'}.{' '}
-          <Link href={`/research/snapshots/${encodeURIComponent(result.id)}`} className="font-semibold text-green-text">
+          <Link href={`/screener/snapshots/${encodeURIComponent(result.id)}`} className="font-semibold text-green-text">
             Open snapshot →
           </Link>
         </div>
@@ -68,8 +68,9 @@ export function SnapshotResults({ params }: { params: ScreenerParams }) {
   );
 }
 
-/** One-click snapshot of a saved screen (config/screens/<id>.yaml), for the Ideas pages. */
-export function SnapshotScreenButton({ screenId }: { screenId: string }) {
+/** One-click snapshot of a saved screen (config/screens/<id>.yaml), for the Saved screens
+ *  pages. After it lands, the button turns into a link to the new snapshot. */
+export function SnapshotScreenButton({ screenId, label = 'Take snapshot now' }: { screenId: string; label?: string }) {
   const create = useCreateSnapshot();
   const [result, setResult] = useState<{ id: string; count: number } | null>(null);
 
@@ -85,8 +86,8 @@ export function SnapshotScreenButton({ screenId }: { screenId: string }) {
 
   if (result) {
     return (
-      <Link href={`/research/snapshots/${encodeURIComponent(result.id)}`}
-            className="text-sm font-medium text-green hover:text-green-dark">
+      <Link href={`/screener/snapshots/${encodeURIComponent(result.id)}`}
+            className="text-sm font-medium text-green hover:text-green-dark no-underline whitespace-nowrap">
         Snapshotted {result.count.toLocaleString()} — open →
       </Link>
     );
@@ -98,10 +99,10 @@ export function SnapshotScreenButton({ screenId }: { screenId: string }) {
         onClick={onClick}
         disabled={create.isPending}
         className="text-sm rounded-lg bg-white text-ink-light px-3 py-1.5 border border-rule cursor-pointer
-                   hover:text-ink disabled:opacity-40 disabled:cursor-not-allowed"
+                   hover:text-ink hover:border-ink-muted disabled:opacity-40 disabled:cursor-not-allowed whitespace-nowrap"
         title="Freeze every stock this screen finds now as a research snapshot"
       >
-        {create.isPending ? 'Snapshotting…' : 'Snapshot this screen'}
+        {create.isPending ? 'Snapshotting…' : label}
       </button>
       {create.isError && (
         <span className="text-xs text-neg">{errDetail(create.error, 'Could not snapshot.')}</span>

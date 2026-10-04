@@ -20,15 +20,15 @@ const TOOLS: { href: string; label: string; blurb: string }[] = [
   },
   {
     href: "/screener/ideas",
-    label: "Ideas",
+    label: "Saved screens",
     blurb:
-      "Every screen you have saved, each run live against the latest snapshot so you can compare what they surface.",
+      "The filters you have kept, with how many stocks each matches today. Take a snapshot of one — snapshots live under the Screener too — or backtest it.",
   },
   {
     href: "/research",
     label: "Research",
     blurb:
-      "Notes and AI due diligence on any stock, red-team reviews, groups you define, frozen screener snapshots — and a ranking of everything you have rated.",
+      "Notes and AI due diligence on any stock, red-team reviews, groups you define — and a ranking of everything you have rated.",
   },
   {
     href: "/backtests",

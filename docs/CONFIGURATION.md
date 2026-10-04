@@ -36,8 +36,8 @@ Screens are data, not code, for two reasons:
    is the filter as written. There is no second definition to drift from it.
 
 Screens are defined in `config/screens/` and run from the UI: `/screener` builds one,
-`/screener/ideas` runs every saved screen, and either can be frozen into a research snapshot
-or backtested (see [RESEARCH.md](RESEARCH.md)).
+`/screener/ideas` (the *Saved screens* tab) runs every saved screen, and either can be frozen
+into a snapshot (`/screener/snapshots`) or backtested (see [RESEARCH.md](RESEARCH.md)).
 
 Copy `quality-value.yaml`, change the numbers, point `ACTIVE_SCREEN` at yours. Files
 beginning with `_` are ignored, so a half-finished draft can sit in the folder safely.

@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import { useQueryClient } from '@tanstack/react-query';
 import { Badge } from '@/components/Badge';
 import { useScreens } from '@/hooks/useSavedScreens';
@@ -25,7 +26,9 @@ export function RunBacktestForm() {
   const runQ = useCurrentBacktestRun();
   const start = useRunBacktest();
 
-  const [screen, setScreen] = useState('');
+  // `?screen=<id>` (from a saved screen's "Backtest this screen") preselects it.
+  const preset = useSearchParams().get('screen') ?? '';
+  const [screen, setScreen] = useState(preset);
   const [kind, setKind] = useState<BacktestKind>('portfolio');
   const [from, setFrom] = useState('2005-01-01');
   const [to, setTo] = useState('');
@@ -38,7 +41,9 @@ export function RunBacktestForm() {
 
   const screens = useMemo(() => screensQ.data?.screens ?? [], [screensQ.data]);
   // Default to the active screen until the user picks one — derived, not copied into state.
-  const chosen = screen || screensQ.data?.active || screens[0]?.id || '';
+  // A preset that names no saved screen falls back the same way rather than submitting it.
+  const picked = screens.some((s) => s.id === screen) ? screen : '';
+  const chosen = picked || screensQ.data?.active || screens[0]?.id || '';
 
   const run = runQ.data;
   const running = !!run?.running;
@@ -90,6 +95,9 @@ export function RunBacktestForm() {
       <form onSubmit={submit} className="px-6 py-5 grid grid-cols-2 md:grid-cols-4 gap-4">
         <div className="col-span-2">
           <label className={labelCls} htmlFor="bt-screen">Saved screen</label>
+          {preset && screensQ.data && !screens.some((s) => s.id === preset) && (
+            <p className="text-xs text-neg mb-1">No saved screen called “{preset}” — pick one below.</p>
+          )}
           {screensQ.isError ? (
             <p className="text-sm text-neg">Could not load saved screens: {errorText(screensQ.error)}</p>
           ) : (

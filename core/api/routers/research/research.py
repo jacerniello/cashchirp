@@ -225,7 +225,7 @@ def create_snapshot(body: SnapshotCreate) -> dict[str, Any]:
     members = [{_SNAP_COLS[c]: v for c, v in rec.items()}
                for rec in json_safe(rows[cols].to_dict("records"))]
     snap = store.create_snapshot(name, body.note, source, asof, members)
-    return {"id": snap["id"], "count": len(snap["members"]), "open": f"/research/snapshots/{snap['id']}"}
+    return {"id": snap["id"], "count": len(snap["members"]), "open": f"/screener/snapshots/{snap['id']}"}
 
 
 @router.get("/snapshots/{sid}")

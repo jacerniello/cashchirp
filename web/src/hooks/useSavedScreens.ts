@@ -1,5 +1,7 @@
 'use client';
 
+import { useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import api from '@/lib/api';
 import type { ScreenerParams } from './useScreener';
@@ -56,7 +58,53 @@ export interface ScreenDetail {
 
 /** Fetch one screen on demand — used when you click it, to load it into the filter. */
 export async function fetchScreen(id: string): Promise<ScreenDetail> {
-  return (await api.get(`/screener/screens/${id}`)).data;
+  return (await api.get(`/screener/screens/${encodeURIComponent(id)}`)).data;
+}
+
+/** The `/screener` URL that reproduces a saved screen; `from` carries its id so a re-save
+ *  keeps the constraints the grid has no widget for. */
+export function screenerHref(d: ScreenDetail): string {
+  return `/screener?${new URLSearchParams({ ...d.url_params, from: d.id }).toString()}`;
+}
+
+/** Load a saved screen into the `/screener` grid.
+ *
+ *  `holdIfLossy`: when the screen has constraints the grid cannot show, don't navigate —
+ *  report them (with the href) so the caller can say so first. Used from pages that the
+ *  navigation would leave, where the warning would otherwise vanish with the page. */
+export function useLoadScreen() {
+  const router = useRouter();
+  const [loading, setLoading] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const [lossy, setLossy] = useState<{ id: string; items: string[]; href: string } | null>(null);
+
+  async function load(id: string, { holdIfLossy = false } = {}) {
+    setLoading(id); setErr(null); setLossy(null);
+    try {
+      const d = await fetchScreen(id);
+      const href = screenerHref({ ...d, id });
+      const held = d.lossy?.length ? { id, items: d.lossy, href } : null;
+      if (held) setLossy(held);
+      if (!(holdIfLossy && held)) router.push(href);
+    } catch (e) {
+      const detail = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+      setErr(detail || (e as Error).message);
+    } finally {
+      setLoading(null);
+    }
+  }
+
+  return { load, loading, err, lossy, clearLossy: () => setLossy(null) };
+}
+
+/** One saved screen's definition (spec, criteria, url_params) — its settings, not its results. */
+export function useScreen(id: string) {
+  return useQuery({
+    queryKey: ['screens', id],
+    queryFn: () => fetchScreen(id),
+    enabled: !!id,
+    retry: false,
+  });
 }
 
 export function useScreens() {
@@ -64,6 +112,7 @@ export function useScreens() {
     queryKey: ['screens'],
     queryFn: async (): Promise<ScreensResponse> => (await api.get('/screener/screens/')).data,
     staleTime: 60_000,
+    retry: false,
   });
 }
 

@@ -9,30 +9,13 @@ import {
   useDeleteBacktest,
   type BacktestListItem,
 } from '@/hooks/useBacktests';
+import { Suspense } from 'react';
 import { RunBacktestForm } from './RunBacktestForm';
-import { pct, signClass, when } from './format';
+import { headline, pct, signClass, when } from './format';
 
 // Saved backtest reports. Each is a folder under <research_dir>/backtests/ — plain files,
 // gitignored — written by `python -m core.backend.backtest.run` (or the form below, which
 // runs that same command).
-
-function headline(r: BacktestListItem) {
-  const s = r.summary ?? {};
-  if (r.kind === 'cohort') {
-    return {
-      main: s.mean_return as number | null,
-      bench: s.bench_mean_return as number | null,
-      label: `mean ${r.params?.hold_months ?? '?'}m fwd`,
-      dd: null,
-    };
-  }
-  return {
-    main: s.cagr as number | null,
-    bench: s.bench_cagr as number | null,
-    label: 'CAGR',
-    dd: s.max_drawdown as number | null,
-  };
-}
 
 export default function BacktestsPage() {
   const { data, isLoading, isError, error } = useBacktests();
@@ -56,7 +39,10 @@ export default function BacktestsPage() {
       </div>
 
       <div className="max-w-[1200px] mx-auto px-6 py-10 space-y-8">
-        <RunBacktestForm />
+        {/* The form reads ?screen= to preselect a screen, which needs a Suspense boundary. */}
+        <Suspense fallback={null}>
+          <RunBacktestForm />
+        </Suspense>
 
         <div className="rounded-xl border border-rule bg-white overflow-hidden">
           <div className="px-6 py-4 border-b border-rule flex items-center justify-between gap-3">

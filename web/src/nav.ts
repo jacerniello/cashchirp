@@ -4,9 +4,9 @@
 import type { NavLink } from "@/components/Navbar";
 
 export const links: NavLink[] = [
-  // Flat: every destination is one click, no dropdown. Screener/DD/Macro each own a
-  // sub-nav for their second page (Ideas, Commodities), so those don't
-  // need a slot here — their URLs say where they live.
+  // Flat: every destination is one click, no dropdown. Screener/Research/Macro each own a
+  // sub-nav for their other pages (Saved screens + Snapshots, Groups + Notes, Commodities),
+  // so those don't need a slot here — their URLs say where they live.
   { href: "/screener", label: "Screener" },
   { href: "/research", label: "Research" },
   { href: "/backtests", label: "Backtests" },

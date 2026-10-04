@@ -4,16 +4,19 @@ import { SubNav, type SubNavItem } from './SubNav';
 
 // Sub-navs that group related top-level pages under one banner.
 //
-//  - Screener area: Screener + Ideas (Ideas is the saved screen the grid feeds, so it
-//                   belongs beside the grid rather than as its own destination).
+//  - Screener area: Filter (the grid) + Saved screens (the filters you kept — settings
+//                   only) + Snapshots (results you froze to research). All three are the
+//                   screener's output at different levels of permanence, so they sit together.
 //  - Macro area: Macro + Commodities (Commodities was a top-level item, now a tab here).
 //
-// URLs mirror the grouping (/screener/ideas, /macro/commodities).
+// URLs mirror the grouping (/screener/ideas, /screener/snapshots, /macro/commodities).
+// Saved screens keeps its old /screener/ideas URL so existing links still work.
 //
 // Rendered at the top of each member page so the toggle is visible from any of them.
 const SCREENER_ITEMS: SubNavItem[] = [
-  { name: 'Screener', key: 'screener', url: '/screener' },
-  { name: 'Ideas', key: 'ideas', url: '/screener/ideas' },
+  { name: 'Filter', key: 'screener', url: '/screener' },
+  { name: 'Saved screens', key: 'ideas', url: '/screener/ideas' },
+  { name: 'Snapshots', key: 'snapshots', url: '/screener/snapshots' },
 ];
 
 const MACRO_ITEMS: SubNavItem[] = [

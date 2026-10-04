@@ -237,7 +237,7 @@ export default function StockResearchPage() {
               <ul className="list-none m-0 p-0 divide-y divide-rule-light">
                 {d.snapshots.map((s) => (
                   <li key={s.id} className="py-2 flex items-center justify-between gap-3">
-                    <Link href={`/research/snapshots/${encodeURIComponent(s.id)}`} className="text-sm text-ink no-underline hover:text-green">
+                    <Link href={`/screener/snapshots/${encodeURIComponent(s.id)}`} className="text-sm text-ink no-underline hover:text-green">
                       {s.name}
                     </Link>
                     <span className="text-xs text-ink-muted tabular-nums">{fmtWhen(s.created_at)}</span>

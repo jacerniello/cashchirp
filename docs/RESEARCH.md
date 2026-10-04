@@ -53,14 +53,18 @@ starts. Edit the standards there, not in the copies.
   rating (1–6), with confidence, base-case upside, and which groups it is in.
 - **A stock's research page** (`/research/stocks/<permaticker>`, also the *Research* tab on
   the company page) — your notes (Markdown), the DD report, the red team, and its groups.
-- **Snapshots** — from the screener (*Snapshot results*) or a saved screen (*Snapshot this
-  screen*). A snapshot keeps every matching stock with its metrics as of that day. Trim it
-  (removed members are marked, not deleted, so a trim can be undone), add members to groups,
-  download it as CSV.
-- **Groups** — create as many as you like (a catalyst type, a thesis family, "watch",
+- **Screener → Snapshots** (`/screener/snapshots`) — made from the Filter tab (*Snapshot*)
+  or a saved screen (*Take snapshot now*). A snapshot keeps every matching stock with its
+  metrics as of that day. Trim it (removed members are marked, not deleted, so a trim can be
+  undone), add members to groups, download it as CSV. (`/research/snapshots` redirects here.)
+- **Screener → Saved screens** (`/screener/ideas`) — a saved screen is settings, not
+  results: its page shows the definition (criteria, gates, today's match count) and the
+  snapshots and backtests made from it, with actions to take a snapshot, backtest it, or
+  load it into the filter grid.
+- **Research → Groups** — create as many as you like (a catalyst type, a thesis family, "watch",
   "bought"…), add stocks from a snapshot, a stock page or by ticker, and give each a note.
   You and the AI both edit them; each member records who added it.
-- **Notes** — free-form Markdown, organised in folders.
+- **Research → Notes** — free-form Markdown, organised in folders.
 - **Backtests** (`/backtests`) — run a saved screen through history and keep the report.
 
 ## Pointing Claude at it
