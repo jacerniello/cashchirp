@@ -1093,7 +1093,7 @@ def main() -> int:
             print(f"  {ds.label[:40]:40} {(ds.mode or ''):9} {src:14}")
         print(f"\n{len(steps)} steps.")
         if any(st.phase == "sharadar" for st in steps):
-            print("This downloads tens of GB from Sharadar and takes hours. It is resumable.")
+            print("This downloads the Sharadar tables in the plan. It is resumable.")
         else:
             print("No Sharadar steps in this plan — nothing paid is downloaded.")
         print("Provenance per source: python -m core.setup.bootstrap --sources")

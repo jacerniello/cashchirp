@@ -170,7 +170,7 @@ def _run(cur, table_code, dest, header, types, pk, copy_writer, progress, upsert
     staged = cur.fetchone()[0]
     _progress(progress, table_code,
               f"staged {staged:,} rows; merging into {dest} — one database step with no "
-              f"progress of its own (millions of rows can take several minutes) ...")
+              f"progress of its own ...")
     cur.execute(dml)
     cur.execute(f"SELECT count(*) FROM {dest};")
     total = cur.fetchone()[0]

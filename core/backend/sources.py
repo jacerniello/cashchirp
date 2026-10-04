@@ -169,7 +169,7 @@ DATASETS: list[Dataset] = [
             note="The big one. Required for price history and charts."),
     Dataset(key="sharadar:SFP", source="sharadar", label="fund prices (ETF/CEF)",
             phase="sharadar", endpoint="SHARADAR/SFP", tables=("sfp",), mode="sync", kwargs={"chunk_key": "ticker"},
-            note="Restamps >1M rows/day, so that day is pulled in ticker-chunks."),
+            note="Restamps many rows per day; the sync streams them page by page."),
     Dataset(key="sharadar:DAILY", source="sharadar", label="daily valuation (mktcap, P/E, EV)",
             phase="sharadar", endpoint="SHARADAR/DAILY", tables=("daily",), mode="sync",
             note="Drives the screener snapshot."),

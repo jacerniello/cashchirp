@@ -283,7 +283,7 @@ def denormalise_sf3(only_null: bool = True, progress=None) -> tuple[int, int]:
                     "ALTER TABLE sf3__denorm ADD COLUMN price double precision "
                     "GENERATED ALWAYS AS (value / NULLIF(units, 0) * 1000) STORED;")
 
-                say("filling it in one pass (81M rows; this is the long step)…")
+                say("filling it in one pass (the long step)…")
                 cur.execute(
                     f"INSERT INTO sf3__denorm ({collist}, investorname) "
                     f"SELECT {', '.join('s.\"' + c + '\"' for c in cols)}, b.investorname "

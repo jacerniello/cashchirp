@@ -283,7 +283,7 @@ def refresh_holder_timeseries(session: Session, progress=None, require_build: bo
         # Build off the live table (no lock on holder_timeseries), then swap atomically.
         with engine.begin() as conn:
             conn.execute(text(f"DROP TABLE IF EXISTS {_HOLDER_TABLE}{NEW}"))
-            say("building (CTAS over sf3; several minutes on ~33M rows)…")
+            say("building from sf3 (one statement, no progress until it finishes)…")
             conn.execute(ctas, {"asof": asof})
             say("indexing (permaticker, rank)…")
             conn.execute(text(f"CREATE INDEX {idx_new} ON {_HOLDER_TABLE}{NEW} (permaticker, rank)"))
@@ -492,7 +492,7 @@ def refresh_investor_holdings_timeseries(session: Session, progress=None, requir
             return live_count(_INST_HOLDINGS_TABLE)
         with engine.begin() as conn:
             conn.execute(text(f"DROP TABLE IF EXISTS {_INST_HOLDINGS_TABLE}{NEW}"))
-            say("building (CTAS over sf3; several minutes on ~33M rows)…")
+            say("building from sf3 (one statement, no progress until it finishes)…")
             conn.execute(ctas, {"asof": asof})
             say("indexing (investorname, rank)…")
             conn.execute(
