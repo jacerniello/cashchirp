@@ -872,6 +872,17 @@ def migrate_legacy_analyses() -> dict:
     "Recovered research". Idempotent: nothing to move means nothing happens, and a second
     run adds to the same report. A file whose destination already exists is left where it
     is and logged — a migration never overwrites research."""
+    # The API runs several workers, and each calls this at start-up. Without a lock two of
+    # them move different files and each saves its own partial member list — the last write
+    # wins and analyses end up "not in members list". One migrator at a time.
+    import fcntl
+    root().mkdir(parents=True, exist_ok=True)
+    with open(root() / ".migration.lock", "w") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        return _migrate_legacy_locked()
+
+
+def _migrate_legacy_locked() -> dict:
     base = root() / "stocks"
     legacy = [d for d in base.iterdir() if d.is_dir() and d.name.isdigit()
               and any((d / f).exists() for f in REPORT_DOCS.values())] if base.is_dir() else []
