@@ -559,6 +559,17 @@ def _buffer_writer(csv_bytes: bytes, table_code: str, progress):
     return writer
 
 
+def _reached(seen: dict, start: date) -> str:
+    """Where a streaming fetch has got to. The API returns rows newest-first, so the oldest
+    sync date seen so far walks back from today toward `start`, where the fetch ends."""
+    if seen["min"] is None or seen["max"] is None:
+        return f"working back toward {start}"
+    lo, hi = seen["min"].date(), seen["max"].date()
+    span = max((hi - start).days, 1)
+    done = min(max((hi - lo).days / span, 0.0), 1.0)
+    return f"reached {lo} working back toward {start} (~{done:.0%} of the date range)"
+
+
 def sync_table(
     table_code: str,
     dest_table: str | None = None,
@@ -648,7 +659,7 @@ def sync_table(
     # the upsert and the watermark move happen together at the end, in one transaction,
     # so an interrupted fetch leaves the table and its watermark exactly as they were.
     header = list(first.columns)
-    seen = {"rows": 0, "pages": 0, "max": None}
+    seen = {"rows": 0, "pages": 0, "max": None, "min": None}
     t0 = time.monotonic()
 
     def writer(copy):
@@ -662,9 +673,12 @@ def sync_table(
             for c in page.columns:
                 if types.get(c) == "date":
                     page[c] = pd.to_datetime(page[c], errors="coerce").dt.date
-            col_max = pd.to_datetime(page[sync_col], errors="coerce").max()
+            col = pd.to_datetime(page[sync_col], errors="coerce")
+            col_max, col_min = col.max(), col.min()
             if pd.notna(col_max) and (seen["max"] is None or col_max > seen["max"]):
                 seen["max"] = col_max
+            if pd.notna(col_min) and (seen["min"] is None or col_min < seen["min"]):
+                seen["min"] = col_min
             copy.write(page.to_csv(index=False, header=seen["pages"] == 0).encode())
             seen["rows"] += len(page)
             seen["pages"] += 1
@@ -673,8 +687,7 @@ def sync_table(
                 _progress(progress, table_code,
                           f"fetched {seen['rows']:,} rows ({seen['pages']} pages) in "
                           f"{secs / 60:.1f} min — {seen['rows'] / max(secs, 1):,.0f} rows/s; "
-                          f"newest {sync_col} so far "
-                          f"{seen['max'].date() if seen['max'] is not None else '—'}")
+                          f"{_reached(seen, start)}")
         _progress(progress, table_code,
                   f"fetch done: {seen['rows']:,} rows in {seen['pages']} pages, "
                   f"{(time.monotonic() - t0) / 60:.1f} min")
