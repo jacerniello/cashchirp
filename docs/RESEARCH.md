@@ -15,7 +15,7 @@ in the research folder — `RESEARCH_DIR` in `core/.env`, default `<repo>/resear
 | In the repo (apparatus) | In the research folder (yours) |
 |---|---|
 | `core/backend/research/store.py` — reads and writes the folder | `stocks/<permaticker>/` — notes, DD, red team |
-| `core/backend/research/guide/` — the DD and red-team standards, and the AI guide | `groups/<id>.json` — your categories |
+| `core/backend/research/guide/` — the DD and red-team standards, and the AI guide (`AGENT_GUIDE.md`, copied in as `CLAUDE.md`) | `groups/<id>.json` — your categories |
 | `core/api/routers/research/` — the API | `snapshots/<id>.json` — frozen screener results |
 | `web/src/app/research/`, `web/src/app/backtests/` — the pages | `notes/**.md` — free-form notes |
 | `core/backend/backtest/` — the backtest harness and runner | `backtests/<id>/` — backtest reports |

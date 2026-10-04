@@ -434,9 +434,12 @@ def ensure_layout() -> None:
     base = root()
     for sub in ("stocks", "groups", "snapshots", "notes", "backtests", "_guide"):
         (base / sub).mkdir(parents=True, exist_ok=True)
-    copies = {"CLAUDE.md": base / "CLAUDE.md"}
+    # The repo copy is AGENT_GUIDE.md because the repo's .gitignore excludes every file named
+    # CLAUDE.md (that name is reserved for the local project charter). In the research folder
+    # it becomes CLAUDE.md, the file Claude Code reads automatically when started there.
+    copies = {"AGENT_GUIDE.md": base / "CLAUDE.md"}
     copies.update({p.name: base / "_guide" / p.name for p in _GUIDE_SRC.iterdir()
-                   if p.is_file() and p.name != "CLAUDE.md"})
+                   if p.is_file() and p.name != "AGENT_GUIDE.md"})
     for name, dest in copies.items():
         src = (_GUIDE_SRC / name).read_text(encoding="utf-8")
         if _read_text(dest) != src:

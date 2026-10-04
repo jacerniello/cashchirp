@@ -38,8 +38,9 @@ router = APIRouter(prefix="/research", tags=["research"])
 # research_dir must not stop the rest of the API from starting.
 try:
     store.ensure_layout()
-except OSError:
-    pass
+except OSError as exc:
+    import logging
+    logging.getLogger("cashchirp.research").warning("research folder setup failed: %s", exc)
 
 # Snapshot columns kept per member: identity plus the metrics a reviewer (human or AI)
 # wants without re-querying. Values are as of the snapshot's `asof`.
