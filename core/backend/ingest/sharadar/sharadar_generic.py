@@ -145,14 +145,21 @@ def _build_sql(header, types, pk, dest):
 _BUFFER_PROGRESS_MIN = 64 * 1024 * 1024
 
 
-def _run(cur, table_code, dest, header, types, pk, copy_writer, progress):
+def _run(cur, table_code, dest, header, types, pk, copy_writer, progress, upsert=True):
     """Create table + staging, COPY via copy_writer, upsert. Returns
-    (staged_rows, dest_total, watermark|None)."""
+    (staged_rows, dest_total, watermark|None).
+
+    `upsert=False` inserts instead, for callers that have already cleared the rows being
+    replaced (the per-quarter SF3 refresh): it needs no unique constraint on `dest`, which
+    the denormalised `sf3` does not have."""
     # Big loads do a DISTINCT ON sort + unique-index build over tens of millions of
     # rows; the default 4MB work_mem spills to disk and crawls. Bump for this session.
     cur.execute("SET work_mem = '1GB';")
     cur.execute("SET maintenance_work_mem = '1GB';")
     ddl, dml, stage_defs, stage_cols, has_lu = _build_sql(header, types, pk, dest)
+    if not upsert:
+        cols = ", ".join(f'"{c}"' for c in header)
+        dml = f"INSERT INTO {dest} ({cols}) {_stage_select(header, types, pk)};"
     cur.execute(ddl)
     cur.execute(f"CREATE TEMP TABLE _stage ({stage_defs}) ON COMMIT DROP;")
     _progress(progress, table_code, "COPY -> staging ...")
@@ -793,7 +800,8 @@ def sync_coarse_table(
             # back the delete too — the quarter is never left truncated.
             cur.execute(f'DELETE FROM {dest} WHERE "{quarter_col}" = %s', (q.isoformat(),))
             deleted = cur.rowcount
-            staged, dest_total, _ = _run(cur, table_code, dest, header, types, pk, writer, progress)
+            staged, dest_total, _ = _run(cur, table_code, dest, header, types, pk, writer, progress,
+                                         upsert=False)
             raw.commit()
         finally:
             raw.close()

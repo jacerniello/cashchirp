@@ -313,7 +313,20 @@ def snapshot(session: Session) -> pd.DataFrame:
     try:
         refresh_snapshot(session)
         with _LOCK:
-            return _CACHE["df"]
+            if _CACHE["df"] is not None:
+                return _CACHE["df"]
+        # The rebuild was skipped because another process holds the build lock — usually an
+        # ingest, which holds it for its whole run. Serve the existing table, one as-of date
+        # behind, rather than nothing: returning None here took the screener down for the
+        # length of every ingest.
+        try:
+            _asof, df = _read_table(session)
+            return df
+        except Exception:
+            pass
+        df = build_snapshot(session)
+        df["asof"] = key
+        return df
     except Exception:
         df = build_snapshot(session)
         with _LOCK:
