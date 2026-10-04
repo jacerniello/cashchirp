@@ -922,3 +922,25 @@ def rebuilds() -> dict[str, Any]:
         t["running"] = bool(job["running"])
         t["schedules"] = [s for s in scheds if s["key"] == t["key"] and s["mode"] == "full"]
     return out
+
+
+@router.get("/rate-limits")
+@router.get("/rate-limits/")
+def rate_limits(period: str = "24h") -> dict[str, Any]:
+    """Nasdaq Data Link API usage over `period` (24h | 7d | 30d), from the rate-limit
+    headers the app records. Takes a fresh reading first if the newest is over 5 minutes
+    old, so the headline number is current even when nothing has run."""
+    from datetime import datetime, timezone
+
+    from core.backend.ingest.sharadar import ratelimit
+    try:
+        out = ratelimit.history(period)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    latest = out["latest"]
+    stale = latest is None or (
+        datetime.now(timezone.utc) - datetime.fromisoformat(latest["sampled_at"])
+    ).total_seconds() > 300
+    if stale and ratelimit.probe():
+        out = ratelimit.history(period)
+    return out

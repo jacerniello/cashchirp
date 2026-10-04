@@ -11,6 +11,10 @@ from pathlib import Path
 import nasdaqdatalink
 
 from core.config import CORE_DIR, settings
+from core.backend.ingest.sharadar import ratelimit
+
+# Every Nasdaq Data Link response carries rate-limit headers; keep them for Setup's chart.
+ratelimit.install()
 
 # Tables in the Sharadar Core US Equities bundle (vendor code SHARADAR).
 SHARADAR_TABLES: dict[str, str] = {

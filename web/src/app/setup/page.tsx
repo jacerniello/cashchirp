@@ -6,6 +6,7 @@ import { Card } from '@/components/Card';
 import Link from 'next/link';
 import { SetupAreaNav } from './SetupAreaNav';
 import { ResetDatabase } from './ResetDatabase';
+import { ApiUsageCard } from './ApiUsageCard';
 
 // Setup — what this database contains, what's missing, and where each piece comes from.
 //
@@ -536,6 +537,8 @@ export default function SetupPage() {
             </Card>
           </>
         )}
+        <ApiUsageCard />
+
         <ResetDatabase data={data} />
 
       </div>

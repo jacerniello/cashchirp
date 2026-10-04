@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import logging
 import threading
+import time
 from typing import Any
 
 from sqlalchemy import text
@@ -149,8 +150,28 @@ def tick() -> dict[str, Any]:
     return {"locked": True, "closed": closed, "fired": fired, "skipped": skipped}
 
 
+# A rate-limit reading every 30 minutes (one tiny API call), so the Setup chart has
+# points between ingests and the spacing of resets reveals the window length.
+PROBE_SECONDS = 30 * 60
+_last_probe = 0.0
+
+
+def _maybe_probe() -> None:
+    global _last_probe
+    now = time.monotonic()
+    if now - _last_probe < PROBE_SECONDS:
+        return
+    _last_probe = now
+    try:
+        from core.backend.ingest.sharadar import ratelimit
+        ratelimit.probe()
+    except Exception:
+        log.exception("rate-limit probe failed")
+
+
 def _loop() -> None:
     while not _stop.wait(TICK_SECONDS):
+        _maybe_probe()
         try:
             res = tick()
             for f in res.get("fired", []):

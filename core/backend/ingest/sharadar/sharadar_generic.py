@@ -24,6 +24,7 @@ observable. Two entry points:
 
 Tables are created here (CREATE TABLE IF NOT EXISTS), not via the ORM models.
 """
+import itertools
 import zipfile
 from datetime import date, datetime, timedelta
 from pathlib import Path
@@ -236,37 +237,40 @@ def _get_watermark(dataset: str, dest: str, sync_col: str = "lastupdated") -> da
         raw.close()
 
 
-def _fetch_window(table_code: str, sync_col: str, lo: date, hi: date, progress,
-                  chunk_key: str | None = None) -> pd.DataFrame | None:
-    """Pull rows with lo <= `sync_col` <= hi via the query API, adaptively
-    splitting the date range when a single call trips the API's volume cap.
+# Row ceiling for the one path that still holds a whole pull in memory (_fetch_keyed, used
+# by the per-quarter SF3 refresh). The client library's get_table() stops at 100 pages
+# (~1M rows) and RAISES, discarding every page it downloaded; paging ourselves keeps them.
+# Past this ceiling the key-range splitting in _fetch_keyed takes over, which bounds memory.
+# The incremental sync does not use it at all: it streams pages straight into Postgres.
+_MAX_QUERY_ROWS = 3_000_000
 
-    A single date value that alone exceeds the cap can't be date-windowed. If
-    `chunk_key` is given, that day is instead pulled in recursive key-chunks
-    (e.g. SFP restamps >1M rows on one `lastupdated` day → chunk it by ticker);
-    otherwise it's surfaced as a clear error rather than looping forever."""
-    flt = {sync_col: {"gte": lo.isoformat(), "lte": hi.isoformat()}}
-    try:
-        return ndl.get_table(f"SHARADAR/{table_code.upper()}", paginate=True, **flt)
-    except LimitExceededError:
-        if lo >= hi:
-            if chunk_key:
-                _progress(progress, table_code,
-                          f"single {sync_col}={lo} over cap — chunking by {chunk_key}")
-                return _fetch_keyed(table_code, flt, chunk_key, None, None, progress)
-            raise RuntimeError(
-                f"{table_code}: a single {sync_col}={lo} exceeds the query-API cap and "
-                f"can't be date-windowed — pass chunk_key=<col> to sub-chunk it, or use a "
-                f"full backfill (sharadar_load_generic {table_code})."
-            )
-        mid = lo + (hi - lo) // 2
-        _progress(progress, table_code, f"cap hit on {sync_col} [{lo}..{hi}] — splitting at {mid}")
-        a = _fetch_window(table_code, sync_col, lo, mid, progress, chunk_key)
-        b = _fetch_window(table_code, sync_col, mid + timedelta(days=1), hi, progress, chunk_key)
-        frames = [f for f in (a, b) if f is not None and not f.empty]
-        if not frames:
-            return a if a is not None else b
-        return pd.concat(frames, ignore_index=True)
+
+def _iter_pages(table_code: str, flt: dict):
+    """Yield every page (~10k rows, as a DataFrame) matching `flt`, following the cursor."""
+    from nasdaqdatalink.model.datatable import Datatable
+    code = f"SHARADAR/{table_code.upper()}"
+    params = dict(flt)
+    while True:
+        page = Datatable(code).data(params=dict(params))
+        yield page.to_pandas()
+        cursor = page.meta.get("next_cursor_id")
+        if cursor is None:
+            return
+        params["qopts.cursor_id"] = cursor
+
+
+def _get_all(table_code: str, flt: dict, progress=None) -> pd.DataFrame:
+    """Every row matching `flt` in one DataFrame, up to _MAX_QUERY_ROWS."""
+    frames, rows = [], 0
+    for i, page in enumerate(_iter_pages(table_code, flt), 1):
+        frames.append(page)
+        rows += len(page)
+        if rows > _MAX_QUERY_ROWS:
+            raise LimitExceededError(
+                f"SHARADAR/{table_code.upper()}: over {_MAX_QUERY_ROWS:,} rows for {flt}")
+        if progress and i % 50 == 0:
+            _progress(progress, table_code, f"fetched {rows:,} rows ({i} pages)…")
+    return pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
 
 
 # Cut points for the key-range chunker. Tickers/investor names are upper-case
@@ -301,7 +305,7 @@ def _fetch_keyed(table_code: str, fixed: dict, key_col: str,
     if bound:
         flt[key_col] = bound
     try:
-        return ndl.get_table(f"SHARADAR/{table_code.upper()}", paginate=True, **flt)
+        return _get_all(table_code, flt, progress)
     except LimitExceededError:
         cuts = _split_points(lo, hi)
         if not cuts:
@@ -565,10 +569,10 @@ def sync_table(
     """Incremental update: upsert rows with `sync_col >= watermark`.
 
     `sync_col` defaults to `lastupdated`; pass a date column (date/filingdate/
-    calendardate) for tables Sharadar ships without one. `chunk_key` sub-chunks any
-    single `sync_col` day that alone exceeds the API cap (SFP restamps >1M rows per
-    `lastupdated` day → `chunk_key="ticker"` makes it incremental instead of a full
-    reload). Falls back to a full backfill if the table has never been loaded.
+    calendardate) for tables Sharadar ships without one. Pages stream straight into
+    Postgres, so there is no per-pull row cap to work around; `chunk_key` is accepted for
+    the registry's sake (SFP declares one) and no longer used here. Falls back to a full
+    load if the table has never been loaded.
     Returns {"rows", "total", "watermark", "since"}.
     """
     dest = dest_table or table_code.lower()
@@ -617,9 +621,11 @@ def sync_table(
     start = watermark - timedelta(days=lookback_days)
     _progress(progress, table_code, f"querying {sync_col} >= {start} ...")
     ndl.ApiConfig.api_key = settings.nasdaq_data_link_api_key
-    df = _fetch_window(table_code, sync_col, start, date.today(), progress, chunk_key)
+    flt = {sync_col: {"gte": start.isoformat(), "lte": date.today().isoformat()}}
+    pages = _iter_pages(table_code, flt)
+    first = next(pages, None)
 
-    if df is None or df.empty:
+    if first is None or first.empty:
         raw = engine.raw_connection()
         try:
             cur = raw.cursor()
@@ -634,25 +640,40 @@ def sync_table(
         )
         return {"rows": 0, "total": None, "watermark": watermark, "since": start}
 
-    # Normalize date columns so they cast cleanly from CSV text.
-    df = df.copy()
-    for c in df.columns:
-        if types.get(c) == "date":
-            df[c] = pd.to_datetime(df[c], errors="coerce").dt.date
-    header = list(df.columns)
-    csv_bytes = df.to_csv(index=False).encode()
+    # Stream: each page is written into the staging COPY as it arrives, so memory holds
+    # one page however long the catch-up. Nothing reaches `dest` until every page is in;
+    # the upsert and the watermark move happen together at the end, in one transaction,
+    # so an interrupted fetch leaves the table and its watermark exactly as they were.
+    header = list(first.columns)
+    seen = {"rows": 0, "pages": 0, "max": None}
 
-    # New watermark = max sync_col value actually pulled (works for any sync_col,
-    # not just lastupdated which is all _run knows how to derive).
-    col_max = pd.to_datetime(df[sync_col], errors="coerce").max()
-    new_wm = col_max.date() if pd.notna(col_max) else watermark
-
-    writer = _buffer_writer(csv_bytes, table_code, progress)
+    def writer(copy):
+        for page in itertools.chain([first], pages):
+            if page.empty:
+                continue
+            if list(page.columns) != header:
+                raise RuntimeError(f"{table_code}: columns changed mid-fetch "
+                                   f"({header} -> {list(page.columns)})")
+            page = page.copy()
+            for c in page.columns:
+                if types.get(c) == "date":
+                    page[c] = pd.to_datetime(page[c], errors="coerce").dt.date
+            col_max = pd.to_datetime(page[sync_col], errors="coerce").max()
+            if pd.notna(col_max) and (seen["max"] is None or col_max > seen["max"]):
+                seen["max"] = col_max
+            copy.write(page.to_csv(index=False, header=seen["pages"] == 0).encode())
+            seen["rows"] += len(page)
+            seen["pages"] += 1
+            if seen["pages"] % 50 == 0:
+                _progress(progress, table_code,
+                          f"streamed {seen['rows']:,} rows ({seen['pages']} pages)…")
 
     raw = engine.raw_connection()
     try:
         cur = raw.cursor()
         staged, total, _ = _run(cur, table_code, dest, header, types, pk, writer, progress)
+        # New watermark = max sync_col value actually pulled.
+        new_wm = seen["max"].date() if seen["max"] is not None else watermark
         cur.execute(_SYNC_STATE_UPSERT, (dataset, new_wm, staged))
         raw.commit()
     finally:
