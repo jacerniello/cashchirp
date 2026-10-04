@@ -134,3 +134,27 @@ def etf_metrics(session: Session, permaticker: int | str) -> dict | None:
         "return_5y": _ret(r.get("c_5y")),
         "return_inception": _ret(r.get("c_first")),
     }
+
+
+def latest_closes(session: Session, permatickers, window_days: int = 45) -> dict[int, dict]:
+    """Latest `sep` close for many securities in one query: {permaticker: {date, close}}.
+
+    One index probe per permaticker (`ix_sep_permaticker_date`), bounded to the last
+    `window_days` so a delisted name returns nothing rather than a years-old price."""
+    pts = sorted({int(p) for p in permatickers if str(p).strip().isdigit()})
+    if not pts:
+        return {}
+    res = rows(
+        session,
+        """
+        SELECT p.pt AS permaticker, s.date, s.close
+        FROM unnest(CAST(:pts AS bigint[])) AS p(pt)
+        CROSS JOIN LATERAL (
+            SELECT date, close FROM sep
+            WHERE permaticker = p.pt AND date >= CURRENT_DATE - CAST(:days AS int)
+            ORDER BY date DESC LIMIT 1
+        ) s
+        """,
+        {"pts": pts, "days": window_days},
+    )
+    return {int(r["permaticker"]): {"date": r["date"], "close": r["close"]} for r in res}

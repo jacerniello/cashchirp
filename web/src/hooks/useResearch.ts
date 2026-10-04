@@ -3,7 +3,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import api from '@/lib/api';
 
-// Research — notes, DD, groups and snapshots, stored as plain files on the server
+// Research — notes, reports (dated DD + red-team runs), groups and snapshots, stored as plain files on the server
 // (core/backend/research/store.py) and served by core/api/routers/research/research.py.
 //
 // An AI agent edits the same folder directly, so every shape below is a best guess at
@@ -28,6 +28,13 @@ export interface GroupRef {
   name: string;
 }
 
+export interface ReportRef {
+  id: string;
+  name?: string | null;
+  created_at?: string | null;
+}
+
+/** One row of the rankings: a stock's LATEST analysis across all reports. */
 export interface ResearchStock {
   permaticker: string;
   ticker?: string | null;
@@ -37,6 +44,19 @@ export interface ResearchStock {
   dd_error?: string | null;
   has_redteam?: boolean;
   rating?: Rating | null;
+  asof?: string | null;
+  report?: ReportRef | null;
+  previous?: {
+    rating?: Rating | null;
+    asof?: string | null;
+    report_id?: string;
+    report_name?: string | null;
+    created_at?: string | null;
+  } | null;
+  analyses?: number;
+  price_at_analysis?: number | null;
+  price_now?: number | null;
+  price_date?: string | null;
   groups?: GroupRef[];
   updated_at?: string | null;
 }
@@ -44,6 +64,8 @@ export interface ResearchStock {
 export interface ResearchIndex {
   root: string;
   stocks: ResearchStock[];
+  prices_error?: string | null;
+  reports?: number;
   groups: number;
   snapshots: number;
   notes: number;
@@ -54,21 +76,94 @@ export interface ResearchGuide {
   guide: string;
 }
 
+export interface StockAnalysis {
+  report_id: string;
+  report_name?: string | null;
+  created_at?: string | null;
+  asof?: string | null;
+  rating?: Rating | null;
+  has_dd?: boolean;
+  dd_error?: string | null;
+  has_redteam?: boolean;
+  price_at_analysis?: number | null;
+}
+
 export interface StockDetail {
   permaticker: string;
   meta: { ticker?: string; name?: string; [k: string]: unknown } | null;
   notes: string | null;
   notes_updated: string | null;
+  /** The latest analysis's DD and red team (from report `latest`). */
   dd: Record<string, unknown> | null;
   dd_error: string | null;
   dd_updated: string | null;
   redteam: string | null;
   redteam_updated: string | null;
+  latest?: { report_id: string; report_name?: string | null; created_at?: string | null; asof?: string | null } | null;
+  /** Every analysis of this stock, newest first. */
+  analyses?: StockAnalysis[];
+  /** Reports the stock is in that have no analysis of it yet. */
+  pending_reports?: ReportRef[];
   groups: GroupRef[];
   snapshots: { id: string; name: string; created_at?: string | null }[];
 }
 
-export type StockDoc = 'notes' | 'dd' | 'redteam';
+/** A stock's own folder holds only living notes; DD and red team belong to reports. */
+export type StockDoc = 'notes';
+export type ReportDoc = 'dd' | 'redteam';
+
+export type ReportSource =
+  | { kind: 'snapshot'; snapshot_id?: string; snapshot_name?: string; screen_id?: string; screen_title?: string }
+  | { kind: 'group'; group_id?: string; group_name?: string }
+  | { kind: 'manual' };
+
+export interface ReportAnalysis {
+  has_dd?: boolean;
+  dd_error?: string | null;
+  has_redteam?: boolean;
+  rating?: Rating | null;
+  asof?: string | null;
+  price_at_analysis?: number | null;
+  dd_updated?: string | null;
+  redteam_updated?: string | null;
+}
+
+export interface ReportMember {
+  permaticker: string;
+  ticker?: string | null;
+  name?: string | null;
+  added_at?: string;
+  added_by?: string;
+  /** false when an analysis sits in the report folder without a members entry. */
+  listed?: boolean;
+  analysis?: ReportAnalysis | null;
+  price_now?: number | null;
+  price_date?: string | null;
+  groups?: GroupRef[];
+}
+
+export interface ReportSummary {
+  id: string;
+  name: string;
+  thesis?: string;
+  notes?: string;
+  created_at?: string;
+  created_by?: string;
+  updated_at?: string;
+  status?: 'open' | 'complete' | string;
+  source?: ReportSource;
+  member_count?: number;
+  analysed_count?: number;
+  redteam_count?: number;
+  top?: { permaticker: string; ticker?: string | null; rating?: Rating | null }[];
+  error?: string;
+}
+
+export interface Report extends ReportSummary {
+  /** Already in ranking order: score desc, then base upside desc; unanalysed last. */
+  members: ReportMember[];
+  prices_error?: string | null;
+}
 
 export interface GroupMember {
   permaticker: string;
@@ -80,11 +175,21 @@ export interface GroupMember {
   rating?: Rating | null;
 }
 
+export interface GroupHistoryEntry {
+  at?: string;
+  action?: 'create' | 'add' | 'remove' | 'rename' | 'describe' | 'note' | string;
+  permaticker?: string;
+  ticker?: string | null;
+  by?: string;
+  note?: string;
+}
+
 export interface Group {
   id: string;
   name: string;
   description?: string;
   members: GroupMember[];
+  history?: GroupHistoryEntry[];
   created_by?: string;
   created_at?: string;
   updated_at?: string;
@@ -263,6 +368,34 @@ export function snapshotCsvUrl(id: string): string {
   return `/api/v1/research/snapshots/${enc(id)}/csv`;
 }
 
+export function useReports() {
+  return useQuery({
+    queryKey: [...KEY, 'reports'],
+    queryFn: async (): Promise<ReportSummary[]> => (await api.get('/research/reports')).data?.reports ?? [],
+    retry: false,
+  });
+}
+
+export function useReport(id: string) {
+  return useQuery({
+    queryKey: [...KEY, 'report', id],
+    queryFn: async (): Promise<Report> => (await api.get(`/research/reports/${enc(id)}`)).data,
+    enabled: !!id,
+    retry: false,
+  });
+}
+
+/** One document of one report — `content` is the DD object or the red-team Markdown. */
+export function useReportDoc(id: string, pt: string, doc: ReportDoc) {
+  return useQuery({
+    queryKey: [...KEY, 'report-doc', id, pt, doc],
+    queryFn: async (): Promise<{ content: unknown; error?: string | null }> =>
+      (await api.get(`/research/reports/${enc(id)}/stocks/${enc(pt)}/${doc}`)).data,
+    enabled: !!id && !!pt,
+    retry: false,
+  });
+}
+
 export function useNotes() {
   return useQuery({
     queryKey: [...KEY, 'notes'],
@@ -375,6 +508,53 @@ export function usePatchSnapshot() {
 export function useDeleteSnapshot() {
   return useResearchMutation(
     async (id: string) => (await api.delete(`/research/snapshots/${enc(id)}`)).data,
+  );
+}
+
+export function useCreateReport() {
+  return useResearchMutation(
+    async (v: {
+      name?: string;
+      thesis?: string;
+      snapshot_id?: string;
+      group_id?: string;
+      permatickers?: string[];
+      members_from?: 'kept' | 'selected';
+      members?: MemberInput[];
+    }): Promise<{ id: string; count: number; open: string }> =>
+      (await api.post('/research/reports', v)).data,
+  );
+}
+
+export function usePatchReport() {
+  return useResearchMutation(
+    async (v: {
+      id: string;
+      name?: string;
+      thesis?: string;
+      status?: 'open' | 'complete';
+      notes?: string;
+      add?: MemberInput[];
+      add_from_source?: boolean;
+      remove?: string[];
+    }): Promise<Report> => {
+      const { id, ...body } = v;
+      const clean = {
+        ...body,
+        add: (body.add ?? []).map((m) => ({
+          permaticker: String(m.permaticker),
+          ticker: m.ticker || undefined,
+          name: m.name || undefined,
+        })),
+      };
+      return (await api.patch(`/research/reports/${enc(id)}`, clean)).data;
+    },
+  );
+}
+
+export function useDeleteReport() {
+  return useResearchMutation(
+    async (id: string) => (await api.delete(`/research/reports/${enc(id)}`)).data,
   );
 }
 

@@ -122,7 +122,7 @@ export function CompanyResearchTab({ pt }: { pt: string }) {
         <RatingSummary dd={data.dd} redteam={data.redteam} updated={data.dd_updated} />
       ) : data.dd_error ? (
         <div className="rounded-xl border border-rule bg-gold-soft p-4 text-sm text-ink-light">
-          This stock&apos;s dd.json is unreadable ({data.dd_error}).
+          This stock&apos;s latest dd.json is unreadable ({data.dd_error}).
         </div>
       ) : null}
 
@@ -157,7 +157,10 @@ export function CompanyResearchTab({ pt }: { pt: string }) {
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           <span className="text-xs text-ink-muted">
-            {data.dd ? 'DD on file' : 'No DD'} · {data.redteam ? 'red-teamed' : 'no red team'}
+            {data.dd
+              ? `Latest DD ${fmtWhen(data.latest?.asof || data.latest?.created_at)}${data.latest?.report_name ? ` (${data.latest.report_name})` : ''}`
+              : 'No DD'}{' '}
+            · {data.redteam ? 'red-teamed' : 'no red team'}
           </span>
           <Link href={href} className={`${btnGhost} no-underline`}>Open full research →</Link>
         </div>

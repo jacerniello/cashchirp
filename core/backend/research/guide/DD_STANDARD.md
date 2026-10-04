@@ -1,9 +1,11 @@
-# The DD standard — `stocks/<permaticker>/dd.json`
+# The DD standard — `reports/<id>/stocks/<permaticker>/dd.json`
 
-*Real DD, not vibes.* One self-describing JSON file per company, carrying its full research
-write-up **plus** the data series that drive its charts. The app's research page for the
-stock (`/research/stocks/<permaticker>`) renders it live — each new report is just a new
-file, and refreshing one means editing it.
+*Real DD, not vibes.* One self-describing JSON file per company **per report**, carrying its
+full research write-up **plus** the data series that drive its charts. A DD belongs to the
+report (analysis run) it was written for, and is the record of what was known as of its
+`asof`. The report page (`/research/reports/<id>`) ranks it against the report's other
+members; the stock's research page (`/research/stocks/<permaticker>`) shows the latest one
+across all reports, with the history.
 
 **These are write-ups for whatever a screen or snapshot surfaced.** The screen states a
 thesis — "cheap quality compounders re-rate", "asset plays close their discount", whatever
@@ -123,7 +125,7 @@ researched, mark it `na`/`warn` and say so in `data_gaps`.
 
 ---
 
-## JSON contract (`stocks/<permaticker>/dd.json`)
+## JSON contract (`reports/<id>/stocks/<permaticker>/dd.json`)
 
 See `_guide/dd_template.json` for a fully-populated example (it lives in `_guide/`, which the index ignores). Shape:
 
@@ -294,7 +296,7 @@ the point: a DD without one is a story, not a position.
 Per company: run the full checklist,
 reconcile screener numbers to filings, look up analyst estimates and consensus PT, pull
 enough price history to annotate catalysts, build the reverse-DCF/expectations view, write
-bull/bear/verdict, assign the `1–6` rating, and emit `stocks/<permaticker>/dd.json` exactly to
+bull/bear/verdict, assign the `1–6` rating, and emit `reports/<id>/stocks/<permaticker>/dd.json` exactly to
 the contract above.
 
 - **Reconcile to your own DB where possible** (prices and fundamentals live in Postgres —
@@ -306,8 +308,10 @@ the contract above.
 
 ## Keeping a DD current
 
-The research page reads the JSON **live**, so refreshing a name means editing its
-file — there is nothing to rebuild. To bring one up to date:
+A DD is the record of one report; it is not refreshed in place. Bringing a name up to date
+means a **new report** (or the open one the owner names) with a new `dd.json` — start from
+the previous DD and carry forward what still holds. Editing an existing report's DD is only
+for fixing an error in it. In the new DD:
 
 1. Bump `price.current` (and `market_cap`) and re-check `upside_base_pct`.
 2. Append new **`past` catalysts** to the `catalysts` array, each with its `source` and the

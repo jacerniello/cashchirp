@@ -17,6 +17,7 @@ import {
 } from '@/components/research/ResearchBits';
 import { SnapshotMembersTable } from '@/components/research/SnapshotMembersTable';
 import { SnapshotSourceDetail, sourceLabel } from '@/components/research/SnapshotSource';
+import { StartReportFromSnapshot } from '@/components/research/Reports';
 import {
   errDetail,
   isNotFound,
@@ -159,14 +160,21 @@ export default function SnapshotPage() {
               onBulk={bulk}
               busy={patch.isPending}
               error={patch.isError ? errDetail(patch.error, 'Could not update the snapshot.') : null}
+              selectionActions={(picked) => (
+                <StartReportFromSnapshot
+                  snapshotId={snap.id}
+                  defaultName={snap.name}
+                  selected={picked.map((m) => String(m.permaticker))}
+                />
+              )}
             />
 
             <ClaudeInstruction
               root={guide.data?.root}
-              blurb="Trimmed members are kept in the file with removed: true; the instruction below tells Claude to skip them."
+              blurb="Analyses go in a report. Start one above (all kept members, or the selected rows), or let Claude create it."
               instruction={
-                `Do a full DD on every kept stock in snapshot ${snap.id} (snapshots/${snap.id}.json, skip members with ` +
-                `removed: true), then red-team the ones rated 5–6.`
+                `Start a report on snapshot ${snap.id} (its kept members — skip removed: true), write a DD for every ` +
+                `member into it, then red-team the ones rated 5–6.`
               }
             />
           </>

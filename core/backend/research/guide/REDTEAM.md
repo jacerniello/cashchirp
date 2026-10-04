@@ -1,6 +1,7 @@
-# The red-team standard — `stocks/<permaticker>/redteam.md`
+# The red-team standard — `reports/<id>/stocks/<permaticker>/redteam.md`
 
-A red team is an **adversarial review of an existing DD**. Your job is to kill the bull
+A red team is an **adversarial review of an existing DD**, written next to it in the same
+report (`reports/<id>/stocks/<permaticker>/`). Your job is to kill the bull
 thesis in `dd.json`, and to concede honestly where you cannot. It is the cheapest protection
 against the most common failure in this kind of work: a plausible story that nobody tried to
 break.
@@ -9,7 +10,8 @@ break.
 
 ## Before you start
 
-- Read `stocks/<permaticker>/dd.json` in full, and `notes.md` if present (the owner's own view).
+- Read `reports/<id>/stocks/<permaticker>/dd.json` in full, and `stocks/<permaticker>/notes.md`
+  if present (the owner's own view).
 - Note the DD's rating, base-case price target and the 2–3 claims the thesis actually rests
   on. Those are your targets; do not spend the review on side issues.
 - Re-pull the numbers yourself (the app API or Postgres — see `CLAUDE.md`) instead of

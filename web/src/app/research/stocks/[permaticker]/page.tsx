@@ -13,6 +13,7 @@ import {
   ErrorPanel,
   fmtWhen,
   InlineError,
+  RatingPill,
 } from '@/components/research/ResearchBits';
 import { RatingSummary, useStockIdentity } from '@/components/research/StockResearch';
 import {
@@ -29,6 +30,7 @@ const TABS = [
   { key: 'notes', label: 'Notes' },
   { key: 'dd', label: 'DD' },
   { key: 'redteam', label: 'Red team' },
+  { key: 'history', label: 'Analysis history' },
   { key: 'groups', label: 'Groups' },
   { key: 'snapshots', label: 'Snapshots' },
 ] as const;
@@ -63,12 +65,31 @@ export default function StockResearchPage() {
     window.history.replaceState(null, '', url.toString());
   }
 
+  // Analyses live in reports: a new DD means a new (or an open) report, never an edit of
+  // an older report's analysis.
+  const latest = d?.latest ?? null;
   const ddInstruction =
-    `Do a full DD on ${ticker ?? '<TICKER>'} (permaticker ${pt}) following the DD standard, ` +
-    `and write it to stocks/${pt}/dd.json.`;
-  const rtInstruction =
-    `Red-team the DD for ${ticker ?? '<TICKER>'} (permaticker ${pt}): try to disprove the bull thesis, ` +
-    `and write the memo to stocks/${pt}/redteam.md with a SURVIVES / CONDITIONAL / FAILS verdict.`;
+    `Start a report for ${ticker ?? '<TICKER>'} (permaticker ${pt}) and write a full DD per _guide/DD_STANDARD.md ` +
+    `to reports/<report-id>/stocks/${pt}/dd.json.`;
+  const rtInstruction = latest
+    ? `Red-team the DD for ${ticker ?? '<TICKER>'} in report ${latest.report_id} per _guide/REDTEAM.md, and write ` +
+      `reports/${latest.report_id}/stocks/${pt}/redteam.md.`
+    : `Red-team the DD for ${ticker ?? '<TICKER>'} (permaticker ${pt}) per _guide/REDTEAM.md, in the same report as its DD.`;
+  const fromLine = latest && (
+    <p className="text-xs text-ink-muted m-0">
+      Latest analysis — from report{' '}
+      <Link href={`/research/reports/${encodeURIComponent(latest.report_id)}`} className="text-green">
+        {latest.report_name || latest.report_id}
+      </Link>
+      , as of <strong className="text-ink-light">{fmtWhen(latest.asof || latest.created_at)}</strong>
+      {(d?.analyses?.length ?? 0) > 1 && (
+        <> · <button type="button" onClick={() => choose('history')}
+                     className="bg-transparent border-0 p-0 cursor-pointer text-green text-xs">
+          {d!.analyses!.length} analyses in all
+        </button></>
+      )}
+    </p>
+  );
 
   return (
     <div className="bg-surface min-h-[calc(100vh-4rem)] font-sans">
@@ -88,7 +109,8 @@ export default function StockResearchPage() {
               {TABS.map((t) => {
                 const count =
                   t.key === 'groups' ? d.groups.length :
-                  t.key === 'snapshots' ? d.snapshots.length : null;
+                  t.key === 'snapshots' ? d.snapshots.length :
+                  t.key === 'history' ? (d.analyses?.length ?? 0) : null;
                 const has =
                   t.key === 'notes' ? !!d.notes : t.key === 'dd' ? !!d.dd : t.key === 'redteam' ? !!d.redteam : null;
                 return (
@@ -143,9 +165,10 @@ export default function StockResearchPage() {
         {d && active === 'dd' && (
           d.dd ? (
             <>
+              {fromLine}
               <DDReportView report={d.dd} />
               <p className="text-xs text-ink-muted m-0">
-                From <code className="font-mono">stocks/{pt}/dd.json</code>
+                From <code className="font-mono">reports/{latest?.report_id}/stocks/{pt}/dd.json</code>
                 {d.dd_updated && <> · updated {fmtWhen(d.dd_updated, true)}</>}
               </p>
             </>
@@ -156,14 +179,26 @@ export default function StockResearchPage() {
                   <>
                     <p className="font-semibold text-ink m-0 mb-1">The DD file is unreadable.</p>
                     <p className="m-0">
-                      <code className="font-mono">stocks/{pt}/dd.json</code>: {d.dd_error}. Fix the JSON by hand or ask
-                      Claude to rewrite it.
+                      <code className="font-mono">reports/{latest?.report_id}/stocks/{pt}/dd.json</code>: {d.dd_error}. Fix the
+                      JSON by hand or ask Claude to rewrite it.
                     </p>
                   </>
                 ) : (
                   <>
                     <p className="font-semibold text-ink m-0 mb-1">No due diligence on {label} yet.</p>
-                    <p className="m-0">DD reports are written by Claude into the research folder. Ask it:</p>
+                    <p className="m-0">
+                      DDs are written by Claude into a report in the research folder
+                      {(d.pending_reports?.length ?? 0) > 0 && (
+                        <> — {label} is waiting in{' '}
+                          {d.pending_reports!.map((r, i) => (
+                            <span key={r.id}>{i > 0 && ', '}
+                              <Link href={`/research/reports/${encodeURIComponent(r.id)}`} className="text-green">{r.name || r.id}</Link>
+                            </span>
+                          ))}
+                        </>
+                      )}
+                      . Ask it:
+                    </p>
                   </>
                 )}
               </div>
@@ -179,6 +214,7 @@ export default function StockResearchPage() {
                 <h2 className="text-lg font-bold text-ink m-0">Red team</h2>
                 {d.redteam_updated && <span className="text-xs text-ink-muted">updated {fmtWhen(d.redteam_updated, true)}</span>}
               </div>
+              <div className="mb-2">{fromLine}</div>
               <p className="text-xs text-ink-muted mb-4">
                 An adversarial pass whose only job was to disprove the bull thesis.
               </p>
@@ -187,7 +223,9 @@ export default function StockResearchPage() {
           ) : (
             <div className="space-y-4">
               <div className="rounded-xl border border-rule bg-white p-5 text-sm text-ink-light">
-                <p className="font-semibold text-ink m-0 mb-1">No red team on {label} yet.</p>
+                <p className="font-semibold text-ink m-0 mb-1">
+                  No red team on {label}{latest ? ' in its latest analysis' : ''} yet.
+                </p>
                 <p className="m-0">
                   A red team tries to kill the thesis{d.dd ? '' : ' — it needs a DD to attack first'}. Ask Claude:
                 </p>
@@ -195,6 +233,42 @@ export default function StockResearchPage() {
               <ClaudeInstruction root={root} instruction={d.dd ? rtInstruction : ddInstruction + ' Then ' + rtInstruction.charAt(0).toLowerCase() + rtInstruction.slice(1)} />
             </div>
           )
+        )}
+
+        {d && active === 'history' && (
+          <div className="rounded-xl border border-rule bg-white p-5">
+            <h2 className="text-lg font-bold text-ink m-0 mb-1">Analysis history</h2>
+            <p className="text-xs text-ink-muted mt-0 mb-3">Every report with an analysis of {label}, newest first.</p>
+            {(d.analyses ?? []).length ? (
+              <ul className="list-none m-0 p-0 divide-y divide-rule-light">
+                {d.analyses!.map((a) => (
+                  <li key={a.report_id} className="py-2 flex items-center gap-3 flex-wrap">
+                    <RatingPill rating={a.rating} size="sm" showLabel={false} />
+                    <Link href={`/research/reports/${encodeURIComponent(a.report_id)}/stocks/${pt}`}
+                          className="text-sm text-ink no-underline hover:text-green flex-1 min-w-[200px]">
+                      {a.report_name || a.report_id}
+                    </Link>
+                    {a.dd_error && <span className="text-[11px] text-neg">dd.json unreadable</span>}
+                    {!a.has_dd && !a.dd_error && <span className="text-[11px] text-ink-muted">red team only</span>}
+                    {a.has_redteam && <span className="text-[11px] font-semibold text-red">RT</span>}
+                    <span className="text-xs text-ink-muted tabular-nums">as of {fmtWhen(a.asof || a.created_at)}</span>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-sm text-ink-muted m-0">No analyses yet. Start a report from a snapshot, group or by hand.</p>
+            )}
+            {(d.pending_reports ?? []).length > 0 && (
+              <p className="text-xs text-ink-muted mt-3 mb-0">
+                Also a member, not yet analysed, of:{' '}
+                {d.pending_reports!.map((r, i) => (
+                  <span key={r.id}>{i > 0 && ', '}
+                    <Link href={`/research/reports/${encodeURIComponent(r.id)}`} className="text-green">{r.name || r.id}</Link>
+                  </span>
+                ))}
+              </p>
+            )}
+          </div>
         )}
 
         {d && active === 'groups' && (

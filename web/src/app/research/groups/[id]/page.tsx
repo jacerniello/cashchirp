@@ -24,6 +24,7 @@ import {
   isNotFound,
   ratingScore,
   toNum,
+  useCreateReport,
   useDeleteGroup,
   useGroup,
   usePatchGroup,
@@ -40,6 +41,16 @@ export default function GroupPage() {
   const guide = useResearchGuide();
   const patch = usePatchGroup();
   const del = useDeleteGroup();
+  const createReport = useCreateReport();
+
+  async function startReport() {
+    try {
+      const r = await createReport.mutateAsync({ group_id: id });
+      router.push(r.open);
+    } catch {
+      /* shown below */
+    }
+  }
 
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState('');
@@ -134,6 +145,11 @@ export default function GroupPage() {
                     </p>
                   </div>
                   <div className="flex gap-2">
+                    <button type="button" className={btnGhost} onClick={startReport}
+                            disabled={!members.length || createReport.isPending}
+                            title="Analyse every member as of today, in a new report">
+                      {createReport.isPending ? 'Starting…' : 'Start a report'}
+                    </button>
                     <button type="button" className={btnGhost} onClick={() => setEditing(true)} disabled={!!g.error}>Edit</button>
                     <button type="button" className={btnDanger} onClick={onDelete} disabled={del.isPending}>
                       {del.isPending ? 'Deleting…' : 'Delete group'}
@@ -149,6 +165,7 @@ export default function GroupPage() {
               )}
               {patch.isError && <InlineError>{errDetail(patch.error, 'Could not update the group.')}</InlineError>}
               {del.isError && <InlineError>{errDetail(del.error, 'Could not delete the group.')}</InlineError>}
+              {createReport.isError && <InlineError>{errDetail(createReport.error, 'Could not start a report.')}</InlineError>}
             </div>
 
             <SectionCard
@@ -224,11 +241,39 @@ export default function GroupPage() {
               </div>
             </SectionCard>
 
+            <SectionCard title={`Change log${g.history?.length ? ` (${g.history.length})` : ''}`}>
+              {(g.history ?? []).length ? (
+                <ul className="list-none m-0 p-0 divide-y divide-rule-light max-h-[360px] overflow-y-auto">
+                  {[...(g.history ?? [])].reverse().map((h, i) => (
+                    <li key={`${h.at}-${i}`} className="px-5 py-2 flex items-center gap-3 text-sm flex-wrap">
+                      <span className="text-xs text-ink-muted tabular-nums w-32 shrink-0">{fmtWhen(h.at, true)}</span>
+                      <span className={`text-xs font-semibold uppercase w-16 shrink-0 ${
+                        h.action === 'add' ? 'text-pos' : h.action === 'remove' ? 'text-neg' : 'text-ink-light'}`}>
+                        {h.action}
+                      </span>
+                      {h.permaticker && (
+                        <Link href={`/research/stocks/${h.permaticker}`} className="font-mono font-semibold text-ink no-underline hover:text-green">
+                          {h.ticker || `#${h.permaticker}`}
+                        </Link>
+                      )}
+                      {h.note && <span className="text-ink-light flex-1 min-w-[160px] truncate" title={h.note}>{h.note}</span>}
+                      <span className="ml-auto"><AddedByBadge by={h.by} /></span>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="px-5 py-4 text-sm text-ink-muted m-0">
+                  No changes recorded yet. Changes made here (and by Claude, when it logs them) appear in this list.
+                </p>
+              )}
+            </SectionCard>
+
             <ClaudeInstruction
               root={guide.data?.root}
               instruction={
-                `Review group ${g.id} in groups/${g.id}.json: do a DD on any member without one, red-team the ones ` +
-                `rated 5–6, and remove members that no longer fit "${g.name}" (say why in your summary).`
+                `Review group ${g.id} in groups/${g.id}.json: start a report on its members and write a DD for each, ` +
+                `red-team the ones rated 5–6, and remove members that no longer fit "${g.name}" (log each change in the ` +
+                `group's history and say why).`
               }
             />
           </>

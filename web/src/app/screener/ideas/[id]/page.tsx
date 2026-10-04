@@ -7,7 +7,8 @@ import { Badge } from '@/components/Badge';
 import { ScreenerAreaNav } from '@/components/nav/AreaSubNav';
 import { ErrorPanel, fmtWhen, SectionCard } from '@/components/research/ResearchBits';
 import type { BacktestListItem } from '@/hooks/useBacktests';
-import { errDetail, isNotFound, type SnapshotSummary } from '@/hooks/useResearch';
+import { ReportStatusBadge } from '@/components/research/Reports';
+import { errDetail, isNotFound, useReports, type ReportSummary, type SnapshotSummary } from '@/hooks/useResearch';
 import { useScreen, useScreens } from '@/hooks/useSavedScreens';
 import { useScreenHistory } from '@/hooks/useScreenHistory';
 import { headline, pct, signClass } from '../../../backtests/format';
@@ -16,7 +17,7 @@ import { ScreenSpec } from '../../components/ScreenSpec';
 
 // One saved screen (config/screens/<id>.yaml). A screen is SETTINGS — this page shows its
 // definition, never its results. Results exist only as things derived from it: snapshots
-// (what it found on a given day) and backtests (what it would have found in the past).
+// (what it found on a given day), reports (analysis runs on a snapshot) and backtests (what it would have found in the past).
 //
 // Layout: the definition, then one DerivedSection per kind of derived item. To add a kind,
 // add a section to the list at the bottom of the page.
@@ -77,6 +78,22 @@ function SnapshotRow({ s }: { s: SnapshotSummary }) {
   );
 }
 
+function ReportRow({ r }: { r: ReportSummary }) {
+  return (
+    <>
+      <Link href={`/research/reports/${encodeURIComponent(r.id)}`}
+            className="text-sm text-ink no-underline hover:text-green truncate">
+        {r.name}
+        {r.error && <span className="ml-2 text-[11px] text-neg">unreadable file</span>}
+      </Link>
+      <span className="text-xs text-ink-muted tabular-nums whitespace-nowrap flex items-center gap-2">
+        <ReportStatusBadge status={r.status} />
+        {r.analysed_count ?? 0}/{r.member_count ?? 0} analysed · {fmtWhen(r.created_at)}
+      </span>
+    </>
+  );
+}
+
 function BacktestRow({ r }: { r: BacktestListItem }) {
   const h = headline(r);
   return (
@@ -111,6 +128,10 @@ export default function SavedScreenPage() {
   const screenQ = useScreen(id);
   const list = useScreens(); // carries each screen's live match count
   const history = useScreenHistory();
+  const reports = useReports();
+  const reportsHere = (reports.data ?? []).filter(
+    (r) => r.source?.kind === 'snapshot' && r.source.screen_id === id,
+  );
   const d = screenQ.data;
   const listed = list.data?.screens.find((s) => s.id === id);
 
@@ -199,6 +220,14 @@ export default function SavedScreenPage() {
             rowKey={(s) => s.id}
             render={(s) => <SnapshotRow s={s} />}
             empty={<>None yet. <em>Take snapshot now</em> freezes what this screen finds today, so you can trim it, group it and compare later.</>}
+          />
+          <DerivedSection
+            title="Reports"
+            query={reports}
+            items={reportsHere}
+            rowKey={(r) => r.id}
+            render={(r) => <ReportRow r={r} />}
+            empty={<>None yet. Open a snapshot of this screen and <em>Start a report</em> to analyse what it caught.</>}
           />
           <DerivedSection
             title="Backtests"

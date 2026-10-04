@@ -66,9 +66,11 @@ interface Props {
   /** A line under the action bar. */
   notice?: ReactNode;
   emptyText?: string;
+  /** Extra actions for the current selection (e.g. "Start a report"), shown in the action bar. */
+  selectionActions?: (picked: SnapshotMember[]) => ReactNode;
 }
 
-export function SnapshotMembersTable({ members, onBulk, busy, error, notice, emptyText }: Props) {
+export function SnapshotMembersTable({ members, onBulk, busy, error, notice, emptyText, selectionActions }: Props) {
   const [showRemoved, setShowRemoved] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [q, setQ] = useState('');
@@ -176,6 +178,12 @@ export function SnapshotMembersTable({ members, onBulk, busy, error, notice, emp
           label={picked.length ? `Add ${picked.length} to group` : 'Add to group'}
           members={pickedMembers.map((m) => ({ permaticker: String(m.permaticker), ticker: m.ticker, name: m.name }))}
         />
+        {selectionActions && (
+          <>
+            <span className="w-px h-6 bg-rule mx-1" />
+            {selectionActions(pickedMembers)}
+          </>
+        )}
       </div>
       {error && <div className="px-5 pt-3"><InlineError>{error}</InlineError></div>}
       {notice && <div className="px-5 pt-3 text-xs text-ink-muted">{notice}</div>}
