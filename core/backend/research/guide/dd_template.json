@@ -59,6 +59,16 @@
     { "name": "Base", "prob": 0.5, "price_target": 480, "return_pct": 0.71, "assumptions": "Mid-single-digit growth resumes; multiple re-rates to ~10x as the scare fades." },
     { "name": "Bull", "prob": 0.25, "price_target": 650, "return_pct": 1.32, "assumptions": "Reacceleration + margin expansion; multiple normalizes to peer ~13x." }
   ],
+  "catalyst": {
+    "strength": 4,
+    "primary": "Beat-and-raise print that proves the AI-disruption fear overblown (AI revenue net-new + margin expansion), forcing analyst upgrades.",
+    "type": "earnings-proof",
+    "timing": "next earnings (~2026-Q1)",
+    "probability": "medium",
+    "is_datable": true,
+    "precedent": "QLYS/FDS/JKHY all re-rated +40-90% in 2026 on exactly this trigger.",
+    "note": "Re-rates when the numbers falsify the bear narrative. Dead-money risk: if cloud keeps decelerating, the discount is deserved and the print confirms the bear."
+  },
   "catalysts": [
     { "date": "2025-02-13", "title": "Q4 guide light on cloud", "kind": "guidance", "direction": "past", "price_reaction_pct": -0.18, "note": "Stock gapped down on a soft forward number.", "source": { "label": "Q4 press release", "url": "https://www.sec.gov/" } },
     { "date": "2025-08-07", "title": "Buyback authorization raised", "kind": "buyback", "direction": "past", "price_reaction_pct": 0.06, "note": "Signaled confidence; modest pop.", "source": { "label": "8-K", "url": "https://www.sec.gov/" } },

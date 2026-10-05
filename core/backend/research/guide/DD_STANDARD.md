@@ -78,6 +78,27 @@ DD states the score **and** the one or two things that would move it up or down.
 `confidence` (`high|medium|low`) is separate from the score: how sure we are *of* the score
 given evidence quality and data gaps.
 
+### Catalyst score — is there a trigger, or is it "cheap and hoping"?
+
+Cheap + quality is only half a thesis. A good business at a good price can still be **dead
+money for years** if nothing forces the market to re-price it. So every DD scores the
+**catalyst** explicitly (`catalyst.strength`, 1–5), *separately* from the buy rating:
+
+| strength | meaning |
+|---------:|---------|
+| **5** | A clear, **datable**, high-probability trigger — a scheduled event (earnings/guide, product GA, spin/divestiture, capital-return) with a credible path to re-rating. |
+| **4** | A real, identifiable catalyst; timing roughly known; decent odds. |
+| **3** | A plausible catalyst, but soft — undated, execution-dependent, or needs several things to line up. |
+| **2** | Only a vague or macro/cycle catalyst, largely out of the company's hands. |
+| **1** | **No identifiable catalyst.** The thesis is "it's cheap and I'm hoping." Dead-money risk. |
+
+**This gates the buy rating.** A name with no real catalyst (`strength ≤ 2`) caps at a
+`3–4` however cheap or wonderful the business — "cheap and waiting" is a watchlist item,
+not a buy. A `5–6` buy must name a `strength ≥ 4` catalyst: *what* the event is, *roughly
+when*, and *why* it forces a re-pricing — and must state the honest dead-money risk if it
+never arrives. The strongest evidence for a catalyst is a **recent precedent**: a
+comparable name that just re-rated on exactly this trigger. Cite it when you have one.
+
 ---
 
 ## The DD checklist (every report covers all of it)
@@ -110,7 +131,7 @@ researched, mark it `na`/`warn` and say so in `data_gaps`.
 **D · Catalysts & price history**
 15. *Why it's cheap now* — the specific overhang, quantified (not "sentiment").
 16. Historical price reactions to catalysts (earnings, guidance, M&A, buybacks, regulatory) — what actually moved it, with dates and % moves.
-17. Identifiable **forward catalyst(s)** that could trigger the re-rating, with rough timing.
+17. Identifiable **forward catalyst(s)** that could trigger the re-rating, with rough timing — and **score it** (`catalyst.strength`, 1–5; see *Catalyst score* above). No identifiable catalyst caps the rating: name the trigger, its timing, its odds, and a recent precedent if one exists.
 18. Ownership signals — insider buying/selling, institutional flow, activists, 13D/13F.
 
 **E · Risks & disconfirmation**
@@ -185,7 +206,20 @@ See `_guide/dd_template.json` for a fully-populated example (it lives in `_guide
     { "name": "Bull", "prob": 0.25, "price_target": 650, "return_pct": 1.32, "assumptions": "..." }
   ],
 
-  "catalysts": [                     // checklist #16/#17 — past + forward
+  "catalyst": {                      // checklist #17 — the SCORE, not the list: IS there a trigger?
+    "strength": 3,                   // 1–5: 5 = clear/datable/high-prob re-rating trigger;
+                                     //      1 = no identifiable catalyst → "cheap and hoping" = dead money
+    "primary": "The single event most likely to force a re-rating.",
+    "type": "earnings-proof",        // earnings-proof | guidance | product | m&a/divestiture |
+                                     //   capital-return | regulatory | activist | macro/cycle | none
+    "timing": "next earnings (~2026-Q1)",   // a date/quarter, a window ("6–12m"), or "undated"
+    "probability": "medium",         // high | medium | low — odds it arrives AND moves the stock
+    "is_datable": true,              // hangs on a scheduled event, or open-ended?
+    "precedent": "QLYS re-rated +80% on exactly this trigger in 2026.",  // a comparable, if any
+    "note": "Why this re-rates it — and the honest dead-money risk if it never shows."
+  },
+
+  "catalysts": [                     // checklist #16/#17 — past + forward event LIST (feeds the chart)
     { "date": "2025-02-13", "title": "Q4 guide light on cloud", "kind": "guidance",
       "direction": "past", "price_reaction_pct": -0.18,
       "note": "...", "source": { "label": "...", "url": "..." } },
