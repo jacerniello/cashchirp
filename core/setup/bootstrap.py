@@ -627,8 +627,8 @@ def build_steps(only: list[str] | None,
     """The step list, built from the data-source registry (`core.backend.sources`).
 
     The registry is the single source of truth: `update_all` derives its SHARADAR_PLAN
-    from the same list and `docs/setup/sources.md` is generated from it, so what runs,
-    what refreshes, and what the docs claim cannot drift apart.
+    from the same list, so what runs and what refreshes cannot drift apart.
+    `docs/setup/sources.md` is a hand-maintained copy of it and must be updated alongside.
 
     Two ways to build a subset, because there are two different reasons to want one:
 
@@ -966,7 +966,7 @@ def print_sources() -> int:
             print(f"    {d.endpoint}")
             print(f"      -> {tables:<40} {('mode: ' + d.mode) if d.mode else ''}")
         print()
-    print("Generated table of the same registry: docs/setup/sources.md")
+    print("Hand-maintained table of the same registry: docs/setup/sources.md")
     return 0
 
 

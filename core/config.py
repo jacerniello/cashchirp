@@ -43,8 +43,8 @@ class Settings(BaseSettings):
     # exposing everything. Set SETUP_ENABLED=true in core/.env for local use.
     setup_enabled: bool = False
 
-    # Where research lives: per-stock notes and DD, groups, snapshots, free notes, backtest
-    # reports. Plain files, gitignored by default so your research never rides along with a
+    # Where research lives: reports (with per-stock DD, red teams and notes), snapshots,
+    # backtest reports. Plain files, gitignored by default so your research never rides along with a
     # push — the apparatus is in the repo, the content is not. Point it elsewhere to keep
     # research on another disk or in its own (private) repo.
     research_dir: str = str(PROJECT_ROOT / "research")

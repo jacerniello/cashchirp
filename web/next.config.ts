@@ -4,8 +4,8 @@ import type { NextConfig } from "next";
 // under /api/v1 — so only that prefix is proxied, forwarded verbatim with no path remap.
 //
 // The prefix MUST stay narrow. `beforeFiles` rewrites run ahead of the filesystem router, so
-// a blanket /api/:path* rule would swallow this app's own route handlers at /api/dd and
-// /api/experiments (src/app/api/) and send them to FastAPI, which 404s them.
+// a blanket /api/:path* rule would swallow any route handler this app adds under src/app/api/
+// and send it to FastAPI, which 404s it.
 const API = process.env.API_URL || "http://127.0.0.1:8001";
 
 const nextConfig: NextConfig = {

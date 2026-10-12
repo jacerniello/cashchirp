@@ -5,14 +5,14 @@ per ingestable dataset: who provides it, the endpoint it is pulled from, which c
 unlocks it, what licence it carries, how big it lands, which tables it writes, and how it
 is refreshed.
 
-Three things read it, which is the whole point — they cannot drift:
+Two things read it, so they cannot drift, and one doc mirrors it:
 
 - `core.setup.bootstrap` builds its step list from `DATASETS`, so the from-zero build
   runs exactly what is declared here (and can print provenance per step: `--sources`).
 - the Setup UI and its scheduler run those same datasets by key, so a scheduled refresh
-  refresh uses the same modes.
-- `docs/setup/sources.md` is written from it by hand now that the generator is gone; the
-  table of sources is generated, never hand-maintained.
+  uses the same modes.
+- `docs/setup/sources.md` is a hand-maintained copy of it now that the generator is gone,
+  so update it alongside any change here.
 
 **Adding a data source is therefore a registry entry plus a loader**, not an edit in four
 places — and nothing can quietly ingest from somewhere undocumented.
@@ -187,9 +187,9 @@ DATASETS: list[Dataset] = [
     # INDICATORS, the query API and the bulk export, which all agree. SF3B carries the
     # investorid -> investorname map (13,247 ids, 1:1), which is why it must load BEFORE
     # SF3 — the sf3 enrichment reads it to denormalise the name back on.
-    Dataset(key="sharadar:SF3A", source="sharadar", label="13F holdings by investor",
+    Dataset(key="sharadar:SF3A", source="sharadar", label="13F holdings by security",
             phase="sharadar", endpoint="SHARADAR/SF3A", tables=("sf3a",), mode="sync", kwargs={"sync_col": "date"}),
-    Dataset(key="sharadar:SF3B", source="sharadar", label="13F holdings by security",
+    Dataset(key="sharadar:SF3B", source="sharadar", label="13F holdings by investor",
             phase="sharadar", endpoint="SHARADAR/SF3B", tables=("sf3b",), mode="sync", kwargs={"sync_col": "date"},
             note="Also the investor dimension: investorid -> investorname for SF3."),
     Dataset(key="sharadar:SF3", source="sharadar", label="13F holdings detail",
