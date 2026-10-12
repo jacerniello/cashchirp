@@ -56,16 +56,17 @@ code paths.
 | SDK call | `ndl.export_table("SHARADAR/SEP", filename=…)` | `ndl.get_table("SHARADAR/SEP", **filters)` |
 | Under the hood | `?qopts.export=true` — server builds a zip, you poll and download | ordinary paged JSON/CSV response |
 | Returns | the **whole table**, one zipped CSV | rows matching your filter |
-| Row cap | none | ~1M per call (see below) |
+| Row cap | none | ~1M per `get_table` call (see below) |
 | Latency | minutes; the server generates the file | seconds |
-| Right for | the first backfill, or a repair | the daily delta |
+| Right for | the first backfill, or a full rebuild | the daily delta |
 
 Neither covers both cases. Exporting `SEP` nightly to pick up one day of prices moves
 ~941 MB compressed for a few hundred thousand rows; filtering `SEP` across its full
 history exceeds the row cap on the first call.
 
 So the loader backfills with the export and refreshes with the query API. That split is
-the structure of `core/backend/ingest/sharadar/sharadar_generic.py`.
+the structure of `core/backend/ingest/sharadar/sharadar_generic.py`; the copy-and-swap full
+rebuild in `rebuild.py` uses the export too.
 
 ### Bulk export
 
@@ -105,7 +106,9 @@ and a `UserWarning`; nothing about the resulting DataFrame indicates it is trunc
 The row cap is client-side. The SDK stops after `ApiConfig.page_limit` cursor pages — 100
 by default — and raises `LimitExceededError`. At the API's 10,000-row page that is roughly
 one million rows per call. Raising `page_limit` is possible, but above that volume the
-export is the appropriate path, and the error message says so.
+export is the appropriate path, and the error message says so. The loader's incremental
+sync sidesteps the cap by following `next_cursor_id` itself (`_iter_pages`) rather than
+calling `get_table`; see below.
 
 Retries are handled by the SDK: `429` and `5xx` are retried five times with exponential
 backoff, capped at 8 seconds between attempts. Adding a second retry loop on top is
@@ -148,7 +151,13 @@ operational notes in [schema.md](schema.md).
 ## How this repo uses it
 
 The first load of any table goes through the export. Every load after that goes through
-the query API, keyed on a watermark stored in `sync_state`.
+the query API, keyed on a watermark stored in `sync_state`. A `--full` run goes back to the
+export: it loads a fresh copy next to the live table, diffs it, and swaps it in, which also
+removes rows Sharadar has deleted (every table except `SF3`).
+
+The incremental sync pages the query API itself and streams each page into a staging COPY,
+so memory holds one page and there is no per-call row cap. Nothing reaches the live table
+until every page is in; the upsert and the new watermark commit in one transaction.
 
 Which watermark depends on the table's change-column. These three cases are why the
 registry carries a `mode` per dataset:
@@ -158,20 +167,21 @@ registry carries a `mode` per dataset:
    Sharadar restamps `lastupdated` on revision. Preferred wherever it is available.
 
 2. **Has `lastupdated`, but restamps heavily** (`SEP`, `SFP`). Price adjustments restamp
-   `lastupdated` across years of history, so a multi-day window can exceed a million rows.
-   The loader splits the date range and halves it again on `LimitExceededError` until each
-   call fits. For `SFP` a single day exceeds the cap and cannot be split by date, so it is
-   sub-chunked by ticker over string-ordered key ranges that tile the space with no gaps.
+   `lastupdated` across years of history, so a multi-day window can exceed a million rows
+   (for `SFP`, a single day can). Same filter as case 1; the streaming fetch takes however
+   many pages that is.
 
 3. **No `lastupdated`.** The append-only tables (`ACTIONS`, `SP500`, `EVENTS` on `date`,
    `SF2` on `filingdate`, `SF3A`/`SF3B` on `date`) key on a plain date column instead.
    That catches new rows but not retroactive edits — an acceptable trade for filings that
    do not change. `SF3` has no usable change column at all: its only date is a quarter-end
-   shared by ~2.4M rows, so the loader re-pulls recent quarters in key-chunks and upserts
-   them, picking up amendments within those quarters.
+   shared by ~2.4M rows, so the loader re-pulls the two most recent quarters, each split
+   into `ticker` key ranges that tile the space with no gaps (subdivided again whenever a
+   range exceeds the loader's 3M-row ceiling), and replaces each quarter wholesale. That picks
+   up additions, amendments and deletions within those quarters.
 
-All three modes end in the same upsert on the vendor's primary key, so a table can be
-re-synced repeatedly without duplicating a row.
+Cases 1–3 upsert on the vendor's primary key and the `SF3` path deletes before it
+inserts, so a table can be re-synced repeatedly without duplicating a row.
 
 ## Why a local database
 
@@ -200,10 +210,10 @@ built: [schema.md](schema.md).
 |---|---|
 | `403` on one table, others fine | that table is outside your Sharadar subscription tier |
 | A query returns exactly 10,000 rows | `paginate=True` was omitted; check for the `UserWarning` |
-| `LimitExceededError` | over ~1M rows in one call — narrow the filter or use the export |
+| `LimitExceededError` | over ~1M rows in one `get_table` call — narrow the filter or use the export (the loader's own sync does not hit this) |
 | A column is entirely `NULL` after a load | `unittype` in `INDICATORS` disagrees with the actual values, so the value-guarded cast nulled every one. A suspiciously empty column is usually this |
 | The export appears to hang | it is generated server-side on request; a large table takes minutes before the download starts |
-| Nightly sync pulls far more than a day of rows | the table restamps `lastupdated` on adjustment (`SEP`, `SFP`) — expected, and the reason windowing exists |
+| Nightly sync pulls far more than a day of rows | the table restamps `lastupdated` on adjustment (`SEP`, `SFP`) — expected, and the reason the sync streams pages rather than holding a pull in memory |
 
 ## Reference
 

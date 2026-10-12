@@ -36,7 +36,8 @@ Three processes. Only the first is stateful.
 Postgres 16        the dataset                    port 5432, not public
 FastAPI            core.api.main:app              port 8001, behind the proxy
 Next.js            web/ (npm start)               port 3010, behind the proxy
-Nightly refresh    a schedule in Setup            the API's own scheduler
+Nightly refresh    a schedule in Setup, or a      the API's own scheduler (only with
+                   systemd timer                  SETUP_ENABLED=true), or the timer
 ```
 
 The API and the frontend are both stateless, so they scale independently and hold nothing
@@ -65,7 +66,7 @@ development convenience and nothing more. Bind the port to localhost only
 
 Then build it with `python -m core.setup.bootstrap --create-db` (see
 [setup/database.md](setup/database.md) — it is resumable, and `--watch` follows a long run from
-another terminal). Expect several hours for the Research tier and most of a day for Full.
+another terminal). Expect several hours for a partial build and most of a day for a full one.
 
 ### API
 
@@ -74,8 +75,12 @@ pip install -r core/requirements.txt
 uvicorn core.api.main:app --host 0.0.0.0 --port 8001 --workers 4
 ```
 
-Behind nginx/Caddy on `/api/v1`. It is read-only over the database and holds an in-process
-snapshot cache, so workers are independent and restarting is free.
+Behind nginx/Caddy on `/api/v1`. It reads the database, with one exception: when
+`screener_snapshot` is older than the latest `daily` date, the first screener request
+rebuilds and persists it (and still serves if the write fails). It holds an in-process
+snapshot cache, so workers are independent and restarting is free. Research reports and
+saved screens are files the API writes under `RESEARCH_DIR` and `config/screens/`, so those
+live on the API's machine.
 
 Leave `SETUP_ENABLED` unset here. It mounts the endpoints that start and stop ingests, and
 [CONFIGURATION.md](CONFIGURATION.md#setup_enabled--the-build-control-surface) explains why
@@ -187,26 +192,31 @@ error; a redundant banner on your own machine is not.
 ### Nightly refresh
 
 One orchestrator does the whole update in the right order — each Sharadar table in its
-correct **incremental** mode, then FRED and FINRA, then every derived table rebuilt once
-the inputs are fresh. It exits non-zero if any step fails.
+correct **incremental** mode, then FRED, FINRA and the SEC fund map, then every derived
+table rebuilt once the inputs are fresh. It exits non-zero if any step fails.
 
 ```bash
-python -m core.setup.bootstrap
+python -m core.setup.bootstrap --force
 ```
+
+`--force` is required. Without it bootstrap resumes a build: every step whose table already
+holds rows is skipped, so a nightly run would do nothing. The app's scheduled update jobs
+pass `--force` for the same reason.
 
 **systemd timer** (Linux):
 
 ```ini
-# /etc/systemd/system/investing-update.service
+# /etc/systemd/system/cashchirp-update.service
 [Service]
 Type=oneshot
-WorkingDirectory=/srv/investing
-ExecStart=/srv/investing/.venv/bin/python -m core.setup.bootstrap
-StandardOutput=append:/var/log/investing-update.log
+User=cashchirp
+WorkingDirectory=/opt/cashchirp
+ExecStart=/opt/cashchirp/.venv/bin/python -m core.setup.bootstrap --force
+StandardOutput=append:/var/log/cashchirp-update.log
 StandardError=inherit
 ```
 ```ini
-# /etc/systemd/system/investing-update.timer
+# /etc/systemd/system/cashchirp-update.timer
 [Timer]
 OnCalendar=*-*-* 22:00:00
 Persistent=true
@@ -215,10 +225,12 @@ WantedBy=timers.target
 ```
 
 **Or use the app's own scheduler.** The API runs a daemon thread that fires schedules
-stored in Postgres, editable at `/setup/schedules`. It needs no root and survives a
-restart, but nothing fires while the API is stopped — which is the right trade for a tool
-whose only control surface is that same API. Use a systemd timer instead when the ingest
-must run on a box where the app itself is not kept up.
+stored in Postgres, editable at `/setup/schedules` (interval, daily, weekly or monthly).
+It needs no root and survives a restart, but nothing fires while the API is stopped —
+which is the right trade for a tool whose only control surface is that same API. The
+scheduler starts only when `SETUP_ENABLED=true`, so it belongs on a private API instance,
+not a public one. Use a systemd timer instead when the ingest must run on a box where the
+app itself is not kept up, or where setup is disabled.
 
 Whichever you pick, use one: two schedulers pointed at the same database will overlap.
 
@@ -248,10 +260,10 @@ git). If rebuilding the derived tables takes longer than restoring them, dump th
 selectively.
 
 The research folder (`RESEARCH_DIR`, default `<repo>/research/`) is the one thing here that
-exists nowhere else: your notes, DD reports, groups, snapshots and backtest reports are plain
-files, deliberately kept out of git and out of Postgres. Copy it somewhere off the machine on
+exists nowhere else: your reports (with their per-stock DD, red teams and notes), snapshots
+and backtest reports are plain files, deliberately kept out of git and out of Postgres. Copy it somewhere off the machine on
 a schedule (`rsync`/`tar` it, or make the folder its own private git repo). Deploys never
-touch it — `deploy.sh` and the homelab push hook only update tracked files.
+touch it — `deploy.sh` only updates tracked files.
 
 ---
 

@@ -1,8 +1,8 @@
 # Configuration
 
 Two files hold everything that is *configuration*: `core/.env` (secrets and environment) and
-`config/screens/*.yaml` (what you're looking for). Your research — notes, DD, groups,
-snapshots, backtest reports — is content, not configuration; it lives in the research folder
+`config/screens/*.yaml` (what you're looking for). Your research — reports with their
+DD and notes, snapshots, backtest reports — is content, not configuration; it lives in the research folder
 (`RESEARCH_DIR`, see [RESEARCH.md](RESEARCH.md)).
 
 ---
@@ -21,7 +21,7 @@ Copy from `core/.env.example`. Gitignored — secrets never leave your machine.
 | `NASDAQ_DATA_LINK_API_KEY` | — | Required for any Sharadar load. |
 | `FRED_API_KEY` | — | Required for the macro layer. Free. |
 | `SEC_USER_AGENT` | — | **Required for anything reading filings.** Your real name and e-mail. No default: SEC rate-limits by this identity, so a shared one gets everyone blocked. |
-| `RESEARCH_DIR` | `<repo>/research` | Where your research lives — stock notes, DD, groups, snapshots, backtest reports. Plain files, gitignored. See [RESEARCH.md](RESEARCH.md). |
+| `RESEARCH_DIR` | `<repo>/research` | Where your research lives — reports (with per-stock DD, red teams and notes), snapshots, backtest reports. Plain files, gitignored. See [RESEARCH.md](RESEARCH.md). |
 
 ---
 
@@ -67,7 +67,7 @@ values.
 ### Shape
 
 ```yaml
-id: my-screen                # filename stem; must match
+id: my-screen                # keep equal to the filename stem (not checked)
 title: Short human name
 description: >
   What you are looking for and why. This is the hypothesis the screen encodes —
@@ -141,8 +141,11 @@ growth:
 
 ### Validation
 
-Specs are validated at load. A misspelled gate, a string where a number belongs, or a
-column that doesn't exist raises an error rather than being ignored. A screen that
+Specs are validated at load: a gate with an unknown key or no bound, a string where a
+number belongs, a bad `on_null`, or a growth rule missing a field raises an error rather
+than being ignored. A gate or growth rule naming a column that isn't in the snapshot raises
+when the screen is run. Unknown keys under `universe` and at the top level are not checked,
+so a misspelled `exclude_sector` is silently ignored. A screen that
 silently skipped a gate would return a plausible basket that is not the filter you
 wrote — which is worth failing loudly over, since the output looks correct either way.
 

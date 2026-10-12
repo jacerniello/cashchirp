@@ -1,8 +1,9 @@
 # Sources
 
 Long-form notes on each data source: what it is, what it covers, how we access it, and
-where it lands. [`../setup/sources.md`](../setup/sources.md) is the short provenance table
-generated from the same registry; this page is the reading behind it.
+where it lands. [`../setup/sources.md`](../setup/sources.md) is the short provenance table,
+a hand-maintained copy of the registry in `core/backend/sources.py`; this page is the
+reading behind it.
 
 > Access keys live in `core/.env` (gitignored) — never commit credentials here.
 
@@ -21,19 +22,21 @@ generated from the same registry; this page is the reading behind it.
   - API key: `NASDAQ_DATA_LINK_API_KEY` in `core/.env`.
 - **How the API works:** [nasdaq-data-link.md](nasdaq-data-link.md) — auth and
   subscription tiers, bulk export vs the tables query API, cursor pagination and the
-  ~1M-row cap, and the `INDICATORS` metadata table the loader is driven by.
+  SDK's ~1M-row cap, and the `INDICATORS` metadata table the loader is driven by.
 - **In this repo:** wired into `core/` —
   - **Generic loader (the standard for almost every table):**
     `core/backend/ingest/sharadar/sharadar_generic.py`, CLI
     `python -m core.setup.bootstrap --dataset sharadar:<CODE>`. Schema-driven: reads the
     table's column types + primary key from `SHARADAR/INDICATORS`, creates a matching
-    Postgres table (named after the code, lowercased), and upserts the bulk CSV.
-    Idempotent (re-run to update), prints stage/MB progress. Casts are value-guarded (a
+    Postgres table (named after the code, lowercased), and loads the bulk CSV. Later runs
+    sync incrementally and upsert; `--full` rebuilds by copy-and-swap. Prints stage/MB
+    progress. Casts are value-guarded (a
     bad value → NULL, never a failed load). Per-table sync mode lives in the registry's
     `Dataset` entry, not in command-line flags.
   - **SEP → flat `sep` mirror** (faithful, incl. `closeunadj`), loaded by the generic
     loader like every other table; daily incremental via
-    `python -m core.setup.bootstrap --dataset sharadar:SEP`. The app's Company page
+    `python -m core.setup.bootstrap --dataset sharadar:SEP --force` (without `--force`
+    bootstrap skips a table that already holds rows). The app's Company page
     reads `sep` (by permaticker) directly.
   - **permaticker:** stamped on every table from `TICKERS` (per `(table, ticker)`, never
     derived); the loader stamps it after every ticker-bearing table loads. There is no
@@ -41,16 +44,21 @@ generated from the same registry; this page is the reading behind it.
     [schema.md](schema.md#sharadar-mirror-tables) were checked against the downloaded
     files by hand.
   - **EVENTS codes (special):** `python -m core.setup.bootstrap --dataset sharadar:EVENTS`
-    loads the table and then builds the `event_codes` legend + the `events_decoded` view
-    (e.g. `35` = Schedule 13D filing) — the basis for catalyst tagging.
+    loads the `events` table only. The `event_codes` legend and the `events_decoded` view
+    (e.g. `35` = Schedule 13D filing) are built by `load_event_codes()` in
+    `core/backend/ingest/sharadar/sharadar_event_codes.py`, which no bootstrap step or Setup
+    job currently calls, so on a fresh build `event_codes` is empty and the view is absent.
   - **Downloads:** a zip lands in `core/data/downloads/sharadar/<CODE>.zip` (gitignored)
     and is deleted once the rows are committed — nothing reads it afterwards. There is no
-    download-only command.
+    download-only command. A `--full` rebuild needs free disk for a second copy of the
+    table while it builds.
   - **load ledger:** every run (download / backfill / sync) is recorded in `load_log`
-    with `requested_at` + `completed_at`; `the Runs tab at /setup/runs` shows the
+    with `requested_at` + `completed_at`; the Runs tab at `/setup/runs` shows the
     latest run per dataset (what's loaded + when last requested → selective refresh).
-    `sync_state` holds per-table incremental watermarks.
-  - schedule: a daily entry in Setup -> Schedules, fired by the API's own scheduler.
+    `sync_state` holds per-table incremental watermarks; the Watermarks tab at
+    `/setup/watermarks` rewinds one.
+  - schedule: an entry in Setup → Schedules (interval, daily, weekly or monthly), fired by
+    the API's own scheduler, which runs only when `SETUP_ENABLED=true`.
 - **Key tables:** `SEP` (equity prices EOD), `SF1` (fundamentals), `SF2` (insiders),
   `SF3`/`SF3A`/`SF3B` (13F institutional), `DAILY` (mktcap/PE/EV), `METRICS`, `TICKERS`,
   `ACTIONS` (corporate actions), `EVENTS`, `SP500` (constituent changes), `SFP` (fund
@@ -59,7 +67,7 @@ generated from the same registry; this page is the reading behind it.
   SDK: https://docs.data.nasdaq.com/
 - **Notes:** most tables carry a `lastupdated` column, and the daily sync filters on
   `lastupdated.gte=<watermark>` rather than re-pulling full history. The tables without
-  one are handled by `sync_col` or by re-pulling recent quarters; see
+  one are handled by `sync_col` or, for `SF3`, by replacing recent quarters; see
   [schema.md](schema.md#operational-notes-hard-won--read-before-changing-the-loader).
 
 ---
@@ -131,7 +139,8 @@ Macro data is revised for months or years after first release. Two forms of FRED
   - CLI: `python -m core.setup.bootstrap --only-phase fred` loads **point-in-time
     vintages** for both MD and QD, plus the commodity spot series. The revised
     `current.csv` is not loaded: it is not point-in-time, and nothing in the app wants it.
-    Every run is logged to `load_log` (source=`FRED`).
+    Add `--force` to refresh once the tables hold rows. Every run is logged to `load_log`
+    (source=`FRED`).
 - **Key series (FRED-MD examples):** `CPIAUCSL`/`PCEPI` (inflation), `UNRATE`/`PAYEMS`
   (labor), `FEDFUNDS`/`GS10`/`GS1`/`T10Y…` (rates/curve), `BAA`/`AAA` (credit), `S&P 500`,
   `VIXCLSx` (risk), `INDPRO`/`HOUST` (activity).
@@ -152,7 +161,7 @@ Macro data is revised for months or years after first release. Two forms of FRED
   2020-12-31, 21M by 2021-01-29), which is a useful reference case for checking the
   split-adjustment caveat below.
 - **Coverage / history:** **2017-12-29 → present** (verified by probe), **bi-monthly**
-  (mid-month + end-of-month settlement, ~24 dates/yr), ~19k symbols/date, ~3.8M rows.
+  (mid-month + end-of-month settlement, ~24 dates/yr), ~19k symbols/date, ~3.9M rows.
 - **Status:** free and public — no API key or OAuth, and no `core/.env` entry needed.
 - **Access:** `POST https://api.finra.org/data/group/otcMarket/name/consolidatedShortInterest`
   with `Accept: application/json` (defaults to CSV otherwise). Pagination via `limit`
@@ -178,8 +187,9 @@ Macro data is revised for months or years after first release. Two forms of FRED
     split factor (GME: 61.7M short ÷ 279M split-adj shares = 22% vs. the
     real ~88% on ~70M pre-split shares). Reconcile splits (like `holder_timeseries`'
     `adj_units`) when building the feature.
-  - CLI: `python -m core.setup.bootstrap --dataset finra:short_interest` — an incremental
-    sync once a watermark exists, a full 2017→present backfill when it doesn't.
+  - CLI: `python -m core.setup.bootstrap --dataset finra:short_interest` — a full
+    2017→present backfill on an empty table; with `--force`, an incremental sync from the
+    watermark.
     `sync_state` holds the settlement-date watermark; every run is logged to `load_log`
     (source=`FINRA`).
 - **Docs:** https://developer.finra.org/docs (Query API) ·
@@ -187,7 +197,7 @@ Macro data is revised for months or years after first release. Two forms of FRED
 
 ## SEC EDGAR — Mutual-fund ticker / series / class map
 
-- **Provider:** U.S. SEC (EDGAR). Free, no key.
+- **Provider:** U.S. SEC (EDGAR). Free, no key (but `SEC_USER_AGENT` is required, below).
 - **What:** `company_tickers_mf.json` — one row per registered fund share class:
   `(cik, seriesId, classId, symbol)`. This is the structure behind EDGAR's "Series for
   CIK = …" page: a filer CIK owns many Series (funds), each with several
@@ -202,11 +212,11 @@ Macro data is revised for months or years after first release. Two forms of FRED
 - **Access:** plain HTTPS GET of `https://www.sec.gov/files/company_tickers_mf.json`
   (~1 MB, ~28k rows). ⚠ The SEC **requires a descriptive `User-Agent` with a contact
   e-mail** or returns 403 — set `SEC_USER_AGENT` in `core/.env` (see
-  [docs/CONFIGURATION.md](../../docs/CONFIGURATION.md)). SEC rate-limits by that identity,
+  [CONFIGURATION.md](../CONFIGURATION.md)). SEC rate-limits by that identity,
   so use your own contact rather than borrowing one.
 - **In this repo:** loaded into `sec_fund_class` (see [schema.md](schema.md)) by
   `python -m core.setup.bootstrap --dataset sec:fund_classes`, and refreshed by the `sec`
-  phase of a full `bootstrap` run. Reference data, changes slowly.
+  phase of a full `bootstrap --force` run. Reference data, changes slowly.
 - **Caveat:** the JSON has no series/class display names ("Investor Shares" etc.) —
   we show the symbol + our own fund name (the series name we derive from a carried class).
   Class-level names would require scraping the EDGAR HTML page.
