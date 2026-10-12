@@ -23,7 +23,7 @@
     "fair_value_bull": 650,
     "upside_base_pct": 0.71
   },
-  "tldr": "This file is a TEMPLATE. It exercises the full DD layout: TL;DR, charts, bull/bear, thesis points, priced-in expectations, scenarios, analyst estimates, catalysts, the 24-item checklist, risks, verdict, data gaps, and sources. Subagents copy this shape into <TICKER>.json with real, sourced research.",
+  "tldr": "This file is a TEMPLATE. It exercises the full DD layout: TL;DR, charts, bull/bear, thesis points, priced-in expectations, scenarios, analyst estimates, catalysts, the 24-item checklist, risks, verdict, data gaps, and sources. Subagents copy this shape into dd.json with real, sourced research.",
   "bull_case": "High-moat franchise with sticky revenue, expanding margins, and a balance sheet that funds buybacks. The market is extrapolating a temporary growth scare; normalization alone re-rates the multiple.",
   "bear_case": "If the disruption thesis is right, net retention rolls over and the multiple is justified — cheap stays cheap. Quantify the churn level that breaks the base case.",
   "verdict": "Replace with a real synthesis: the weight of evidence, the rating, and the one or two things that would move it up or down.",

@@ -10,7 +10,7 @@ break.
 
 ## Before you start
 
-- Read `reports/<id>/stocks/<permaticker>/dd.json` in full, and `stocks/<permaticker>/notes.md`
+- Read `reports/<id>/stocks/<permaticker>/dd.json` in full, and the `notes.md` beside it
   if present (the owner's own view).
 - Note the DD's rating, base-case price target and the 2–3 claims the thesis actually rests
   on. Those are your targets; do not spend the review on side issues.

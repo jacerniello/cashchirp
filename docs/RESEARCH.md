@@ -191,7 +191,7 @@ The primary labels are relative so they mean the same thing in 2003 (median name
 *holdout* = 2015–2022 (windows to 2024); 2013–14 is a gap so the two never share a month.
 Choose signals, thresholds and gates on discovery only; look at the holdout **once**, for
 the final screens, and keep the result whatever it is. Thresholds come from a small grid
-declared in code before any result is seen (`study.SWEEPS`), not from optimisation.
+declared in code before any result is seen (`SWEEPS` in `study/analysis.py`), not from optimisation.
 
 **Reading the numbers** — each report has a *Labels* switch (primary / absolute / 12-month):
 

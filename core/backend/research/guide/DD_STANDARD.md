@@ -40,7 +40,7 @@ one you are testing in `tldr`.
 SEC EDGAR requires a descriptive `User-Agent` carrying a **real contact** on every request,
 or it returns `403`. Set `SEC_USER_AGENT` in `core/.env` (see
 [`../../docs/CONFIGURATION.md`](../../docs/CONFIGURATION.md)) and send it as the header —
-`research/sec_earnings.py` and `core/scripts/load/load_sec_fund_classes.py` both read it. Do not
+`core/backend/ingest/sec/sec_fund_classes.py` reads it. Do not
 borrow someone else's: SEC rate-limits by that identity and blocks both of you.
 
 Full-text search: `https://efts.sec.gov/LATEST/search-index?q=...` /
@@ -152,7 +152,7 @@ See `_guide/dd_template.json` for a fully-populated example (it lives in `_guide
 
 ```jsonc
 {
-  "id": "TMPL",                      // == ticker, filename stem
+  "id": "TMPL",                      // == ticker
   "ticker": "TMPL",
   "permaticker": 100001,             // int; links to /company/<permaticker>. null if unknown
   "company": "Example Corp",
@@ -312,7 +312,7 @@ quantitative pass. Two optional fields carry this:
     "hypothesis": "Re-rating from multiple-compression unwind as the AI fear fades.",
     "kill_criteria": "If cloud growth prints <8% for two straight quarters, thesis is wrong.",
     "check_by": "2026-Q4",
-    "experiment_file": "research/experiments/001-tmpl-rerating-thesis.md"
+    "experiment_file": "notes/experiments/001-tmpl-rerating-thesis.md"
   }
 }
 ```
@@ -322,7 +322,7 @@ A deep pass must: compute the reverse-DCF from our DB fundamentals (FCF, share c
 and trace the single most diagnostic KPI; build a named-peer comp table; pull insider/13F
 signal from the local Postgres (`derived.insider_company`, institutional tables); and write a
 pre-registered falsification **both** into `deep.falsification` **and** as a real experiment
-file under `research/experiments/` (follow that folder's template). The kill-criteria are
+note in the report (`reports/<id>/notes/experiments/<name>.md`). The kill-criteria are
 the point: a DD without one is a story, not a position.
 
 ## Writing a report
