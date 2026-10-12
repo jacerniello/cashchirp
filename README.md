@@ -44,7 +44,7 @@ How the API works and how the loader uses it:
 [docs/reference/nasdaq-data-link.md](docs/reference/nasdaq-data-link.md). How the build
 runs: [docs/setup/database.md](docs/setup/database.md).
 
-Three parts:
+Four parts:
 
 - `core/` — the data engine. A Postgres database mirroring the Sharadar tables (one flat
   table per Sharadar product) plus FRED macro panels, the query modules over it, and
@@ -53,7 +53,7 @@ Three parts:
 - `web/` — the frontend. Next.js, React and Tailwind: screener, research, backtests,
   company pages, macro and commodities. Routes are in `web/src/app`, shared components in `web/src/components`.
 - `config/screens/` — the screens. YAML filters that say what you are looking for. This is
-  the part you are meant to edit; the screener and the idea board both read these files.
+  the part you are meant to edit; the screener, snapshots and backtests all read these files.
 - **Research and backtests** — frozen screener snapshots, reports (dated AI due diligence
   with their own rankings and notes), and point-in-time backtests of your screens. The tooling is
   in the repo; your research is plain files in a gitignored folder that you can point an AI
@@ -108,19 +108,25 @@ cd web && API_URL=http://127.0.0.1:8001 npm run dev  # frontend only (:3000)
 
 ## Screens
 
-Screens live in `config/screens/` and run from the UI: `/screener` to build and save one,
-`/screener/ideas` to run every saved screen against the latest snapshot.
+Screens live in `config/screens/` and run from the Screener's tabs: Filter (`/screener`)
+to build and save one, Saved screens (`/screener/ideas`) to see every saved screen with its
+live match count, and Snapshots (`/screener/snapshots`) to freeze a result.
 
-There is no historical validation here. A screen returns a list of candidates to look
-into, not evidence that the filter has an edge.
+A screen returns a list of candidates to look into, not evidence that the filter has an
+edge. Testing that is what a backtest (`/backtests`) is for.
 
 ## Data
 
-- Load or update one Sharadar table: `python -m core.setup.bootstrap --dataset sharadar:<CODE>`.
+- Load one Sharadar table: `python -m core.setup.bootstrap --dataset sharadar:<CODE>`. Add
+  `--force` to update a table that already holds rows; without it the step is skipped.
   One schema-driven loader; each table is a 1:1 mirror.
-- Refresh everything: `python -m core.setup.bootstrap`.
-- See what is loaded and when: the Runs tab at `/setup/runs`.
+- Refresh everything: `python -m core.setup.bootstrap --force`. Without `--force`, steps
+  whose table already holds rows are skipped (that is how a build resumes).
+- See what is loaded and when: the Setup overview at `/setup`. The Runs tab at
+  `/setup/runs` lists every job the app has started.
 - If a load hangs: the Database tab at `/setup/database`. It is usually lock contention.
+
+The `/setup` pages are off by default; set `SETUP_ENABLED=true` in `core/.env` to serve them.
 
 API keys live in `core/.env`, which is gitignored. Downloaded data under `core/data/` is
 gitignored too, and can be re-fetched.

@@ -69,13 +69,13 @@ This is the long step, and it has its own guide: **[database.md](database.md)**.
 
 ```bash
 python -m core.setup.bootstrap --check       # preflight: env file, keys, Postgres, database
-python -m core.setup.bootstrap --plan        # what will run, from where, how big
+python -m core.setup.bootstrap --plan        # what will run, in which mode, from where
 python -m core.setup.bootstrap --sources     # where every byte comes from
 python -m core.setup.bootstrap --create-db   # go
 ```
 
 - [ ] Preflight passes (`--check` prints `all checks passed`)
-- [ ] You've looked at `--plan` and accepted the size
+- [ ] You've looked at `--plan` and know what it will download
 - [ ] Build finished, or you know which steps failed
 
 Re-running the same command skips finished steps, so a failure or a Ctrl-C costs only
@@ -95,7 +95,8 @@ python -m core.setup.bootstrap --status   # tables, row counts, sizes on disk
 Once the app is running, **http://localhost:3000/setup** shows the same picture in the
 browser — per-dataset loaded/missing, sizes, sources, and the live progress of a build
 that is still running. It is the page to open when another page errors: it tells
-"not loaded yet" apart from "the app is broken".
+"not loaded yet" apart from "the app is broken". The setup pages are off by default; set
+`SETUP_ENABLED=true` in `core/.env` to serve them.
 
 ### 6 · Run it
 
@@ -106,7 +107,7 @@ open http://localhost:3000
 
 - [ ] http://localhost:3000 loads
 - [ ] http://127.0.0.1:8001/health returns `{"status":"ok"}`
-- [ ] `/screener/ideas` shows a basket
+- [ ] `/screener/ideas` lists your saved screens, each with a match count
 
 The last of those covers the whole path at once — database, derived snapshot, and your
 screen spec.
@@ -124,10 +125,14 @@ Nothing so far is specific to you. This is:
 `bootstrap` goes from nothing to a database. After that, refreshes are incremental:
 
 ```bash
-python -m core.setup.bootstrap
+python -m core.setup.bootstrap --force
 ```
 
-- [ ] Scheduled nightly (optional) — see [../DEPLOYMENT.md](../DEPLOYMENT.md#nightly-refresh)
+`--force` matters: without it, every step whose table already holds rows is skipped, which
+is how a build resumes but means nothing is refreshed.
+
+- [ ] Scheduled (optional) — in the app at `/setup/schedules`, or from outside it: see
+      [../DEPLOYMENT.md](../DEPLOYMENT.md#nightly-refresh)
 
 It exits non-zero if any step fails, so anything that alerts on a non-zero exit gives
 you monitoring. A broken nightly job otherwise gives no signal at all — it just keeps
@@ -143,6 +148,9 @@ The macro layer is free and independent. Build just it:
 python -m core.setup.bootstrap --create-db --only-phase schema fred
 ```
 
+Preflight treats `NASDAQ_DATA_LINK_API_KEY` as required and only checks that it is
+non-empty, so set it to a placeholder if you have no subscription.
+
 You get the `/macro` endpoints. The screener, company, insider and institutional pages
 return empty — and the screener reports that its gated columns are unpopulated rather
 than pretending to have screened anything.
@@ -156,6 +164,10 @@ You do not need every table. `--only` takes Sharadar table codes:
 | Screener, ideas, company fundamentals | `--only TICKERS SF1 DAILY` |
 | + price history and charts | `--only TICKERS SF1 DAILY SEP` |
 | + insider / 13F / ETF pages | everything |
+
+`--only` runs nothing outside the Sharadar phase, schema included, so on an empty database
+run `--create-db --only-phase schema` first. The screener builds its snapshot on demand
+when the derived table is missing.
 
 `SEP` and the 13F tables are what make a build large; the rest are comparatively small.
 Add tables later — the loaders are incremental and independent — and use

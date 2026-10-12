@@ -70,15 +70,16 @@ US equity fundamentals, prices, corporate actions, insider transactions and 13F 
 | S&P 500 membership changes | `SHARADAR/SP500` | `sp500` | sync |
 | events | `SHARADAR/EVENTS` | `events` | sync |
 | insider transactions | `SHARADAR/SF2` | `sf2` | sync |
-| 13F holdings by investor | `SHARADAR/SF3A` | `sf3a` | sync |
-| 13F holdings by security | `SHARADAR/SF3B` | `sf3b` | sync |
+| 13F holdings by security | `SHARADAR/SF3A` | `sf3a` | sync |
+| 13F holdings by investor | `SHARADAR/SF3B` | `sf3b` | sync |
 | 13F holdings detail | `SHARADAR/SF3` | `sf3` | quarters |
 
 - **tickers (security master)** — Load first — builds permaticker_lookup for every other table.
 - **equity prices (EOD)** — The big one. Required for price history and charts.
-- **fund prices (ETF/CEF)** — Restamps >1M rows/day, so that day is pulled in ticker-chunks.
+- **fund prices (ETF/CEF)** — Restamps many rows per day; the sync streams them page by page.
 - **daily valuation (mktcap, P/E, EV)** — Drives the screener snapshot.
 - **insider transactions** — No lastupdated column — deltas come off filingdate.
+- **13F holdings by investor** — Also the investor dimension: investorid -> investorname for SF3.
 - **13F holdings detail** — No change column at all — recent quarters are re-pulled in key-chunks.
 
 ---
@@ -116,7 +117,7 @@ Consolidated short interest per security per settlement date.
 
 | Dataset | Pulled from | Writes | Mode |
 |---|---|---|---|
-| short interest | [api.finra.org/ (equity short interest)…](https://api.finra.org/ (equity short interest)) | `finra_short_interest` | — |
+| short interest | `https://api.finra.org/ (equity short interest)` | `finra_short_interest` | — |
 
 ---
 
@@ -182,6 +183,8 @@ Two constraints in particular:
 
 - **`TICKERS` loads first.** It builds `permaticker_lookup`, which every other
   table's `permaticker` stamping reads. Load it late and the rest stamp nothing.
+- **`SF3B` loads before `SF3`.** SF3 ships `investorid` without the name; the sf3 load
+  reads SF3B's investorid -> investorname map to put it back.
 - **Derived tables rebuild last**, once every input is fresh. Rebuilding one
   mid-ingest gives you a snapshot of half-updated data that looks perfectly valid.
 

@@ -25,11 +25,13 @@ Everything else on this page is a variation on that.
 |---|---|
 | `--check` | Preflight only. Touches nothing. |
 | `--plan` | The step list: what runs, in which mode, from which source. |
-| `--sources` | Provenance: provider, licence, credential, endpoint, size. |
+| `--sources` | Provenance: provider, licence, credential, endpoint, tables written. |
 | `--create-db` | Create the database if missing, then build. |
 | `--only SEP SF1` | Only these Sharadar tables. |
 | `--only-phase fred` | Only these phases (`schema sharadar fred finra sec derived`). |
-| `--force` | Re-run steps whose tables already hold rows. |
+| `--dataset sharadar:SEP` | Only these registry dataset keys, run as their own job. |
+| `--force` | Re-run steps whose tables already hold rows. For Sharadar this is an incremental sync, not a re-download. |
+| `--full` | Re-download each Sharadar table into a fresh copy, check and diff it, then swap it in. Implies `--force`. |
 | `--status` | What the database holds right now — tables, rows, size on disk. |
 | `--watch` | Follow a run started in another terminal. |
 | `--plain` | One line per event instead of a redrawing display (for logs/CI). |
@@ -47,9 +49,10 @@ Checks the things that commonly fail, and prints the fix for any that do:
 ```
 Preflight
   PASS  core/.env present                        /path/to/core/.env
-  PASS  NASDAQ_DATA_LINK_API_KEY set             …wxyz
   PASS  FRED_API_KEY set                         …abcd
-  PASS  Postgres reachable at 127.0.0.1:5432     server 16.14
+  PASS  NASDAQ_DATA_LINK_API_KEY set             …wxyz
+  PASS  SEC_USER_AGENT set                       ….com
+  PASS  Postgres reachable at localhost:5432     server 16.14
   FAIL  database 'investing' exists              missing
 
 Blocked:
@@ -66,7 +69,9 @@ need a change on your side.
 python -m core.setup.bootstrap --plan
 ```
 
-Steps are grouped by phase, each with its sync mode and its source.
+Steps are grouped by phase, each with its sync mode and its source. `--plan` runs the
+preflight first and stops if it is blocked, so on a server without the database yet, run
+it after `--create-db` has created one (the Docker Postgres creates it for you).
 
 **It does not predict sizes or durations, deliberately.** While a build runs, completion
 is whatever the loaders *report* — bytes copied against the bulk export's own size, or an
@@ -101,7 +106,7 @@ and two constraints in that order are load-bearing:
 While it runs:
 
 ```
-Building investing  127.0.0.1:5432   elapsed 2:14:07
+Building investing  localhost:5432   elapsed 2:14:07
 
  ✔ schema (create tables)                 0:00
  ✔ sharadar tickers (security master)     0:18   23,412 rows
@@ -110,7 +115,7 @@ Building investing  127.0.0.1:5432   elapsed 2:14:07
  · sharadar fund prices (ETF/CEF)
  · sharadar daily valuation
 
- ████████░░░░░░░░░░░░░░░░░░░░   28.4%   4/25 steps
+ ████████░░░░░░░░░░░░░░░░░░░░   28.4%   4/24 steps   (reported, not estimated)
 ```
 
 **A failed step does not stop the run.** It is recorded and the rest continues, so one
@@ -143,9 +148,9 @@ Steps whose table already holds rows are **skipped**, so a resume costs only the
 didn't finish. Ctrl-C is safe.
 
 ```bash
-python -m core.setup.bootstrap --force            # redo everything, ignore existing rows
-python -m core.setup.bootstrap --only SEP SF1     # rebuild specific Sharadar tables
-python -m core.setup.bootstrap --only-phase derived   # just rebuild the derived tables
+python -m core.setup.bootstrap --force            # re-run every step, ignoring existing rows
+python -m core.setup.bootstrap --only SEP SF1 --force       # re-sync specific Sharadar tables
+python -m core.setup.bootstrap --only-phase derived --force # just rebuild the derived tables
 ```
 
 ### When a step fails
@@ -154,10 +159,10 @@ python -m core.setup.bootstrap --only-phase derived   # just rebuild the derived
 |---|---|---|
 | `no watermark / table empty — full backfill` | normal on a first run | nothing — that's the backfill starting |
 | API `403` / `429` | key wrong, or your subscription lacks that table | check the key; confirm your Sharadar plan covers it |
-| a single table exceeds the query-API cap | Sharadar restamped a huge day | `--only <TABLE>` re-runs just it |
+| a single table exceeds the query-API cap | Sharadar restamped a huge day | `--only <TABLE> --force` re-runs just it |
 | `connection refused` | Postgres not running | `cd core && docker compose up -d` |
 | a step hangs for many minutes | lock contention | the Database tab at `/setup/database` |
-| out of disk mid-build | the 2× headroom rule | free space, then re-run — it resumes |
+| out of disk mid-build | not enough headroom for index builds and rebuilds | free space, then re-run — it resumes |
 
 **`unjam` is the first thing to try on a stall.** A hang is almost always Postgres lock
 contention: the app rebuilding a derived table needs an exclusive lock, an
@@ -172,7 +177,8 @@ scoped, never touching other projects or its own connection.
 python -m core.setup.bootstrap --status   # tables, row counts, sizes
 ```
 
-The Runs tab at `/setup/runs` shows the same from `load_log` — the latest load per dataset.
+The Setup overview at `/setup` shows the same per dataset, with the latest load from
+`load_log`. The Runs tab at `/setup/runs` lists every job the app has started.
 
 `--status` tells you rows *exist*, not that they are right. Numbers in finance look
 plausible while being wrong, and a silently truncated table is indistinguishable from a
@@ -194,13 +200,19 @@ curl 'http://localhost:8001/api/v1/screener/?limit=5'
 is incremental:
 
 ```bash
-python -m core.setup.bootstrap           # only what changed
+python -m core.setup.bootstrap --force   # only what changed
 python -m core.setup.bootstrap --plan    # the step list, without running it
 ```
 
-No table does a full re-download on a routine run. The routine refresh and the from-zero
+Without `--force`, steps whose table already holds rows are skipped — that is the resume
+behaviour, and on a built database it refreshes nothing.
+
+No table does a full re-download on a routine run. When a local copy is suspect rather
+than stale, `--full` re-downloads each Sharadar table into a fresh copy, diffs it and swaps
+it in, which also catches rows Sharadar deleted. It takes hours and needs disk for a
+second copy of the largest table. The routine refresh and the from-zero
 build are the same command reading the same registry, so there is no second plan to drift.
-Scheduling it:
+Scheduling it: in the app at `/setup/schedules`, or from outside it, see
 [../DEPLOYMENT.md](../DEPLOYMENT.md#nightly-refresh).
 
 ## Adding a data source
@@ -210,7 +222,7 @@ loader — not an edit in four places.
 
 1. Add a `Source` (if it's a new provider) and one or more `Dataset` entries to
    [`core/backend/sources.py`](../../core/backend/sources.py) — provider, endpoint,
-   licence, credential, size, and the tables it writes.
+   licence, credential, refresh mode, and the tables it writes.
 2. Give it a runner in `_runner()` in
    [`core/setup/bootstrap.py`](../../core/setup/bootstrap.py), or reuse a phase that
    already has one (a new Sharadar table needs no code at all — the loader is
