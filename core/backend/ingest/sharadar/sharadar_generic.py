@@ -12,15 +12,16 @@ observable. Two entry points:
   via the query API and upsert. The watermark comes from `sync_state` (or, first
   time, from the max `<sync_col>` already in the table — so an existing backfill
   can sync without a full re-download). `sync_col` defaults to `lastupdated`, but
-  any date column works (`--sync-col date|filingdate|calendardate`), so tables
+  any date column works (set per table in the registry, `core/backend/sources.py`), so tables
   Sharadar ships without a `lastupdated` (ACTIONS, SP500, EVENTS, SF2, SF3A/B)
   can still sync on new rows. Caveat: keying on a plain date column catches only
   *new* rows, not retroactive edits to existing ones — fine for append-only
   event/filing tables, but use `lastupdated` when it exists to catch revisions.
 
-  High-churn tables (SEP/SFP restamp `lastupdated` on price adjustments) can blow
-  the query API's ~1M-row per-call cap for a multi-day window. The fetch adaptively
-  splits `[since, today]` by date and halves on a cap error, so the sync just works.
+  The sync follows the query API's `next_cursor_id` page by page (`_iter_pages`) and
+  streams each page into Postgres, so there is no per-call row cap to work around —
+  high-churn tables (SEP/SFP restamp `lastupdated` on price adjustments) just take more
+  pages.
 
 Tables are created here (CREATE TABLE IF NOT EXISTS), not via the ORM models.
 """

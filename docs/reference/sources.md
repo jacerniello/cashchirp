@@ -1,11 +1,20 @@
 # Sources
 
-Long-form notes on each data source: what it is, what it covers, how we access it, and
-where it lands. [`../setup/sources.md`](../setup/sources.md) is the short provenance table,
-a hand-maintained copy of the registry in `core/backend/sources.py`; this page is the
-reading behind it.
+Notes on each data source: what it is, what it covers, how we access it, and where it
+lands. The per-dataset list (every table, endpoint and refresh mode) is the registry in
+`core/backend/sources.py`; print it with `python -m core.setup.bootstrap --sources`.
 
 > Access keys live in `core/.env` (gitignored) — never commit credentials here.
+
+## At a glance
+
+| Source | Licence | Credential | Datasets |
+|---|---|---|---|
+| [Sharadar (via Nasdaq Data Link)](https://data.nasdaq.com/databases/SFA) | Paid subscription — not redistributable | `NASDAQ_DATA_LINK_API_KEY` | 13 |
+| [FRED](https://fred.stlouisfed.org/) | Free; most series public domain (some carry provider terms) | `FRED_API_KEY` (only the spot series; the MD/QD panels need none) | 3 |
+| [FINRA](https://www.finra.org/finra-data/browse-catalog/short-interest) | Free, public | none | 1 |
+| [SEC EDGAR](https://www.sec.gov/search-filings) | Free, public domain | `SEC_USER_AGENT` | 1 |
+| Computed locally | Yours, derived from the above | none | 6 (schema + 5 derived) |
 
 ---
 

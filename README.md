@@ -68,7 +68,6 @@ Four parts:
 | [docs/RESEARCH.md](docs/RESEARCH.md) | Research: snapshots, reports (AI DD, rankings, notes), backtests — and pointing Claude at it. |
 | [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) | Sizing tiers, topology, the nightly refresh, backups. |
 | [docs/setup/database.md](docs/setup/database.md) | The database on its own: build, resume, watch, repair. |
-| [docs/setup/sources.md](docs/setup/sources.md) | Where each dataset comes from, and its licence. |
 | [docs/reference/schema.md](docs/reference/schema.md) | Tables, keys, indexes, and the mirroring conventions. |
 | [docs/reference/nasdaq-data-link.md](docs/reference/nasdaq-data-link.md) | How the Nasdaq Data Link API works, and how the loader uses it. |
 | [docs/reference/sources.md](docs/reference/sources.md) | Long-form notes on each provider: coverage, access, caveats. |

@@ -8,8 +8,8 @@ Nasdaq Data Link), FRED, FINRA and SEC. Nobody ships you a copy. You rebuild it 
 sources with your own keys, and `core.setup.bootstrap` is the thing that does it.
 
 Where each dataset comes from, what it costs and what it's licensed for:
-**[sources.md](sources.md)**, or `bootstrap --sources` for the same from the registry
-itself.
+`bootstrap --sources` prints it from the registry, and
+[../reference/sources.md](../reference/sources.md) covers each provider in depth.
 
 ---
 
@@ -95,10 +95,12 @@ python -m core.setup.bootstrap --create-db
 ```
 
 Phases run in dependency order — **schema → Sharadar → FRED → FINRA → SEC → derived** —
-and two constraints in that order are load-bearing:
+and three constraints in that order are load-bearing:
 
 - **`TICKERS` first.** It builds `permaticker_lookup`, which every other table's
   `permaticker` stamping reads. Load it late and the rest stamp nothing.
+- **`SF3B` before `SF3`.** SF3 ships `investorid` without the name; the SF3 load reads
+  SF3B's investorid → investorname map to put it back.
 - **Derived last**, once every input is fresh. Rebuilding `screener_snapshot` while `SF1`
   is still loading gives you a snapshot of half-updated data — which looks perfectly
   valid and is silently wrong.
@@ -227,11 +229,11 @@ loader — not an edit in four places.
    [`core/setup/bootstrap.py`](../../core/setup/bootstrap.py), or reuse a phase that
    already has one (a new Sharadar table needs no code at all — the loader is
    schema-driven).
-3. Update [sources.md](sources.md) to match. It used to be generated from the registry;
-   the generator is gone, so this step is manual and is the one that rots.
+3. If it's a new provider, add a section to
+   [`reference/sources.md`](../reference/sources.md) covering its licence and access.
 
-`bootstrap` and the Setup UI both build their step lists from the registry, so a new entry
-runs everywhere without further edits. Only the published table needs a hand now.
+`bootstrap`, `bootstrap --sources` and the Setup UI all build their lists from the
+registry, so a new entry shows up everywhere without further edits.
 
 ## Reference
 

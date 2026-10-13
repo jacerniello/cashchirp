@@ -8,7 +8,7 @@ setup, then several hours of unattended downloading.
 | **This page** | The checklist. Start here. |
 | **`/setup` in the app** | The same status, live — what's loaded, what's missing, and a running build's progress. |
 | [database.md](database.md) | The database on its own — build, resume, watch, verify, repair. |
-| [sources.md](sources.md) | Where every byte comes from. Kept in step with the registry by hand. |
+| [../reference/sources.md](../reference/sources.md) | Each provider: licence, credentials, coverage. `bootstrap --sources` lists every dataset. |
 | [../CONFIGURATION.md](../CONFIGURATION.md) | Every setting, and the screen-spec schema. |
 | [../DEPLOYMENT.md](../DEPLOYMENT.md) | Running it somewhere other than your laptop. |
 
@@ -59,7 +59,7 @@ Fill in three values. `core/.env` is gitignored, so nothing leaves your machine.
 > contact, and it rate-limits by that identity — borrow someone else's and you both get
 > blocked. There is deliberately no default.
 
-The full list of what each credential unlocks: [sources.md](sources.md#credentials-you-need).
+What each provider and credential covers: [../reference/sources.md](../reference/sources.md#at-a-glance).
 What the Nasdaq key actually gets you, and why a table outside your subscription returns
 `403` rather than nothing: [../reference/nasdaq-data-link.md](../reference/nasdaq-data-link.md).
 

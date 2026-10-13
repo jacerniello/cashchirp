@@ -5,14 +5,13 @@ per ingestable dataset: who provides it, the endpoint it is pulled from, which c
 unlocks it, what licence it carries, how big it lands, which tables it writes, and how it
 is refreshed.
 
-Two things read it, so they cannot drift, and one doc mirrors it:
+Everything that lists datasets reads it, so they cannot drift:
 
 - `core.setup.bootstrap` builds its step list from `DATASETS`, so the from-zero build
   runs exactly what is declared here (and can print provenance per step: `--sources`).
 - the Setup UI and its scheduler run those same datasets by key, so a scheduled refresh
   uses the same modes.
-- `docs/setup/sources.md` is a hand-maintained copy of it now that the generator is gone,
-  so update it alongside any change here.
+- the docs do not copy it; `bootstrap --sources` prints it on demand.
 
 **Adding a data source is therefore a registry entry plus a loader**, not an edit in four
 places — and nothing can quietly ingest from somewhere undocumented.

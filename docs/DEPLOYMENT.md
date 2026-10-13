@@ -93,12 +93,17 @@ server, not `npm run dev`:
 
 ```bash
 npm --prefix web ci --no-audit --no-fund   # NOT --omit=dev, see below
-npm --prefix web run build
+API_URL=http://127.0.0.1:8001 npm --prefix web run build
 API_URL=http://127.0.0.1:8001 PORT=3010 npm --prefix web start
 ```
 
-`API_URL` is read at runtime and points the app at the API. `PORT` picks the port the
-server listens on — 3010 in the units below, to keep it clear of a dev server on 3000.
+`API_URL` points the app at the API, and it is needed at **build** time as well as at
+start. The browser's `/api/v1` proxy (the rewrite in `web/next.config.ts`) is resolved by
+`npm run build` and written into `.next/routes-manifest.json`; only the server-side
+requests read `API_URL` when the app starts. So set it for both commands, and rebuild
+after changing it. If it is unset, both fall back to `http://127.0.0.1:8001`. `PORT` picks
+the port the server listens on — 3010 in the units below, to keep it clear of a dev server
+on 3000.
 
 > **Do not `npm ci --omit=dev`.** `typescript`, `tailwindcss` and `@tailwindcss/postcss`
 > are devDependencies and the build needs all three. Omitting them breaks `next build` and

@@ -6,9 +6,8 @@ Where things are, and which question each document answers.
 |---|---|
 | **[setup/README.md](setup/README.md)** | **Start here.** Install, keys, which tables to load, verify it worked. |
 | [setup/database.md](setup/database.md) | Building the database: preflight, the build, watching a long run, resuming when a step fails. |
-| [setup/sources.md](setup/sources.md) | Where every dataset comes from, and its licence. Maintained by hand — see below. |
 | [reference/schema.md](reference/schema.md) | What is *in* the database: tables, keys, indexes, the fidelity conventions. |
-| [reference/sources.md](reference/sources.md) | Long-form notes on each provider: access patterns, coverage, caveats. `setup/sources.md` is the short provenance table; this is the reading behind it. |
+| [reference/sources.md](reference/sources.md) | Each provider: licence, credentials, access patterns, coverage, caveats. |
 | [reference/nasdaq-data-link.md](reference/nasdaq-data-link.md) | How the Nasdaq Data Link API works — auth, bulk export vs the query API, the row cap, and how the loader uses each. |
 | [CONFIGURATION.md](CONFIGURATION.md) | Every setting, and the screen-spec schema. |
 | [RESEARCH.md](RESEARCH.md) | The research folder and backtests: what is stored where, the AI workflow, the DD standard. |
@@ -29,12 +28,10 @@ Three documents live outside this directory on purpose:
 in it** once built. They were previously one file each in two different places, which is
 why the names now say which is which.
 
-## The sources table
+## The dataset list
 
-`setup/sources.md` was generated from `core/backend/sources.py` — the registry that
-drives what `bootstrap` ingests — so that the published provenance could not claim a
-source the build does not use.
-
-The generator has since been removed, so the file is now maintained by hand and *can*
-drift. Change the registry first, then update the page to match, and check it against
-`python -m core.setup.bootstrap --sources`, which reads the registry directly.
+There is no hand-kept table of datasets. The registry in `core/backend/sources.py` is the
+list, and `python -m core.setup.bootstrap --sources` prints it: every dataset, its
+provider, endpoint, licence, credential, the tables it writes and its refresh mode. The
+Setup page in the app shows the same registry. A copy in the docs drifted every time the
+registry changed, so it was removed.
