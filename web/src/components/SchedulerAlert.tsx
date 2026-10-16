@@ -4,7 +4,8 @@ import Link from 'next/link';
 import { useSetupEnabled } from '@/hooks/useSetupEnabled';
 import { useRestartScheduler, useSchedulerHealth, type SchedulerHealth } from '@/hooks/useJobs';
 
-// App-wide alert for a scheduler that is down, stalled or failing every tick.
+// App-wide alert for a scheduler that is stopped, stalled or failing every tick in every
+// API worker. One healthy worker is enough to fire schedules, so that case shows nothing.
 //
 // The scheduler is a thread inside the API, so it can die or hang while every page keeps
 // working — and a schedule that silently stops firing looks exactly like a quiet night.
@@ -31,7 +32,9 @@ export function SchedulerAlert() {
     <div role="alert" className="border-b border-red/30 bg-red-soft">
       <div className="max-w-[1400px] mx-auto px-6 py-2.5 flex items-center gap-4 flex-wrap text-sm">
         <div className="flex-1 min-w-[240px] text-ink">
-          <span className="font-semibold text-red">{TITLES[data.status]}.</span>{' '}
+          <span className="font-semibold text-red">
+            {data.paused ? 'The scheduler is stopped' : TITLES[data.status]}.
+          </span>{' '}
           {data.reason}{' '}
           Scheduled jobs will not fire until it is restarted.{' '}
           <Link href="/setup/schedules" className="underline hover:text-red">Schedules</Link>

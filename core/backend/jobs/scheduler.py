@@ -55,8 +55,8 @@ STALL_SECONDS = max(3 * TICK_SECONDS, 120.0)
 FAILING_AFTER = 3
 
 
-def _now() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+def _now() -> datetime:
+    return datetime.now(timezone.utc)
 
 
 def _report(gen: int, **fields: Any) -> None:
@@ -204,7 +204,8 @@ def _loop(stop_event: threading.Event, gen: int) -> None:
                     log.info("scheduled run started: %s (pid %s)", f["key"], f.get("pid"))
                 for s in res.get("skipped", []):
                     log.warning("scheduled run skipped: %s — %s", s["key"], s.get("reason"))
-                _report(gen, last_tick_at=_now(), heartbeat_mono=time.monotonic(),
+                t = _now()
+                _report(gen, last_tick_at=t, heartbeat_at=t, heartbeat_mono=time.monotonic(),
                         consecutive_failures=0, holds_lock=bool(res.get("locked")))
             except Exception as exc:
                 # A scheduler that dies on one bad tick is worse than one that logs and
@@ -214,7 +215,7 @@ def _loop(stop_event: threading.Event, gen: int) -> None:
                     if gen == _generation:
                         _health["consecutive_failures"] = _health.get("consecutive_failures", 0) + 1
                         _health["last_error"] = f"{type(exc).__name__}: {exc}"[:500]
-                        _health["last_error_at"] = _now()
+                        _health["last_error_at"] = _health["heartbeat_at"] = _now()
                         _health["heartbeat_mono"] = time.monotonic()
     except BaseException as exc:                   # pragma: no cover - last resort
         # Anything that escapes the loop ends the thread. Record why, so the health
@@ -248,6 +249,7 @@ def start() -> bool:
 
 
 def stop() -> None:
+    """Tell the current thread to exit after its current tick (or wait)."""
     _stop.set()
 
 
@@ -268,43 +270,47 @@ def restart() -> dict[str, Any]:
         log.warning("scheduler thread %s did not stop; orphaning it", old.name)
     _thread = None
     start()
-    return {"restarted": True, "orphaned_previous": orphaned, **health()}
+    return {"restarted": True, "orphaned_previous": orphaned}
 
 
 def running() -> bool:
     return _thread is not None and _thread.is_alive()
 
 
-def health() -> dict[str, Any]:
-    """Is the scheduler actually ticking? `running()` only says the thread exists.
+def classify(alive: bool, since: float, fails: int,
+             last_error: str | None) -> tuple[str, str | None]:
+    """One worker's status from what it reported. Shared by the in-process view and the
+    cross-worker one, so both apply the same thresholds.
 
-    status is one of:
       ok       - alive and reported in recently
       failing  - alive, but the last FAILING_AFTER ticks all raised
       stalled  - alive, but silent for STALL_SECONDS (stuck inside a tick)
       stopped  - no live thread
     """
+    if not alive:
+        return "stopped", last_error or "The scheduler thread is not running."
+    if since > STALL_SECONDS:
+        return "stalled", f"No heartbeat for {since:.0f}s — stuck inside a tick."
+    if fails >= FAILING_AFTER:
+        return "failing", f"The last {fails} ticks failed: {last_error}"
+    return "ok", None
+
+
+def snapshot() -> dict[str, Any]:
+    """This process's scheduler as raw fields: what the supervisor publishes."""
     with _health_lock:
         h = dict(_health)
-    alive = running()
     since = time.monotonic() - h.pop("heartbeat_mono", time.monotonic())
-    fails = h.get("consecutive_failures", 0)
-    if not alive:
-        status, reason = "stopped", h.get("last_error") or "The scheduler thread is not running."
-    elif since > STALL_SECONDS:
-        status, reason = "stalled", f"No heartbeat for {since:.0f}s — stuck inside a tick."
-    elif fails >= FAILING_AFTER:
-        status, reason = "failing", f"The last {fails} ticks failed: {h.get('last_error')}"
-    else:
-        status, reason = "ok", None
-    return {
-        "status": status,
-        "healthy": status == "ok",
-        "reason": reason,
-        "alive": alive,
-        "seconds_since_heartbeat": round(since, 1),
-        "tick_seconds": TICK_SECONDS,
-        "stall_seconds": STALL_SECONDS,
-        "generation": _generation,
-        **h,
-    }
+    return {**h, "alive": running(), "seconds_since_heartbeat": since,
+            "generation": _generation}
+
+
+def local_health() -> dict[str, Any]:
+    """THIS process's scheduler only. With several API workers, use supervisor.health()."""
+    snap = snapshot()
+    status, reason = classify(snap["alive"], snap["seconds_since_heartbeat"],
+                              snap.get("consecutive_failures", 0), snap.get("last_error"))
+    out = {k: (v.isoformat(timespec="seconds") if isinstance(v, datetime) else v)
+           for k, v in snap.items()}
+    out["seconds_since_heartbeat"] = round(snap["seconds_since_heartbeat"], 1)
+    return {"status": status, "healthy": status == "ok", "reason": reason, **out}

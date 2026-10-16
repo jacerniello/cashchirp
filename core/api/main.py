@@ -50,15 +50,17 @@ for _r in _ROUTERS:
 # a read-only mirror of somebody else's data — it has no business starting ingests, and
 # starting a thread that fires jobs nobody can see or stop would be worse than useless.
 if settings.setup_enabled:
+    # The supervisor starts the scheduler (unless it was stopped from the Setup page) and
+    # publishes this worker's state, so health and Stop/Restart work across workers.
     @app.on_event("startup")
     def _start_scheduler() -> None:
-        from core.backend.jobs import scheduler
-        scheduler.start()
+        from core.backend.jobs import supervisor
+        supervisor.start()
 
     @app.on_event("shutdown")
     def _stop_scheduler() -> None:
-        from core.backend.jobs import scheduler
-        scheduler.stop()
+        from core.backend.jobs import supervisor
+        supervisor.stop()
 
 
 @app.get("/health")

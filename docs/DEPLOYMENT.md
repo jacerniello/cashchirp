@@ -237,18 +237,30 @@ scheduler starts only when `SETUP_ENABLED=true`, so it belongs on a private API 
 not a public one. Use a systemd timer instead when the ingest must run on a box where the
 app itself is not kept up, or where setup is disabled.
 
-The thread reports a heartbeat every tick. `GET /api/v1/setup/scheduler` reports its
-health as one of four states:
+Every API worker (`uvicorn --workers N`) runs its own scheduler thread. The advisory
+lock lets one fire at a time while the others stand by. Each worker also runs a small
+supervisor thread that publishes its scheduler's heartbeat to the `scheduler_worker`
+table every 5 s. `GET /api/v1/setup/scheduler` reads all of them, so it gives the same
+answer whichever worker serves it.
 
-- `ok`
-- `stopped`: no live thread.
-- `stalled`: no heartbeat for 120 s, so it is stuck inside a tick.
-- `failing`: the last three ticks all raised.
+It reports one of four states:
+
+- `ok`: at least one worker is ticking. One firer is enough; if another worker is
+  unhealthy, `note` says so.
+- `stopped`: stopped from the Setup page, or no worker has a live thread.
+- `stalled`: no heartbeat for 120 s in any worker, so they are stuck inside a tick.
+- `failing`: the last three ticks raised in every worker.
 
 When the state is anything but `ok`, a red bar with a **Restart scheduler** button
-appears on every page. `POST /api/v1/setup/scheduler/restart` does the same restart.
+appears on every page. Setup → Schedules shows each worker with **Stop** and
+**Restart** buttons. Both only write the `scheduler_control` row (also
+`POST /api/v1/setup/scheduler/stop` and `/restart`), and every worker's supervisor
+applies it within 5 s. A stop is kept across API restarts until someone restarts the
+scheduler.
+
 Python cannot kill a thread, so a stuck one is told to stop and left to exit on its
-own. The advisory lock makes it safe to run alongside its replacement.
+own. The advisory lock makes it safe to run alongside its replacement. A crashed
+thread is never restarted automatically, so the failure stays visible.
 
 Whichever you pick, use one: two schedulers pointed at the same database will overlap.
 

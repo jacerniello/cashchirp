@@ -38,26 +38,47 @@ export interface SchedulableJob {
   phase: string;
 }
 
-/** GET /setup/scheduler — is the scheduler thread alive AND ticking? */
+export type SchedulerStatus = 'ok' | 'failing' | 'stalled' | 'stopped';
+
+/** One API worker's scheduler thread, as it last reported to Postgres. */
+export interface SchedulerWorker {
+  worker_id: string;
+  host: string;
+  pid: number;
+  status: SchedulerStatus;
+  reason: string | null;
+  thread_alive: boolean;
+  seconds_since_heartbeat: number;
+  /** True for the worker that served this request. */
+  this_worker: boolean;
+  reported_at: string;
+  started_at: string | null;
+  heartbeat_at: string | null;
+  last_tick_at: string | null;
+  /** True for the worker currently doing the firing; the others stand by. */
+  holds_lock: boolean | null;
+  consecutive_failures: number;
+  last_error: string | null;
+  restarts: number;
+}
+
+/** GET /setup/scheduler — is scheduling working, across every API worker? */
 export interface SchedulerHealth {
-  status: 'ok' | 'failing' | 'stalled' | 'stopped';
+  status: SchedulerStatus;
   healthy: boolean;
   /** Why it is unhealthy, in words; null when ok. */
   reason: string | null;
-  alive: boolean;
-  seconds_since_heartbeat: number;
+  /** Set when one worker is unhealthy but another is covering; status stays ok. */
+  note: string | null;
+  /** Stopped on purpose from the Setup page. Stays stopped across API restarts. */
+  paused: boolean;
+  workers: SchedulerWorker[];
   tick_seconds: number;
   stall_seconds: number;
-  generation: number;
-  started_at?: string;
-  heartbeat_at?: string;
-  last_tick_at?: string;
-  /** False when another API process holds the advisory lock and does the firing. */
-  holds_lock?: boolean;
-  consecutive_failures?: number;
-  last_error?: string;
-  last_error_at?: string;
-  restarts?: number;
+  /** Other workers apply Stop/Restart within this many seconds. */
+  supervise_seconds: number;
+  /** 'local' when the database could not be read and only this worker is shown. */
+  source: 'database' | 'local';
 }
 
 export interface SchedulesResponse {
@@ -115,27 +136,40 @@ export function useSchedules() {
  * Scheduler health. `enabled` gates the poll: a deployment without the setup surface
  * has no scheduler, and polling its 404 every 30s would be noise.
  */
-export function useSchedulerHealth(enabled = true) {
+export function useSchedulerHealth(enabled = true, pollMs = 30000) {
   return useQuery({
     queryKey: ['setup-scheduler'],
     queryFn: async (): Promise<SchedulerHealth> => (await api.get('/setup/scheduler')).data,
     enabled,
-    refetchInterval: 30000,
+    refetchInterval: pollMs,
     retry: false,
   });
 }
 
-export function useRestartScheduler() {
+/**
+ * Stop or restart the scheduler in every API worker. The worker that serves the request
+ * applies it at once; the others pick it up within `supervise_seconds`, so the health
+ * is fetched again after that.
+ */
+function useSchedulerControl(action: 'restart' | 'stop') {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (): Promise<SchedulerHealth & { orphaned_previous: boolean }> =>
-      (await api.post('/setup/scheduler/restart', {})).data,
+    mutationFn: async (): Promise<SchedulerHealth> =>
+      (await api.post(`/setup/scheduler/${action}`, {})).data,
     onSuccess: (data) => {
       qc.setQueryData(['setup-scheduler'], data);
-      qc.invalidateQueries({ queryKey: ['setup-schedules'] });
+      const refresh = () => {
+        qc.invalidateQueries({ queryKey: ['setup-scheduler'] });
+        qc.invalidateQueries({ queryKey: ['setup-schedules'] });
+      };
+      refresh();
+      setTimeout(refresh, (data.supervise_seconds + 1) * 1000);
     },
   });
 }
+
+export const useRestartScheduler = () => useSchedulerControl('restart');
+export const useStopScheduler = () => useSchedulerControl('stop');
 
 export interface NewSchedule {
   key: string;

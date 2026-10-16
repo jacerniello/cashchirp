@@ -117,6 +117,8 @@ freely, never hand-edit.
 | `sync_state` | per-table incremental watermark (max sync-column value ingested — `lastupdated`, or the registry's `sync_col`/quarter date for tables without it; FINRA keeps its settlement-date watermark here too). The Setup **Watermarks** tab rewinds it |
 | `job_schedule` | standing schedules for the API's scheduler (dataset or build key, cadence `interval`/`daily`/`weekly`/`monthly`, `next_run_at`) — edited at `/setup/schedules` |
 | `job_run` | process-level run history (key, trigger `manual`/`scheduled`/`cli`, status, pid, log file name); FK → `job_schedule` |
+| `scheduler_worker` | each API worker's scheduler heartbeat, published every 5 s (thread alive, last tick, holds lock, consecutive failures); rows not refreshed in 20 s are workers that are gone |
+| `scheduler_control` | one row of instructions for every API worker's scheduler thread: `paused` (kept across restarts) and a `restart_seq` counter; written by Stop/Restart at `/setup/schedules` |
 | `api_rate_samples` | Nasdaq Data Link rate-limit readings (at most one a minute per provider), charted on the Setup page |
 
 ## FRED (macro)

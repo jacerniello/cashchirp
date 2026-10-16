@@ -287,3 +287,55 @@ class JobRun(Base):
         DateTime(timezone=True), server_default=func.now(), index=True
     )
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class SchedulerWorker(Base):
+    """One API worker's scheduler thread, as that worker last reported it.
+
+    The scheduler is a thread in every API worker process (`uvicorn --workers N`), and
+    the advisory lock lets one of them fire at a time while the rest stand by. An
+    in-process health check only sees the worker that happened to answer the request, so
+    each worker publishes its own state here every few seconds and the health check
+    reads all of them. A row that has not been refreshed recently belongs to a worker
+    that is gone, and is ignored.
+    """
+
+    __tablename__ = "scheduler_worker"
+
+    worker_id: Mapped[str] = mapped_column(String(128), primary_key=True)  # host:pid
+    host: Mapped[str] = mapped_column(String(96))
+    pid: Mapped[int] = mapped_column(Integer)
+    reported_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+
+    thread_alive: Mapped[bool] = mapped_column(Boolean, default=False)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    heartbeat_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_tick_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    holds_lock: Mapped[bool | None] = mapped_column(Boolean)
+    consecutive_failures: Mapped[int] = mapped_column(Integer, default=0)
+    last_error: Mapped[str | None] = mapped_column(Text)
+    last_error_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    generation: Mapped[int] = mapped_column(Integer, default=0)
+    restarts: Mapped[int] = mapped_column(Integer, default=0)
+
+
+class SchedulerControl(Base):
+    """A single row of instructions for every worker's scheduler thread.
+
+    A request only reaches one worker, so Stop and Restart cannot act on the threads
+    directly. Instead they change this row, and each worker's supervisor applies it
+    within a few seconds. That reaches a worker whose scheduler thread is dead, because
+    the supervisor is a separate thread.
+
+    `paused` is kept across API restarts on purpose: a scheduler someone turned off
+    stays off until someone turns it back on, and the app-wide alert says so.
+    `restart_seq` is a counter: each worker restarts its thread once whenever it sees a
+    value it has not applied yet.
+    """
+
+    __tablename__ = "scheduler_control"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)  # always 1
+    paused: Mapped[bool] = mapped_column(Boolean, default=False)
+    restart_seq: Mapped[int] = mapped_column(Integer, default=0)
+    updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

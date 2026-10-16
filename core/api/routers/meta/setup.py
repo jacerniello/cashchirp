@@ -49,7 +49,7 @@ from core.backend.jobs.runtime import (
     _run_meta,
 )
 from core.backend.jobs import runtime as rt
-from core.backend.jobs import scheduler
+from core.backend.jobs import scheduler, supervisor
 from core.backend.queries.meta import jobs as jobsq
 from core.config import CORE_DIR, PROJECT_ROOT, settings
 
@@ -713,7 +713,7 @@ def list_schedules() -> dict[str, Any]:
     a hardcoded list that drifts the moment a dataset is added."""
     return {
         "scheduler_running": scheduler.running(),
-        "scheduler": scheduler.health(),
+        "scheduler": supervisor.health(),
         "tick_seconds": scheduler.TICK_SECONDS,
         "now": jobsq.now_local().isoformat(timespec="seconds"),
         "schedules": jobsq.list_schedules(),
@@ -731,15 +731,24 @@ def list_schedules() -> dict[str, Any]:
 @router.get("/scheduler")
 @router.get("/scheduler/")
 def scheduler_health() -> dict[str, Any]:
-    """Whether the scheduler thread is alive AND ticking — polled by the app-wide alert."""
-    return scheduler.health()
+    """Is scheduling working, across every API worker? Polled by the app-wide alert."""
+    return supervisor.health()
 
 
 @router.post("/scheduler/restart")
 def restart_scheduler() -> dict[str, Any]:
-    """Replace the scheduler thread. Safe while healthy: the advisory lock still admits
-    one tick at a time, so a restart cannot double-fire a schedule."""
-    return scheduler.restart()
+    """Restart the scheduler thread in every worker, and clear a stop.
+
+    Safe while healthy: the advisory lock still lets only one tick run at a time, so a
+    restart cannot fire a schedule twice. Other workers apply it within a few seconds."""
+    return supervisor.request_restart()
+
+
+@router.post("/scheduler/stop")
+def stop_scheduler() -> dict[str, Any]:
+    """Stop the scheduler in every worker. It stays stopped across API restarts until
+    restarted, and the app-wide alert shows it the whole time."""
+    return supervisor.request_stop()
 
 
 @router.post("/schedules")
