@@ -237,6 +237,19 @@ scheduler starts only when `SETUP_ENABLED=true`, so it belongs on a private API 
 not a public one. Use a systemd timer instead when the ingest must run on a box where the
 app itself is not kept up, or where setup is disabled.
 
+The thread reports a heartbeat every tick. `GET /api/v1/setup/scheduler` reports its
+health as one of four states:
+
+- `ok`
+- `stopped`: no live thread.
+- `stalled`: no heartbeat for 120 s, so it is stuck inside a tick.
+- `failing`: the last three ticks all raised.
+
+When the state is anything but `ok`, a red bar with a **Restart scheduler** button
+appears on every page. `POST /api/v1/setup/scheduler/restart` does the same restart.
+Python cannot kill a thread, so a stuck one is told to stop and left to exit on its
+own. The advisory lock makes it safe to run alongside its replacement.
+
 Whichever you pick, use one: two schedulers pointed at the same database will overlap.
 
 Schedule it after Sharadar's EOD refresh (typically mid-evening US time). `bootstrap`

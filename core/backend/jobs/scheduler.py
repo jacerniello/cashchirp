@@ -19,6 +19,7 @@ from __future__ import annotations
 import logging
 import threading
 import time
+from datetime import datetime, timezone
 from typing import Any
 
 from sqlalchemy import text
@@ -39,6 +40,29 @@ TICK_SECONDS = 30.0
 
 _thread: threading.Thread | None = None
 _stop = threading.Event()
+# Bumped on every start. A thread only reports into the health record while it is the
+# current generation, so a stalled thread that wakes up after a restart cannot overwrite
+# the replacement's heartbeat and make a dead loop look alive.
+_generation = 0
+_health_lock = threading.Lock()
+_health: dict[str, Any] = {}
+
+# A loop that has not reported in this long is stalled, not between ticks. Three missed
+# ticks, with a floor so a slow tick that spawns a job is not called a hang.
+STALL_SECONDS = max(3 * TICK_SECONDS, 120.0)
+# A thread that is alive and ticking but fails every tick (Postgres down, a bad
+# migration) fires nothing, so it is unhealthy in the way that matters.
+FAILING_AFTER = 3
+
+
+def _now() -> str:
+    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+
+def _report(gen: int, **fields: Any) -> None:
+    with _health_lock:
+        if gen == _generation:
+            _health.update(fields)
 
 
 def _outcome(run: Any) -> tuple[str, int | None, str | None]:
@@ -169,30 +193,57 @@ def _maybe_probe() -> None:
         log.exception("rate-limit probe failed")
 
 
-def _loop() -> None:
-    while not _stop.wait(TICK_SECONDS):
-        _maybe_probe()
-        try:
-            res = tick()
-            for f in res.get("fired", []):
-                log.info("scheduled run started: %s (pid %s)", f["key"], f.get("pid"))
-            for s in res.get("skipped", []):
-                log.warning("scheduled run skipped: %s — %s", s["key"], s.get("reason"))
-        except Exception:
-            # A scheduler that dies on one bad tick is worse than one that logs and
-            # carries on; the next tick may well succeed (a transient DB blip).
-            log.exception("scheduler tick failed")
+def _loop(stop_event: threading.Event, gen: int) -> None:
+    try:
+        while not stop_event.wait(TICK_SECONDS):
+            _report(gen, heartbeat_at=_now(), heartbeat_mono=time.monotonic())
+            _maybe_probe()
+            try:
+                res = tick()
+                for f in res.get("fired", []):
+                    log.info("scheduled run started: %s (pid %s)", f["key"], f.get("pid"))
+                for s in res.get("skipped", []):
+                    log.warning("scheduled run skipped: %s — %s", s["key"], s.get("reason"))
+                _report(gen, last_tick_at=_now(), heartbeat_mono=time.monotonic(),
+                        consecutive_failures=0, holds_lock=bool(res.get("locked")))
+            except Exception as exc:
+                # A scheduler that dies on one bad tick is worse than one that logs and
+                # carries on; the next tick may well succeed (a transient DB blip).
+                log.exception("scheduler tick failed")
+                with _health_lock:
+                    if gen == _generation:
+                        _health["consecutive_failures"] = _health.get("consecutive_failures", 0) + 1
+                        _health["last_error"] = f"{type(exc).__name__}: {exc}"[:500]
+                        _health["last_error_at"] = _now()
+                        _health["heartbeat_mono"] = time.monotonic()
+    except BaseException as exc:                   # pragma: no cover - last resort
+        # Anything that escapes the loop ends the thread. Record why, so the health
+        # check can say more than "stopped".
+        log.exception("scheduler thread exited")
+        _report(gen, last_error=f"thread exited: {type(exc).__name__}: {exc}"[:500],
+                last_error_at=_now())
+        raise
 
 
 def start() -> bool:
     """Start the background thread. Idempotent."""
-    global _thread
+    global _thread, _stop, _generation
     if _thread is not None and _thread.is_alive():
         return False
-    _stop.clear()
-    _thread = threading.Thread(target=_loop, name="cashchirp-scheduler", daemon=True)
+    with _health_lock:
+        _generation += 1
+        gen = _generation
+        restarts = _health.get("restarts", -1) + 1
+        _health.clear()
+        _health.update(started_at=_now(), heartbeat_mono=time.monotonic(),
+                       consecutive_failures=0, restarts=restarts)
+    # A fresh event per thread: setting the old one tells a stalled thread to exit when
+    # it wakes, without also stopping the replacement.
+    _stop = threading.Event()
+    _thread = threading.Thread(target=_loop, args=(_stop, gen),
+                               name=f"cashchirp-scheduler-{gen}", daemon=True)
     _thread.start()
-    log.info("scheduler started (tick %.0fs)", TICK_SECONDS)
+    log.info("scheduler started (tick %.0fs, generation %d)", TICK_SECONDS, gen)
     return True
 
 
@@ -200,5 +251,60 @@ def stop() -> None:
     _stop.set()
 
 
+def restart() -> dict[str, Any]:
+    """Replace the scheduler thread, whatever state the old one is in.
+
+    Python cannot kill a thread, so a stalled one is only told to stop and orphaned; it
+    exits when its current call returns. That is safe to run beside the replacement:
+    the advisory lock admits one tick at a time, whichever thread holds it.
+    """
+    global _thread
+    stop()
+    old = _thread
+    if old is not None:
+        old.join(timeout=2.0)
+    orphaned = old is not None and old.is_alive()
+    if orphaned:
+        log.warning("scheduler thread %s did not stop; orphaning it", old.name)
+    _thread = None
+    start()
+    return {"restarted": True, "orphaned_previous": orphaned, **health()}
+
+
 def running() -> bool:
     return _thread is not None and _thread.is_alive()
+
+
+def health() -> dict[str, Any]:
+    """Is the scheduler actually ticking? `running()` only says the thread exists.
+
+    status is one of:
+      ok       - alive and reported in recently
+      failing  - alive, but the last FAILING_AFTER ticks all raised
+      stalled  - alive, but silent for STALL_SECONDS (stuck inside a tick)
+      stopped  - no live thread
+    """
+    with _health_lock:
+        h = dict(_health)
+    alive = running()
+    since = time.monotonic() - h.pop("heartbeat_mono", time.monotonic())
+    fails = h.get("consecutive_failures", 0)
+    if not alive:
+        status, reason = "stopped", h.get("last_error") or "The scheduler thread is not running."
+    elif since > STALL_SECONDS:
+        status, reason = "stalled", f"No heartbeat for {since:.0f}s — stuck inside a tick."
+    elif fails >= FAILING_AFTER:
+        status, reason = "failing", f"The last {fails} ticks failed: {h.get('last_error')}"
+    else:
+        status, reason = "ok", None
+    return {
+        "status": status,
+        "healthy": status == "ok",
+        "reason": reason,
+        "alive": alive,
+        "seconds_since_heartbeat": round(since, 1),
+        "tick_seconds": TICK_SECONDS,
+        "stall_seconds": STALL_SECONDS,
+        "generation": _generation,
+        **h,
+    }

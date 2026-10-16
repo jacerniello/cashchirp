@@ -5,6 +5,7 @@ import { Badge } from '@/components/Badge';
 import {
   useSchedules,
   useScheduleMutations,
+  useRestartScheduler,
   type Cadence,
   type JobMode,
   type Schedule,
@@ -49,6 +50,8 @@ function fmt(ts: string | null): string {
 export function ScheduleManager() {
   const { data, isLoading, isError } = useSchedules();
   const { create, patch, remove, runNow } = useScheduleMutations();
+  const restart = useRestartScheduler();
+  const health = data?.scheduler;
 
   const [key, setKey] = useState('build:derive');
   const [cadence, setCadence] = useState<Cadence>('daily');
@@ -108,10 +111,33 @@ export function ScheduleManager() {
             Schedules run inside the API process, so they fire only while it is running.
             It checks every {data?.tick_seconds ?? 30}s.
           </div>
-          <Badge variant={data?.scheduler_running ? 'green' : 'red'}>
-            {data?.scheduler_running ? 'Scheduler running' : 'Scheduler stopped'}
-          </Badge>
+          <div className="flex items-center gap-2">
+            <Badge variant={!health ? 'gray' : health.healthy ? 'green' : 'red'}>
+              {!health ? 'Scheduler: unknown'
+                : health.healthy ? 'Scheduler running'
+                : `Scheduler ${health.status}`}
+            </Badge>
+            <button
+              type="button"
+              onClick={() => restart.mutate()}
+              disabled={restart.isPending || !health}
+              className="rounded-md border border-rule px-2.5 py-1 text-xs font-medium text-ink-light hover:border-green hover:text-ink disabled:opacity-50"
+            >
+              {restart.isPending ? 'Restarting…' : 'Restart'}
+            </button>
+          </div>
         </div>
+        {health && (
+          <div className="mt-3 text-xs text-ink-faint space-x-3">
+            {health.reason && <span className="text-red">{health.reason}</span>}
+            <span>Last heartbeat {Math.round(health.seconds_since_heartbeat)}s ago</span>
+            {health.holds_lock === false && (
+              <span>· another API process holds the lock and is doing the firing</span>
+            )}
+            {!!health.restarts && <span>· restarted {health.restarts}× since API start</span>}
+            {restart.isError && <span className="text-red">· restart failed</span>}
+          </div>
+        )}
       </div>
 
       {/* ---------------------------------------------------------------- new */}

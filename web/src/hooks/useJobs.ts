@@ -38,8 +38,31 @@ export interface SchedulableJob {
   phase: string;
 }
 
+/** GET /setup/scheduler — is the scheduler thread alive AND ticking? */
+export interface SchedulerHealth {
+  status: 'ok' | 'failing' | 'stalled' | 'stopped';
+  healthy: boolean;
+  /** Why it is unhealthy, in words; null when ok. */
+  reason: string | null;
+  alive: boolean;
+  seconds_since_heartbeat: number;
+  tick_seconds: number;
+  stall_seconds: number;
+  generation: number;
+  started_at?: string;
+  heartbeat_at?: string;
+  last_tick_at?: string;
+  /** False when another API process holds the advisory lock and does the firing. */
+  holds_lock?: boolean;
+  consecutive_failures?: number;
+  last_error?: string;
+  last_error_at?: string;
+  restarts?: number;
+}
+
 export interface SchedulesResponse {
   scheduler_running: boolean;
+  scheduler: SchedulerHealth;
   tick_seconds: number;
   /** Server time, so "next run" can be shown relative to the machine that will fire it. */
   now: string;
@@ -85,6 +108,32 @@ export function useSchedules() {
     // Slow poll: next_run_at ticks down and a schedule may fire while the page is open.
     refetchInterval: 30000,
     retry: false,
+  });
+}
+
+/**
+ * Scheduler health. `enabled` gates the poll: a deployment without the setup surface
+ * has no scheduler, and polling its 404 every 30s would be noise.
+ */
+export function useSchedulerHealth(enabled = true) {
+  return useQuery({
+    queryKey: ['setup-scheduler'],
+    queryFn: async (): Promise<SchedulerHealth> => (await api.get('/setup/scheduler')).data,
+    enabled,
+    refetchInterval: 30000,
+    retry: false,
+  });
+}
+
+export function useRestartScheduler() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (): Promise<SchedulerHealth & { orphaned_previous: boolean }> =>
+      (await api.post('/setup/scheduler/restart', {})).data,
+    onSuccess: (data) => {
+      qc.setQueryData(['setup-scheduler'], data);
+      qc.invalidateQueries({ queryKey: ['setup-schedules'] });
+    },
   });
 }
 

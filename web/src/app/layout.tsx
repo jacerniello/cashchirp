@@ -5,6 +5,7 @@ import { Navbar } from "@/components/Navbar";
 import { SiteBanner } from "@/components/SiteBanner";
 import { Providers } from "@/lib/providers";
 import { InvestingChrome } from "@/components/InvestingChrome";
+import { SchedulerAlert } from "@/components/SchedulerAlert";
 
 const inter = Inter({
   variable: "--font-sans",
@@ -33,6 +34,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
         <Navbar />
         <SiteBanner />
         <Providers>
+          <SchedulerAlert />
           <InvestingChrome />
           {children}
         </Providers>

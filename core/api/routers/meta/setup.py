@@ -713,6 +713,7 @@ def list_schedules() -> dict[str, Any]:
     a hardcoded list that drifts the moment a dataset is added."""
     return {
         "scheduler_running": scheduler.running(),
+        "scheduler": scheduler.health(),
         "tick_seconds": scheduler.TICK_SECONDS,
         "now": jobsq.now_local().isoformat(timespec="seconds"),
         "schedules": jobsq.list_schedules(),
@@ -725,6 +726,20 @@ def list_schedules() -> dict[str, Any]:
         "modes": list(jobsq.MODES),
         "min_interval_minutes": jobsq.MIN_INTERVAL_MINUTES,
     }
+
+
+@router.get("/scheduler")
+@router.get("/scheduler/")
+def scheduler_health() -> dict[str, Any]:
+    """Whether the scheduler thread is alive AND ticking — polled by the app-wide alert."""
+    return scheduler.health()
+
+
+@router.post("/scheduler/restart")
+def restart_scheduler() -> dict[str, Any]:
+    """Replace the scheduler thread. Safe while healthy: the advisory lock still admits
+    one tick at a time, so a restart cannot double-fire a schedule."""
+    return scheduler.restart()
 
 
 @router.post("/schedules")
